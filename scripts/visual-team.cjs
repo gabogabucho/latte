@@ -93,13 +93,44 @@ app.whenReady().then(async () => {
     result.editing.clearedAfterFinish = await win.webContents.executeJavaScript("!document.querySelector('.doc-editing')");
     result.editing.expectedRole = writer.roleId;
 
+    // The conversation must be the only thing that scrolls, and the composer
+    // must be fully visible: it used to be cut off by a second scroll.
+    // Measure with a live conversation on screen, not a paused member.
+    await win.webContents.executeJavaScript("[...document.querySelectorAll('.team-member-main')][0].click()");
+    await pause(700);
+    result.layout = await win.webContents.executeJavaScript(`(() => {
+      const scrolls = (el) => Boolean(el) && el.scrollHeight > el.clientHeight + 1;
+      const panel = document.querySelector('.agent-panel');
+      const team = document.querySelector('.team');
+      const pane = document.querySelector('.chat-pane');
+      const scroll = document.querySelector('.chat-scroll');
+      const form = document.querySelector('.chat-pane .prompt-form');
+      const context = document.querySelector('.active-context');
+      const panelRect = panel.getBoundingClientRect();
+      const formRect = form ? form.getBoundingClientRect() : null;
+      return {
+        panelScrolls: scrolls(panel),
+        teamScrolls: scrolls(team),
+        paneScrolls: scrolls(pane),
+        conversationScrolls: scrolls(scroll),
+        composerFullyVisible: Boolean(formRect) && formRect.bottom <= panelRect.bottom + 1 && formRect.top >= panelRect.top,
+        contextCollapsed: Boolean(context) && !context.open,
+        contextHeight: context ? Math.round(context.getBoundingClientRect().height) : 0,
+        conversationHeight: scroll ? Math.round(scroll.getBoundingClientRect().height) : 0,
+      };
+    })()`);
+
     await new Promise(resolve => setTimeout(resolve, 400));
     fs.writeFileSync(path.join(__dirname, '../assets/latte-team-desktop.png'), (await win.webContents.capturePage()).toPNG());
     result.errors = errors;
     console.log(JSON.stringify(result));
     const e = result.editing ?? {};
     const editingOk = e.tabDot === true && e.dotRole === e.expectedRole && e.banner.includes('está escribiendo') && e.clearedAfterFinish === true;
-    if (!result.strategistActive || result.team.length !== 2 || !result.pausedShown || !editingOk || errors.length) process.exitCode = 1;
+    const l = result.layout ?? {};
+    const layoutOk = l.panelScrolls === false && l.teamScrolls === false && l.paneScrolls === false
+      && l.composerFullyVisible === true && l.contextCollapsed === true && l.contextHeight < 60
+      && l.conversationHeight > 150;
+    if (!result.strategistActive || result.team.length !== 2 || !result.pausedShown || !editingOk || !layoutOk || errors.length) process.exitCode = 1;
   } catch (error) { console.error(error); process.exitCode = 1; }
   unregister?.(); backend?.service.shutdown(); win?.destroy(); app.exit(process.exitCode || 0);
 });

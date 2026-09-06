@@ -359,3 +359,23 @@ html,body,#root{height:100%;overflow:hidden}
 .modal-close{position:static;padding:6px;flex-shrink:0}
 .modal-body>.intro{margin-top:0}
 @media(max-width:850px){.modal-head{padding:22px 20px 12px}.modal-body{padding:18px 20px 24px}.modal.roomy{width:auto}}
+
+/* --- Panel del agente: un solo scroll, el de la conversación ---------------- */
+/* Antes scrolleaban el panel y la conversación a la vez: el compositor quedaba
+   cortado y el bloque de contexto le robaba alto al chat. */
+.agent-panel>.team{overflow:hidden;margin-right:0;padding-right:0}
+.team-roster{max-height:34vh;overflow-y:auto;overscroll-behavior:contain}
+.chat-pane{min-height:0}
+.chat-pane .chat-scroll{flex:1 1 auto;min-height:120px;max-height:none;overscroll-behavior:contain}
+.chat-pane .prompt-form{flex-shrink:0;margin-bottom:0}
+/* El contexto se pliega: una línea salvo que lo abras. */
+.active-context{border-top:1px solid var(--line);margin-top:10px;padding-top:0;flex-shrink:0}
+.active-context>summary{display:flex;align-items:center;gap:7px;cursor:pointer;list-style:none;padding:10px 0 9px;font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted)}
+.active-context>summary::-webkit-details-marker{display:none}
+.active-context>summary>span{margin-left:auto;letter-spacing:0;text-transform:none;font-size:10.5px;color:#a2988a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.active-context>summary:hover{color:#302c26}
+.active-context-body{padding-bottom:10px}
+.active-context-body>span{font-size:10px;display:inline-flex;gap:6px;align-items:center;border:1px solid #ded5c6;border-radius:4px;padding:6px 8px;margin:0 6px 6px 0;max-width:100%;overflow-wrap:anywhere}
+.active-context-body .agent-footnote{margin:6px 0 0}
+.active-context>summary{letter-spacing:1.1px;padding:9px 0 8px}
+.active-context>summary>span{letter-spacing:0;font-size:10px}
