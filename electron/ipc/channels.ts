@@ -1,0 +1,146 @@
+import type { BackendApi } from '../services/latteService';
+
+/**
+ * Single source of truth for the IPC surface: exactly the LatteAPI methods
+ * from shared/contracts.ts. The preload (plain CJS, no imports) repeats this
+ * list; tests/backend/ipc.test.ts asserts they match.
+ */
+export const API_METHODS = [
+  'appInfo',
+  'listBrands',
+  'createBrand',
+  'updateBrand',
+  'listWorks',
+  'createWork',
+  'saveBrief',
+  'listRevisions',
+  'snapshot',
+  'listDocuments',
+  'readDocument',
+  'documentState',
+  'createDocument',
+  'saveDocument',
+  'updateDocument',
+  'snapshotDocument',
+  'keepDraftAsVersion',
+  'listDocumentRevisions',
+  'exportDocument',
+  'acknowledgeBase',
+  'listDecisions',
+  'addDecision',
+  'runtimeStatus',
+  'startAgent',
+  'writeAgent',
+  'resizeAgent',
+  'stopAgent',
+  'readMemory',
+  'saveMemory',
+  'exportWork',
+  'chatStatus',
+  'startChat',
+  'listChatMessages',
+  'sendChat',
+  'abortChat',
+  'stopChat',
+  'replyPermission',
+  'replyQuestion',
+  'listProviders',
+  'connectProviderKey',
+  'disconnectProvider',
+  'startProviderOAuth',
+  'completeProviderOAuth',
+  'getPrimaryAgent',
+  'setPrimaryAgent',
+  'listAgentRuntimes',
+  'addAgentAccount',
+  'removeAgentAccount',
+  'startAccountLogin',
+  'logoutAccount',
+  'listRoles',
+  'listTeam',
+  'addTeamMember',
+  'openTeamMember',
+  'pauseTeamMember',
+  'finishTeamMember',
+  'removeTeamMember',
+] as const satisfies readonly (keyof BackendApi)[];
+
+export type ApiMethod = (typeof API_METHODS)[number];
+
+// Compile-time exhaustiveness: every BackendApi method must be listed.
+type MissingMethods = Exclude<keyof BackendApi, ApiMethod>;
+const assertAllMethodsListed: MissingMethods extends never ? true : never = true;
+void assertAllMethodsListed;
+
+/** Maximum positional arguments per method; extra arguments are rejected. */
+export const API_ARITY: Record<ApiMethod, number> = {
+  appInfo: 0,
+  listBrands: 0,
+  createBrand: 1,
+  updateBrand: 2,
+  listWorks: 1,
+  createWork: 2,
+  saveBrief: 3,
+  listRevisions: 1,
+  snapshot: 1,
+  listDocuments: 1,
+  readDocument: 1,
+  documentState: 1,
+  createDocument: 4,
+  saveDocument: 3,
+  updateDocument: 2,
+  snapshotDocument: 1,
+  keepDraftAsVersion: 2,
+  listDocumentRevisions: 1,
+  exportDocument: 1,
+  acknowledgeBase: 1,
+  listDecisions: 1,
+  addDecision: 2,
+  runtimeStatus: 0,
+  startAgent: 2,
+  writeAgent: 2,
+  resizeAgent: 3,
+  stopAgent: 1,
+  readMemory: 1,
+  saveMemory: 2,
+  exportWork: 1,
+  chatStatus: 0,
+  startChat: 4,
+  listChatMessages: 1,
+  sendChat: 2,
+  abortChat: 1,
+  stopChat: 1,
+  replyPermission: 3,
+  replyQuestion: 3,
+  listProviders: 0,
+  connectProviderKey: 2,
+  disconnectProvider: 1,
+  startProviderOAuth: 3,
+  completeProviderOAuth: 3,
+  getPrimaryAgent: 0,
+  setPrimaryAgent: 1,
+  listAgentRuntimes: 0,
+  addAgentAccount: 2,
+  removeAgentAccount: 2,
+  startAccountLogin: 2,
+  logoutAccount: 2,
+  listRoles: 0,
+  listTeam: 1,
+  addTeamMember: 3,
+  openTeamMember: 1,
+  pauseTeamMember: 1,
+  finishTeamMember: 1,
+  removeTeamMember: 1,
+};
+
+export const CHANNEL_PREFIX = 'latte:';
+export const AGENT_EVENT_CHANNEL = 'latte:agent-event';
+export const CHAT_EVENT_CHANNEL = 'latte:chat-event';
+
+export function channelFor(method: ApiMethod): string {
+  return `${CHANNEL_PREFIX}${method}`;
+}
+
+export type IpcEnvelope<T> =
+  | { ok: true; value: T }
+  | { ok: false; code: string; message: string };

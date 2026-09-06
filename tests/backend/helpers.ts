@@ -1,0 +1,130 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import type { AgentEvent } from '../../shared/contracts';
+import { createBackend, type Backend, type BackendOptions } from '../../electron/bootstrap';
+import type { CommandResult, CommandRunner } from '../../electron/runtime/commandRunner';
+import type { PtyLoadResult, PtyProcessLike, PtySpawnOptions } from '../../electron/runtime/ptyLoader';
+
+export function makeTempDir(prefix = 'latte-test-'): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+export function removeDir(dir: string): void {
+  // Snapshots are read-only; clear the attribute before removing.
+  const walk = (p: string): void => {
+    for (const entry of fs.readdirSync(p, { withFileTypes: true })) {
+      const full = path.join(p, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else {
+        try { fs.chmodSync(full, 0o666); } catch { /* ignore */ }
+      }
+    }
+  };
+  try { walk(dir); } catch { /* ignore */ }
+  // Child processes (fake CLIs) may still hold the directory for a moment on Windows.
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt === 29) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    }
+  }
+}
+
+// --- Fake command runner ----------------------------------------------------
+
+export type FakeCommand = (file: string, args: string[]) => Partial<CommandResult> | Promise<Partial<CommandResult>>;
+
+export function fakeRunner(handler: FakeCommand): CommandRunner & { calls: Array<{ file: string; args: string[]; timeoutMs: number }> } {
+  const calls: Array<{ file: string; args: string[]; timeoutMs: number }> = [];
+  const runner = (async (file: string, args: string[], options: { timeoutMs: number }) => {
+    calls.push({ file, args: [...args], timeoutMs: options.timeoutMs });
+    const partial = await handler(file, args);
+    return { code: 0, stdout: '', stderr: '', timedOut: false, ...partial } satisfies CommandResult;
+  }) as CommandRunner & { calls: typeof calls };
+  runner.calls = calls;
+  return runner;
+}
+
+export const notFoundRunner = fakeRunner(() => ({ code: 1, stdout: '', stderr: 'not found' }));
+
+// --- Fake pty ---------------------------------------------------------------
+
+export class FakePty implements PtyProcessLike {
+  readonly pid = 4242;
+  readonly written: string[] = [];
+  readonly resizes: Array<[number, number]> = [];
+  killed = false;
+  private dataListeners: Array<(d: string) => void> = [];
+  private exitListeners: Array<(e: { exitCode: number; signal?: number }) => void> = [];
+
+  constructor(readonly file: string, readonly args: string[], readonly options: PtySpawnOptions) {}
+
+  onData(listener: (data: string) => void) {
+    this.dataListeners.push(listener);
+    return { dispose: () => { this.dataListeners = this.dataListeners.filter((l) => l !== listener); } };
+  }
+
+  onExit(listener: (event: { exitCode: number; signal?: number }) => void) {
+    this.exitListeners.push(listener);
+    return { dispose: () => { this.exitListeners = this.exitListeners.filter((l) => l !== listener); } };
+  }
+
+  write(data: string): void { this.written.push(data); }
+  resize(cols: number, rows: number): void { this.resizes.push([cols, rows]); }
+  kill(): void { this.killed = true; }
+
+  emitData(data: string): void { for (const l of [...this.dataListeners]) l(data); }
+  emitExit(exitCode: number, signal?: number): void { for (const l of [...this.exitListeners]) l({ exitCode, signal }); }
+}
+
+export function fakePtyLoader(): { load: () => PtyLoadResult; spawned: FakePty[] } {
+  const spawned: FakePty[] = [];
+  const load = (): PtyLoadResult => ({
+    ok: true,
+    module: {
+      spawn(file, args, options) {
+        const pty = new FakePty(file, args, options);
+        spawned.push(pty);
+        return pty;
+      },
+    },
+  });
+  return { load, spawned };
+}
+
+export const brokenPtyLoader = (): PtyLoadResult => ({ ok: false, error: 'node-pty: The specified module could not be found (fake)' });
+
+// --- Backend factory ----------------------------------------------------------
+
+export interface TestBackend extends Backend {
+  dir: string;
+  events: AgentEvent[];
+  cleanup: () => void;
+}
+
+export async function makeBackend(overrides: Partial<BackendOptions> = {}): Promise<TestBackend> {
+  const dir = makeTempDir();
+  const events: AgentEvent[] = [];
+  const backend = await createBackend({
+    dataDir: dir,
+    emit: (e) => events.push(e),
+    chooseExportPath: async () => null,
+    seedDemo: false,
+    runner: notFoundRunner,
+    loadPty: brokenPtyLoader,
+    ...overrides,
+  });
+  return {
+    ...backend,
+    dir,
+    events,
+    cleanup: () => {
+      try { backend.service.shutdown(); } catch { /* already closed */ }
+      removeDir(dir);
+    },
+  };
+}

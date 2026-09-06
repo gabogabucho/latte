@@ -1,0 +1,103 @@
+'use strict';
+// Preload runs in an isolated world with the sandbox on. It exposes exactly the
+// LatteAPI surface from shared/contracts.ts and nothing else: no generic
+// invoke, no channel names from the renderer, no Node objects.
+const { contextBridge, ipcRenderer } = require('electron');
+
+// Keep in sync with electron/ipc/channels.ts (tests assert equality).
+const METHODS = [
+  'appInfo',
+  'listBrands',
+  'createBrand',
+  'updateBrand',
+  'listWorks',
+  'createWork',
+  'saveBrief',
+  'listRevisions',
+  'snapshot',
+  'listDocuments',
+  'readDocument',
+  'documentState',
+  'createDocument',
+  'saveDocument',
+  'updateDocument',
+  'snapshotDocument',
+  'keepDraftAsVersion',
+  'listDocumentRevisions',
+  'exportDocument',
+  'acknowledgeBase',
+  'listDecisions',
+  'addDecision',
+  'runtimeStatus',
+  'startAgent',
+  'writeAgent',
+  'resizeAgent',
+  'stopAgent',
+  'readMemory',
+  'saveMemory',
+  'exportWork',
+  'chatStatus',
+  'startChat',
+  'listChatMessages',
+  'sendChat',
+  'abortChat',
+  'stopChat',
+  'replyPermission',
+  'replyQuestion',
+  'listProviders',
+  'connectProviderKey',
+  'disconnectProvider',
+  'startProviderOAuth',
+  'completeProviderOAuth',
+  'getPrimaryAgent',
+  'setPrimaryAgent',
+  'listAgentRuntimes',
+  'addAgentAccount',
+  'removeAgentAccount',
+  'startAccountLogin',
+  'logoutAccount',
+  'listRoles',
+  'listTeam',
+  'addTeamMember',
+  'openTeamMember',
+  'pauseTeamMember',
+  'finishTeamMember',
+  'removeTeamMember',
+];
+
+const AGENT_EVENT_CHANNEL = 'latte:agent-event';
+const CHAT_EVENT_CHANNEL = 'latte:chat-event';
+
+function unwrap(envelope) {
+  if (envelope && envelope.ok === true) return envelope.value;
+  const error = new Error(envelope && envelope.message ? envelope.message : 'Unknown IPC failure');
+  error.code = envelope && envelope.code ? envelope.code : 'INTERNAL';
+  throw error;
+}
+
+const api = {};
+for (const method of METHODS) {
+  api[method] = (...args) => ipcRenderer.invoke(`latte:${method}`, ...args).then(unwrap);
+}
+
+api.onAgentEvent = (callback) => {
+  if (typeof callback !== 'function') throw new TypeError('onAgentEvent expects a function');
+  const listener = (_event, payload) => {
+    if (payload && typeof payload.sessionId === 'string' && typeof payload.type === 'string') {
+      callback({ sessionId: payload.sessionId, type: payload.type, data: String(payload.data ?? '') });
+    }
+  };
+  ipcRenderer.on(AGENT_EVENT_CHANNEL, listener);
+  return () => ipcRenderer.removeListener(AGENT_EVENT_CHANNEL, listener);
+};
+
+api.onChatEvent = (callback) => {
+  if (typeof callback !== 'function') throw new TypeError('onChatEvent expects a function');
+  const listener = (_event, payload) => {
+    if (payload && typeof payload.chatId === 'string' && typeof payload.type === 'string') callback(payload);
+  };
+  ipcRenderer.on(CHAT_EVENT_CHANNEL, listener);
+  return () => ipcRenderer.removeListener(CHAT_EVENT_CHANNEL, listener);
+};
+
+contextBridge.exposeInMainWorld('latte', Object.freeze(api));

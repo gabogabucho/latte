@@ -1,0 +1,48 @@
+node_modules/
+dist/
+dist-electron/
+.vite/
+*.log
+.DS_Store
+Thumbs.db
+.latte-data/
+coverage/
+
+# Credentials and local application state must never ship with source releases.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+auth.json
+.credentials.json
+accounts/
+transcripts/
+
+# Generated diagnostics can include local paths and signed-in account details.
+docs/*-result.json
+docs/qa-opencode-openapi.json
+docs/*.stdout.txt
+docs/*.stderr.txt
+scripts/*-result.json
+scripts/probe-claude-stream.ts
+scripts/probe-provider-auth.ts
+docs/qa-opencode-protocol.cjs
+
+# Internal coordination notes are not product documentation.
+docs/OPUS-EXECUTION-BRIEF.md
+docs/OPUS-CUT-STATUS.md
+docs/MVP-STATUS.md
+docs/MVP-SCOPE.md
+docs/NEXT-CUT-PROPOSAL.md
+docs/REVIEW-2026-09-06.md
+
+# Publish only screenshots individually reviewed for private information.
+assets/*.png
+!assets/latte-documents-1440x1000.png

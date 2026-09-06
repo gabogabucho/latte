@@ -1,0 +1,597 @@
+import { spawn, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { ChatEvent, ChatMessage, ChatPart, PermissionReply } from '../../../shared/contracts';
+import { writeFileAtomic } from '../../core/atomicFile';
+import { NotFoundError, UnavailableError, ValidationError } from '../../core/errors';
+import { newId } from '../../core/ids';
+import { killTree } from '../../opencode/server';
+import { spawnSpecFor } from '../../runtime/commandRunner';
+import { scrubEnv } from '../../runtime/terminalManager';
+import type { TranscriptStore } from '../transcripts';
+import { sessionFrom, type AdapterStartInput, type AdapterStartResult, type RuntimeAdapter } from '../types';
+
+export interface ClaudeAdapterDeps {
+  resolveExecutable: () => Promise<{ executable: string; version: string | null } | null>;
+  emit: (event: ChatEvent) => void;
+  /** Environment overlay for the chosen account (CLAUDE_CONFIG_DIR for managed profiles). */
+  accountEnv: (accountId: string | null) => Record<string, string>;
+  /** Called once the CLI reveals its session id, so the hub can persist it for resume. */
+  onSessionId?: (chatId: string, sessionId: string) => void;
+  /**
+   * Where role prompts are written for `--append-system-prompt-file` (one file
+   * per chat, Latte-owned). Without it the prompt goes inline on the command line.
+   */
+  promptDir?: string;
+  /**
+   * Local record of what the pane showed. Claude Code resumes the model's
+   * context but replays no earlier turn, so without this a resumed member
+   * comes back with an empty transcript.
+   */
+  transcripts?: TranscriptStore;
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+  spawnImpl?: typeof spawn;
+  log?: (line: string) => void;
+  maxChats?: number;
+}
+
+interface PendingPermission {
+  requestId: string;
+  toolName: string;
+  input: unknown;
+  suggestions: unknown[] | null;
+}
+
+interface LiveChat {
+  chatId: string;
+  workId: string;
+  child: ChildProcess;
+  messages: Map<string, ChatMessage>;
+  order: string[];
+  currentMessageId: string | null;
+  blockTypes: Map<string, 'text' | 'reasoning' | 'tool'>;
+  toolInputJson: Map<string, string>;
+  pending: Map<string, PendingPermission>;
+  sessionId: string | null;
+  busy: boolean;
+  closed: boolean;
+  buffer: string;
+  /** Ids already written to the transcript, to append each turn once. */
+  recorded: Set<string>;
+  /** Messages restored from the transcript; they are shown but never re-recorded. */
+  restored: number;
+  restoredIds: Set<string>;
+  /**
+   * Per-open prefix for recorded ids. The CLI restarts its own message ids on
+   * every process, so without this a new turn would silently overwrite a
+   * restored one that happens to share the id.
+   */
+  epoch: string;
+}
+
+const MESSAGE_LIMIT = 400;
+const TOOL_TEXT_LIMIT = 12_000;
+
+export const CLAUDE_HEADLESS_ARGS = [
+  '-p',
+  '--output-format', 'stream-json',
+  '--input-format', 'stream-json',
+  '--verbose',
+  '--include-partial-messages',
+  '--permission-mode', 'manual',
+  '--permission-prompt-tool', 'stdio',
+];
+
+/**
+ * Claude Code as a chat runtime: one headless `claude` process per chat,
+ * speaking the stream-json protocol over stdio. The user's own subscription
+ * login is used (system profile or a Latte-managed CLAUDE_CONFIG_DIR); Latte
+ * never sees tokens. Permission prompts arrive as control requests and are
+ * answered from the UI.
+ */
+export class ClaudeChatAdapter implements RuntimeAdapter {
+  readonly runtime = 'claude' as const;
+  private readonly chats = new Map<string, LiveChat>();
+  private readonly env: NodeJS.ProcessEnv;
+  private readonly platform: NodeJS.Platform;
+  private readonly maxChats: number;
+
+  constructor(private readonly deps: ClaudeAdapterDeps) {
+    this.env = deps.env ?? process.env;
+    this.platform = deps.platform ?? process.platform;
+    this.maxChats = deps.maxChats ?? 8;
+  }
+
+  owns(chatId: string): boolean {
+    return this.chats.has(chatId);
+  }
+
+  isBusy(chatId: string): boolean {
+    return this.chats.get(chatId)?.busy ?? false;
+  }
+
+  async start(input: AdapterStartInput): Promise<AdapterStartResult> {
+    if (this.chats.size >= this.maxChats) throw new ValidationError(`Too many open Claude chats (max ${this.maxChats})`);
+    const chatId = input.chatId ?? newId('ses');
+    if (this.chats.has(chatId)) throw new ValidationError('This chat is already open');
+    const runtime = await this.deps.resolveExecutable();
+    if (!runtime) throw new UnavailableError('Claude Code is not installed or not on PATH');
+
+    const args = [...CLAUDE_HEADLESS_ARGS];
+    if (input.previousSessionId) args.push('--resume', input.previousSessionId);
+    if (input.model) args.push('--model', input.model);
+    const instructions = input.instructions?.trim() ?? '';
+    if (instructions) {
+      // The role personality is appended to Claude's own system prompt. A file
+      // keeps multi-line text off the command line (and out of process lists).
+      const promptFile = this.deps.promptDir ? this.writePromptFile(chatId, instructions) : null;
+      if (promptFile) args.push('--append-system-prompt-file', promptFile);
+      else args.push('--append-system-prompt', instructions);
+    }
+    const spec = spawnSpecFor(runtime.executable, args, this.platform, this.env);
+    const env = { ...scrubEnv(this.env), ...this.deps.accountEnv(input.accountId ?? null), ...(input.extraEnv ?? {}) };
+
+    let child: ChildProcess;
+    try {
+      child = (this.deps.spawnImpl ?? spawn)(spec.file, spec.args, { cwd: input.directory, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    } catch (error) {
+      throw new UnavailableError(`Could not start Claude Code: ${describe(error)}`);
+    }
+
+    const live: LiveChat = {
+      chatId,
+      workId: input.workId,
+      child,
+      messages: new Map(),
+      order: [],
+      currentMessageId: null,
+      blockTypes: new Map(),
+      toolInputJson: new Map(),
+      pending: new Map(),
+      sessionId: input.previousSessionId ?? null,
+      busy: false,
+      closed: false,
+      buffer: '',
+      recorded: new Set(),
+      restored: 0,
+      restoredIds: new Set(),
+      epoch: randomUUID().slice(0, 8),
+    };
+    // Resuming: put the earlier turns back on screen before the first new one.
+    if (input.previousSessionId && this.deps.transcripts) {
+      for (const message of this.deps.transcripts.load(chatId)) {
+        const restored = { ...message, chatId };
+        live.messages.set(restored.id, restored);
+        live.order.push(restored.id);
+        live.restoredIds.add(restored.id);
+      }
+      live.restored = live.order.length;
+    }
+    this.chats.set(chatId, live);
+
+    child.stdout?.on('data', (chunk: Buffer) => this.onStdout(live, chunk));
+    child.stderr?.on('data', (chunk: Buffer) => this.deps.log?.(`[claude ${chatId}] ${chunk.toString('utf8').trim().slice(0, 300)}`));
+    child.on('error', (error) => {
+      this.deps.emit({ chatId, type: 'error', message: `Claude Code process error: ${error.message}` });
+      this.finish(live, `process error: ${error.message}`);
+    });
+    child.on('exit', (code, signal) => {
+      if (live.closed) return;
+      const reason = `Claude Code exited (code ${code ?? 'null'}${signal ? `, signal ${signal}` : ''})`;
+      if (live.busy) this.deps.emit({ chatId, type: 'error', message: reason });
+      this.finish(live, reason);
+    });
+
+    const session = {
+      ...sessionFrom(input, 'claude', input.model ?? null, input.accountId ?? null, input.label, Boolean(input.previousSessionId)),
+      id: chatId,
+      // Honest about legacy sessions: resumed in the runtime, but with no local record to show.
+      historyRecovered: live.restored > 0,
+    };
+    return { session, runtimeSessionId: input.previousSessionId ?? '' };
+  }
+
+  listMessages(chatId: string): ChatMessage[] {
+    const live = this.require(chatId);
+    return live.order.map((id) => live.messages.get(id)).filter((m): m is ChatMessage => m !== undefined);
+  }
+
+  async send(chatId: string, text: string): Promise<void> {
+    const live = this.require(chatId);
+    if (live.closed) throw new UnavailableError('This Claude chat has ended. Start it again to continue.');
+    if (live.busy) throw new ValidationError('Claude is still working on the previous message');
+    const userMessage: ChatMessage = {
+      id: `user-${randomUUID()}`,
+      chatId,
+      role: 'user',
+      parts: [{ type: 'text', id: `user-${randomUUID()}`, text }],
+      createdAt: new Date().toISOString(),
+      completed: true,
+      error: null,
+    };
+    this.upsertMessage(live, userMessage);
+    this.record(live, userMessage);
+    this.deps.emit({ chatId, type: 'message', message: userMessage });
+    live.busy = true;
+    this.deps.emit({ chatId, type: 'status', status: 'busy', detail: '' });
+    this.write(live, { type: 'user', message: { role: 'user', content: text } });
+  }
+
+  async abort(chatId: string): Promise<void> {
+    const live = this.require(chatId);
+    if (live.closed) return;
+    this.write(live, { type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } });
+  }
+
+  async replyPermission(chatId: string, requestId: string, reply: PermissionReply): Promise<void> {
+    const live = this.require(chatId);
+    const pending = live.pending.get(requestId);
+    if (!pending) throw new NotFoundError('Permission request', requestId);
+    const response = reply === 'reject'
+      ? { behavior: 'deny', message: 'The user declined this action in Latte.' }
+      : { behavior: 'allow', updatedInput: pending.input, ...(reply === 'always' && pending.suggestions ? { updatedPermissions: pending.suggestions } : {}) };
+    this.write(live, { type: 'control_response', response: { subtype: 'success', request_id: requestId, response } });
+    live.pending.delete(requestId);
+    this.deps.emit({ chatId, type: 'permission-resolved', requestId });
+  }
+
+  async replyQuestion(chatId: string, requestId: string, _answers: string[][] | null): Promise<void> {
+    this.require(chatId);
+    throw new NotFoundError('Question', requestId);
+  }
+
+  stop(chatId: string): void {
+    const live = this.chats.get(chatId);
+    if (!live) return;
+    this.finish(live, 'stopped');
+  }
+
+  shutdown(): void {
+    for (const id of [...this.chats.keys()]) this.stop(id);
+  }
+
+  // Internals ---------------------------------------------------------------
+
+  private require(chatId: string): LiveChat {
+    const live = this.chats.get(chatId);
+    if (!live) throw new NotFoundError('Chat', chatId);
+    return live;
+  }
+
+  /**
+   * One line per turn, under an id that is unique across opens. Restored
+   * messages are never re-recorded, so a transcript never grows duplicates.
+   */
+  private record(live: LiveChat, message: ChatMessage): void {
+    if (!this.deps.transcripts) return;
+    if (live.restoredIds.has(message.id)) return;
+    const id = `${live.epoch}-${message.id}`;
+    if (message.role === 'user' && live.recorded.has(id)) return;
+    live.recorded.add(id);
+    this.deps.transcripts.append(live.chatId, { ...message, id });
+  }
+
+  private writePromptFile(chatId: string, instructions: string): string | null {
+    try {
+      const dir = this.deps.promptDir as string;
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, `${chatId}.md`);
+      writeFileAtomic(file, `${instructions}
+`);
+      return file;
+    } catch (error) {
+      this.deps.log?.(`[claude ${chatId}] prompt file failed, using inline prompt: ${describe(error)}`);
+      return null;
+    }
+  }
+
+  private write(live: LiveChat, payload: unknown): void {
+    try {
+      live.child.stdin?.write(`${JSON.stringify(payload)}\n`);
+    } catch (error) {
+      this.deps.emit({ chatId: live.chatId, type: 'error', message: `Could not write to Claude Code: ${describe(error)}` });
+    }
+  }
+
+  private finish(live: LiveChat, reason: string): void {
+    if (live.closed) return;
+    live.closed = true;
+    live.busy = false;
+    this.chats.delete(live.chatId);
+    try { live.child.stdin?.end(); } catch { /* ignore */ }
+    killTree(live.child, this.platform);
+    this.deps.emit({ chatId: live.chatId, type: 'closed', reason });
+  }
+
+  private onStdout(live: LiveChat, chunk: Buffer): void {
+    live.buffer += chunk.toString('utf8');
+    let nl = live.buffer.indexOf('\n');
+    while (nl !== -1) {
+      const line = live.buffer.slice(0, nl).trim();
+      live.buffer = live.buffer.slice(nl + 1);
+      nl = live.buffer.indexOf('\n');
+      if (!line) continue;
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        this.deps.log?.(`[claude ${live.chatId}] non-json: ${line.slice(0, 120)}`);
+        continue;
+      }
+      try {
+        this.handle(live, msg);
+      } catch (error) {
+        this.deps.log?.(`[claude ${live.chatId}] handler failed: ${describe(error)}`);
+      }
+    }
+  }
+
+  private handle(live: LiveChat, msg: Record<string, unknown>): void {
+    const chatId = live.chatId;
+    switch (msg.type) {
+      case 'system': {
+        if (msg.subtype === 'init' && typeof msg.session_id === 'string') {
+          if (live.sessionId !== msg.session_id) {
+            live.sessionId = msg.session_id;
+            this.deps.onSessionId?.(live.chatId, msg.session_id);
+          }
+        } else if (msg.subtype === 'permission_denied') {
+          const toolUseId = str(msg.tool_use_id);
+          const message = str(msg.message, 'Permission denied');
+          this.updateTool(live, toolUseId, (part) => ({ ...part, status: 'error', error: message }));
+        } else if (msg.subtype === 'status' && msg.status === 'requesting' && !live.busy) {
+          live.busy = true;
+          this.deps.emit({ chatId, type: 'status', status: 'busy', detail: '' });
+        }
+        return;
+      }
+      case 'stream_event': {
+        const event = isRecord(msg.event) ? msg.event : null;
+        if (!event) return;
+        this.handleStreamEvent(live, event);
+        return;
+      }
+      case 'assistant': {
+        const message = isRecord(msg.message) ? msg.message : null;
+        if (!message || typeof message.id !== 'string') return;
+        this.ensureAssistant(live, message.id);
+        const content = Array.isArray(message.content) ? message.content : [];
+        content.forEach((block, index) => {
+          if (!isRecord(block)) return;
+          const part = this.partFromBlock(message.id as string, index, block);
+          if (part) this.upsertPart(live, message.id as string, part);
+        });
+        return;
+      }
+      case 'user': {
+        const message = isRecord(msg.message) ? msg.message : null;
+        const content = message && Array.isArray(message.content) ? message.content : [];
+        for (const block of content) {
+          if (!isRecord(block) || block.type !== 'tool_result') continue;
+          const toolUseId = str(block.tool_use_id);
+          const output = clip(flattenContent(block.content));
+          const isError = block.is_error === true;
+          this.updateTool(live, toolUseId, (part) => ({ ...part, status: isError ? 'error' : 'completed', output: isError ? part.output : output, error: isError ? output : part.error }));
+        }
+        return;
+      }
+      case 'control_request': {
+        const request = isRecord(msg.request) ? msg.request : null;
+        const requestId = str(msg.request_id);
+        if (!request || !requestId) return;
+        if (request.subtype === 'can_use_tool') {
+          const toolName = str(request.tool_name, 'tool');
+          const input = request.input;
+          live.pending.set(requestId, { requestId, toolName, input, suggestions: Array.isArray(request.permission_suggestions) ? request.permission_suggestions : null });
+          this.deps.emit({
+            chatId,
+            type: 'permission',
+            request: {
+              id: requestId,
+              permission: toolName,
+              patterns: patternsFromInput(input),
+              always: Array.isArray(request.permission_suggestions) && request.permission_suggestions.length > 0 ? ['session'] : [],
+              title: str(request.description) || str(request.display_name) || toolName,
+            },
+          });
+        } else {
+          // Anything we do not implement must still be answered or the CLI blocks.
+          this.write(live, { type: 'control_response', response: { subtype: 'error', request_id: requestId, error: `Latte does not handle ${str(request.subtype, 'this request')}` } });
+        }
+        return;
+      }
+      case 'result': {
+        live.busy = false;
+        if (live.currentMessageId) {
+          const current = live.messages.get(live.currentMessageId);
+          if (current) {
+            const completed = { ...current, completed: true, error: msg.is_error === true ? str(msg.result, 'Claude Code reported an error') : current.error };
+            live.messages.set(current.id, completed);
+            this.record(live, completed);
+            this.deps.emit({ chatId, type: 'message', message: completed });
+          }
+        }
+        if (msg.is_error === true) this.deps.emit({ chatId, type: 'error', message: str(msg.result, 'Claude Code reported an error') });
+        this.deps.emit({ chatId, type: 'status', status: 'idle', detail: '' });
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  private handleStreamEvent(live: LiveChat, event: Record<string, unknown>): void {
+    switch (event.type) {
+      case 'message_start': {
+        const message = isRecord(event.message) ? event.message : null;
+        if (message && typeof message.id === 'string') this.ensureAssistant(live, message.id);
+        return;
+      }
+      case 'content_block_start': {
+        const messageId = live.currentMessageId;
+        const block = isRecord(event.content_block) ? event.content_block : null;
+        if (!messageId || !block || typeof event.index !== 'number') return;
+        const part = this.partFromBlock(messageId, event.index, block);
+        if (part) this.upsertPart(live, messageId, part);
+        return;
+      }
+      case 'content_block_delta': {
+        const messageId = live.currentMessageId;
+        const delta = isRecord(event.delta) ? event.delta : null;
+        if (!messageId || !delta || typeof event.index !== 'number') return;
+        const partId = blockPartId(messageId, event.index);
+        if (delta.type === 'text_delta' && typeof delta.text === 'string') {
+          this.applyDelta(live, messageId, partId, 'text', delta.text);
+        } else if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+          this.applyDelta(live, messageId, partId, 'reasoning', delta.thinking);
+        } else if (delta.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
+          live.toolInputJson.set(partId, (live.toolInputJson.get(partId) ?? '') + delta.partial_json);
+        }
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  private ensureAssistant(live: LiveChat, messageId: string): void {
+    live.currentMessageId = messageId;
+    if (live.messages.has(messageId)) return;
+    const message: ChatMessage = { id: messageId, chatId: live.chatId, role: 'assistant', parts: [], createdAt: new Date().toISOString(), completed: false, error: null };
+    this.upsertMessage(live, message);
+    this.deps.emit({ chatId: live.chatId, type: 'message', message });
+  }
+
+  private partFromBlock(messageId: string, index: number, block: Record<string, unknown>): ChatPart | null {
+    const id = blockPartId(messageId, index);
+    switch (block.type) {
+      case 'text':
+        return { type: 'text', id, text: str(block.text) };
+      case 'thinking':
+        return { type: 'reasoning', id, text: str(block.thinking) };
+      case 'tool_use': {
+        const toolId = str(block.id) || id;
+        return { type: 'tool', id: toolId, tool: str(block.name, 'tool'), status: 'running', title: titleFromInput(block.input), input: stringify(block.input), output: '', error: '' };
+      }
+      default:
+        return null;
+    }
+  }
+
+  private upsertMessage(live: LiveChat, message: ChatMessage): void {
+    if (!live.messages.has(message.id)) {
+      live.order.push(message.id);
+      if (live.order.length > MESSAGE_LIMIT) {
+        const dropped = live.order.shift();
+        if (dropped) live.messages.delete(dropped);
+      }
+    }
+    live.messages.set(message.id, message);
+  }
+
+  private upsertPart(live: LiveChat, messageId: string, part: ChatPart): void {
+    const message = live.messages.get(messageId);
+    if (!message) return;
+    const parts = message.parts.slice();
+    const index = parts.findIndex((p) => p.id === part.id);
+    if (index === -1) parts.push(part);
+    else if (part.type === 'tool' && parts[index].type === 'tool') {
+      const existing = parts[index] as Extract<ChatPart, { type: 'tool' }>;
+      parts[index] = { ...part, status: existing.status === 'completed' || existing.status === 'error' ? existing.status : part.status, output: existing.output || part.output, error: existing.error || part.error };
+    } else parts[index] = part;
+    const updated = { ...message, parts };
+    live.messages.set(messageId, updated);
+    const emitted = parts[index === -1 ? parts.length - 1 : index];
+    this.deps.emit({ chatId: live.chatId, type: 'part', messageId, part: emitted });
+  }
+
+  private applyDelta(live: LiveChat, messageId: string, partId: string, kind: 'text' | 'reasoning', delta: string): void {
+    const message = live.messages.get(messageId);
+    if (!message) return;
+    const parts = message.parts.slice();
+    const index = parts.findIndex((p) => p.id === partId);
+    if (index === -1) {
+      parts.push({ type: kind, id: partId, text: delta });
+      live.messages.set(messageId, { ...message, parts });
+      this.deps.emit({ chatId: live.chatId, type: 'part', messageId, part: parts[parts.length - 1] });
+      return;
+    }
+    const part = parts[index];
+    if (part.type !== 'text' && part.type !== 'reasoning') return;
+    parts[index] = { ...part, text: part.text + delta };
+    live.messages.set(messageId, { ...message, parts });
+    this.deps.emit({ chatId: live.chatId, type: 'delta', messageId, partId, delta });
+  }
+
+  private updateTool(live: LiveChat, toolUseId: string, update: (part: Extract<ChatPart, { type: 'tool' }>) => Extract<ChatPart, { type: 'tool' }>): void {
+    if (!toolUseId) return;
+    for (const messageId of live.order) {
+      const message = live.messages.get(messageId);
+      if (!message) continue;
+      const index = message.parts.findIndex((p) => p.type === 'tool' && p.id === toolUseId);
+      if (index === -1) continue;
+      const parts = message.parts.slice();
+      parts[index] = update(parts[index] as Extract<ChatPart, { type: 'tool' }>);
+      live.messages.set(messageId, { ...message, parts });
+      this.deps.emit({ chatId: live.chatId, type: 'part', messageId, part: parts[index] });
+      return;
+    }
+  }
+}
+
+function blockPartId(messageId: string, index: number): string {
+  return `${messageId}#${index}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function str(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function stringify(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return clip(value);
+  try {
+    return clip(JSON.stringify(value, null, 2));
+  } catch {
+    return '';
+  }
+}
+
+function clip(value: string): string {
+  return value.length > TOOL_TEXT_LIMIT ? `${value.slice(0, TOOL_TEXT_LIMIT)}\n… [truncated]` : value;
+}
+
+function flattenContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((c) => (isRecord(c) && typeof c.text === 'string' ? c.text : '')).filter(Boolean).join('\n');
+  }
+  return '';
+}
+
+function titleFromInput(input: unknown): string {
+  if (!isRecord(input)) return '';
+  for (const key of ['description', 'file_path', 'path', 'command', 'pattern', 'query', 'url']) {
+    if (typeof input[key] === 'string' && input[key]) return String(input[key]).slice(0, 160);
+  }
+  return '';
+}
+
+function patternsFromInput(input: unknown): string[] {
+  if (!isRecord(input)) return [];
+  const out: string[] = [];
+  for (const key of ['file_path', 'path', 'command', 'pattern', 'url']) {
+    if (typeof input[key] === 'string' && input[key]) out.push(String(input[key]).slice(0, 200));
+  }
+  return out;
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

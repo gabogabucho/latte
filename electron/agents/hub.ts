@@ -1,0 +1,426 @@
+import type {
+  AccountLoginStart,
+  AgentAccount,
+  AgentRole,
+  AgentRuntimeInfo,
+  ChatMessage,
+  ChatRuntime,
+  ChatRuntimeStatus,
+  ChatSession,
+  PermissionReply,
+  PrimaryAgent,
+  TeamMember,
+  TeamMemberStatus,
+} from '../../shared/contracts';
+import { rmSync as fsRmSync } from 'node:fs';
+import { join as pathJoin } from 'node:path';
+import { NotFoundError, UnavailableError, ValidationError } from '../core/errors';
+import { newId } from '../core/ids';
+import type { ChatManager } from '../opencode/chatManager';
+import type { CommandRunner } from '../runtime/commandRunner';
+import type { RuntimeDetector } from '../runtime/detect';
+import type { TerminalManager } from '../runtime/terminalManager';
+import type { LatteRepository, TeamMemberRecord } from '../storage/repository';
+import { AccountStore, SYSTEM_ACCOUNT_ID, type AccountRuntime } from './accounts';
+import { ASSISTANT_ROLE_ID, RoleCatalog } from './roles';
+import type { TranscriptStore } from './transcripts';
+import type { AdapterStartInput, RuntimeAdapter } from './types';
+
+export interface AgentHubDeps {
+  opencode: ChatManager;
+  claude: RuntimeAdapter;
+  codex: RuntimeAdapter | null;
+  accounts: AccountStore;
+  repo: LatteRepository;
+  detector: RuntimeDetector;
+  terminal: TerminalManager;
+  runner: CommandRunner;
+  roles: RoleCatalog;
+  /** Local message record (Claude Code members); removed with the member. */
+  transcripts?: TranscriptStore;
+  /** Where per-member role prompts are written, so they can be cleaned up too. */
+  promptDir?: string;
+  env?: NodeJS.ProcessEnv;
+  clock?: () => string;
+}
+
+/** Where a member's conversation runs: the work directory and the context every runtime needs. */
+export interface MemberContext {
+  workId: string;
+  brandId: string;
+  directory: string;
+  title: string;
+  extraEnv: Record<string, string>;
+}
+
+export interface AddMemberInput extends MemberContext {
+  roleId: string;
+  /** Advanced overrides; the UI leaves them empty and the primary agent decides. */
+  runtime?: ChatRuntime | null;
+  model?: string | null;
+  accountId?: string | null;
+}
+
+const PRIMARY_KEY = 'primary_agent';
+const RUNTIME_LABEL: Record<ChatRuntime, string> = { opencode: 'OpenCode', claude: 'Claude Code', codex: 'Codex' };
+
+export function isChatRuntime(value: unknown): value is ChatRuntime {
+  return value === 'opencode' || value === 'claude' || value === 'codex';
+}
+
+export function isAccountRuntime(value: unknown): value is AccountRuntime {
+  return value === 'claude' || value === 'codex';
+}
+
+/**
+ * Routes chats to runtimes, owns the "primary agent" choice and the team of
+ * each work. A team member is a role (preset personality) with its own
+ * conversation; its id doubles as the chat id, so pausing and resuming keeps
+ * the same identity on screen and in the runtime's own history.
+ */
+export class AgentHub {
+  /** Live sessions by chat id (= member id). Pruned whenever the adapter no longer owns the chat. */
+  private readonly sessions = new Map<string, ChatSession>();
+  private readonly clock: () => string;
+
+  constructor(private readonly deps: AgentHubDeps) {
+    this.clock = deps.clock ?? (() => new Date().toISOString());
+  }
+
+  // Primary agent -----------------------------------------------------------
+
+  getPrimary(): PrimaryAgent | null {
+    const raw = this.deps.repo.getMeta(PRIMARY_KEY);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as Partial<PrimaryAgent>;
+      if (!isChatRuntime(parsed.runtime)) return null;
+      const model = typeof parsed.model === 'string' && parsed.model.length > 0 ? parsed.model : null;
+      const accountId = typeof parsed.accountId === 'string' && parsed.accountId.length > 0 ? parsed.accountId : null;
+      return { runtime: parsed.runtime, model, accountId, label: this.labelFor(parsed.runtime, model, accountId) };
+    } catch {
+      return null;
+    }
+  }
+
+  setPrimary(choice: { runtime: ChatRuntime; model: string | null; accountId: string | null }): PrimaryAgent {
+    if (!isChatRuntime(choice.runtime)) throw new ValidationError('Unknown runtime');
+    if (choice.runtime === 'opencode' && choice.accountId) throw new ValidationError('OpenCode has no accounts');
+    if (choice.runtime !== 'opencode' && choice.accountId && !AccountStore.isValidId(choice.accountId)) throw new ValidationError('Invalid account id');
+    if (choice.runtime === 'codex' && !this.deps.codex) throw new UnavailableError('Codex support is not available in this build');
+    const primary: PrimaryAgent = {
+      runtime: choice.runtime,
+      model: choice.model,
+      accountId: choice.runtime === 'opencode' ? null : (choice.accountId ?? SYSTEM_ACCOUNT_ID),
+      label: this.labelFor(choice.runtime, choice.model, choice.runtime === 'opencode' ? null : (choice.accountId ?? SYSTEM_ACCOUNT_ID)),
+    };
+    this.deps.repo.setMeta(PRIMARY_KEY, JSON.stringify({ runtime: primary.runtime, model: primary.model, accountId: primary.accountId }));
+    return primary;
+  }
+
+  /** Falls back to OpenCode's runtime default when nothing was chosen yet. */
+  resolvePrimary(): PrimaryAgent {
+    return this.getPrimary() ?? { runtime: 'opencode', model: null, accountId: null, label: this.labelFor('opencode', null, null) };
+  }
+
+  private labelFor(runtime: ChatRuntime, model: string | null, accountId: string | null): string {
+    const parts: string[] = [RUNTIME_LABEL[runtime]];
+    if (runtime !== 'opencode' && accountId) {
+      const account = accountId === SYSTEM_ACCOUNT_ID ? null : this.deps.accounts.list(runtime).find((a) => a.id === accountId);
+      parts.push(accountId === SYSTEM_ACCOUNT_ID ? 'mi sesión' : account?.label ?? accountId);
+    }
+    if (model) parts.push(model);
+    else if (runtime === 'opencode') parts.push('modelo por defecto');
+    return parts.join(' · ');
+  }
+
+  // Runtimes and accounts -----------------------------------------------------
+
+  async status(): Promise<ChatRuntimeStatus> {
+    return this.deps.opencode.status();
+  }
+
+  async listAgentRuntimes(): Promise<AgentRuntimeInfo[]> {
+    const out: AgentRuntimeInfo[] = [];
+    for (const runtime of ['claude', 'codex'] as const) {
+      const found = await this.deps.detector.resolve(runtime);
+      const accounts = await this.deps.accounts.describe(runtime);
+      let detail: string;
+      if (!found) detail = `${RUNTIME_LABEL[runtime]} no está instalado o no está en el PATH.`;
+      else if (runtime === 'codex' && !this.deps.codex) detail = 'Codex detectado, pero este build no incluye su adaptador de chat.';
+      else detail = `${RUNTIME_LABEL[runtime]}${found.version ? ` ${found.version}` : ''} · ${found.executable}`;
+      out.push({ runtime, installed: Boolean(found), version: found?.version ?? null, detail, accounts });
+    }
+    return out;
+  }
+
+  addAccount(runtime: AccountRuntime, label: string): Promise<AgentAccount> {
+    const record = this.deps.accounts.create(runtime, label);
+    return Promise.resolve({ runtime, id: record.id, label: record.label, system: false, loggedIn: false, detail: 'Sin sesión iniciada' });
+  }
+
+  removeAccount(runtime: AccountRuntime, accountId: string): void {
+    if (accountId === SYSTEM_ACCOUNT_ID) throw new ValidationError('The system profile cannot be removed from Latte');
+    this.deps.accounts.remove(runtime, accountId);
+    const primary = this.getPrimary();
+    if (primary && primary.runtime === runtime && primary.accountId === accountId) this.deps.repo.setMeta(PRIMARY_KEY, '');
+  }
+
+  /**
+   * The CLI owns its OAuth. Claude Code's login is interactive, so it runs in
+   * an embedded terminal the user can see; the browser opens by itself.
+   */
+  async startLogin(runtime: AccountRuntime, accountId: string): Promise<AccountLoginStart> {
+    if (!AccountStore.isValidId(accountId)) throw new ValidationError('Invalid account id');
+    const found = await this.deps.detector.resolve(runtime);
+    if (!found) throw new UnavailableError(`${RUNTIME_LABEL[runtime]} is not installed or not on PATH`);
+    const extraEnv = this.deps.accounts.envFor(runtime, accountId);
+    if (runtime === 'codex' && this.deps.codex && 'startLogin' in this.deps.codex) {
+      return (this.deps.codex as RuntimeAdapter & { startLogin(accountId: string): Promise<AccountLoginStart> }).startLogin(accountId);
+    }
+    const session = this.deps.terminal.start({
+      workId: 'login',
+      brandId: 'login',
+      provider: runtime,
+      executable: found.executable,
+      args: runtime === 'claude' ? ['auth', 'login'] : ['login'],
+      cwd: process.cwd(),
+      extraEnv,
+    });
+    return {
+      mode: 'terminal',
+      sessionId: session.id,
+      instructions: runtime === 'claude'
+        ? 'Claude Code abre el navegador para iniciar sesión. Si te pide un código, pegalo en esta terminal. Al terminar, la terminal se cierra sola.'
+        : 'Codex abre el navegador para iniciar sesión con tu cuenta de ChatGPT. Al terminar, la terminal se cierra sola.',
+    };
+  }
+
+  async logout(runtime: AccountRuntime, accountId: string): Promise<void> {
+    if (!AccountStore.isValidId(accountId)) throw new ValidationError('Invalid account id');
+    const found = await this.deps.detector.resolve(runtime);
+    if (!found) throw new UnavailableError(`${RUNTIME_LABEL[runtime]} is not installed or not on PATH`);
+    const env = { ...scrub(this.deps.env ?? process.env), ...this.deps.accounts.envFor(runtime, accountId) };
+    const result = await this.deps.runner(found.executable, runtime === 'claude' ? ['auth', 'logout'] : ['logout'], { timeoutMs: 15_000, env });
+    if (result.error || result.timedOut) throw new UnavailableError(`Could not log out: ${result.error ?? 'timed out'}`);
+  }
+
+  // Team ----------------------------------------------------------------------
+
+  listRoles(): AgentRole[] {
+    return this.deps.roles.list();
+  }
+
+  /** Members of this work whose runtime process is alive right now. */
+  liveMemberCount(workId: string): number {
+    return this.deps.repo.listMembers(workId).filter((m) => this.adapters().some((a) => a.owns(m.id))).length;
+  }
+
+  listTeam(workId: string): TeamMember[] {
+    return this.deps.repo.listMembers(workId).map((record) => this.describe(record));
+  }
+
+  getMember(memberId: string): TeamMember {
+    return this.describe(this.deps.repo.getMember(memberId));
+  }
+
+  /** Creates the member (primary agent unless overridden) and opens its conversation. */
+  async addMember(input: AddMemberInput): Promise<ChatSession> {
+    const role = this.deps.roles.get(input.roleId);
+    if (!role) throw new NotFoundError('Role', input.roleId);
+    const { runtime, model, accountId } = this.resolveChoice(input);
+    this.adapterFor(runtime); // fail early when the runtime is not in this build
+    const now = this.clock();
+    const record: TeamMemberRecord = {
+      id: newId('mem'),
+      workId: input.workId,
+      roleId: role.id,
+      roleName: role.name,
+      initial: role.initial,
+      runtime,
+      model,
+      accountId,
+      sessionId: '',
+      done: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.deps.repo.insertMember(record);
+    try {
+      return await this.open(record, input);
+    } catch (error) {
+      // Nothing to resume yet: do not leave a member that never opened.
+      this.deps.repo.deleteMember(record.id);
+      throw error;
+    }
+  }
+
+  /** Opens (or resumes) an existing member. Returns the live session when it is already open. */
+  async openMember(memberId: string, context: MemberContext): Promise<ChatSession> {
+    const record = this.deps.repo.getMember(memberId);
+    const live = this.liveSession(memberId);
+    if (live) return live;
+    if (record.done) this.deps.repo.setMemberDone(record.id, false, this.clock());
+    return this.open({ ...record, done: false }, context);
+  }
+
+  /** Closes the conversation; the member stays and can be resumed. */
+  pauseMember(memberId: string): void {
+    this.deps.repo.getMember(memberId);
+    this.stop(memberId);
+  }
+
+  finishMember(memberId: string): void {
+    this.deps.repo.getMember(memberId);
+    this.stop(memberId);
+    this.deps.repo.setMemberDone(memberId, true, this.clock());
+  }
+
+  removeMember(memberId: string): void {
+    this.deps.repo.getMember(memberId);
+    this.stop(memberId);
+    this.deps.repo.deleteMember(memberId);
+    // Nothing of the member is left behind on disk.
+    this.deps.transcripts?.forget(memberId);
+    if (this.deps.promptDir && /^[a-z][a-z0-9_-]{2,63}$/.test(memberId)) {
+      try { fsRmSync(pathJoin(this.deps.promptDir, memberId + '.md'), { force: true }); } catch { /* best effort */ }
+    }
+  }
+
+  private async open(record: TeamMemberRecord, context: MemberContext): Promise<ChatSession> {
+    const adapter = this.adapterFor(record.runtime);
+    const label = this.labelFor(record.runtime, record.model, record.accountId);
+    const adapterInput: AdapterStartInput = {
+      workId: context.workId,
+      chatId: record.id,
+      directory: context.directory,
+      title: context.title,
+      roleId: record.roleId,
+      roleName: record.roleName,
+      instructions: this.deps.roles.promptFor(record.roleId),
+      previousSessionId: record.sessionId || null,
+      model: record.model,
+      accountId: record.accountId,
+      label,
+      extraEnv: context.extraEnv,
+    };
+    const result = await adapter.start(adapterInput);
+    if (result.runtimeSessionId && result.runtimeSessionId !== record.sessionId) this.deps.repo.setMemberSession(record.id, result.runtimeSessionId, this.clock());
+    this.sessions.set(result.session.id, result.session);
+    return result.session;
+  }
+
+  private liveSession(chatId: string): ChatSession | null {
+    const session = this.sessions.get(chatId);
+    if (!session) return null;
+    if (this.adapters().some((a) => a.owns(chatId))) return session;
+    this.sessions.delete(chatId);
+    return null;
+  }
+
+  private describe(record: TeamMemberRecord): TeamMember {
+    let status: TeamMemberStatus;
+    const adapter = this.adapters().find((a) => a.owns(record.id));
+    if (adapter) status = adapter.isBusy(record.id) ? 'working' : 'idle';
+    else status = record.done ? 'ended' : 'paused';
+    if (!adapter) this.sessions.delete(record.id);
+    return {
+      id: record.id,
+      workId: record.workId,
+      roleId: record.roleId,
+      roleName: record.roleName,
+      initial: record.initial,
+      runtime: record.runtime,
+      model: record.model,
+      accountId: record.accountId,
+      label: this.labelFor(record.runtime, record.model, record.accountId),
+      status,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    };
+  }
+
+  // Chats ---------------------------------------------------------------------
+
+  /**
+   * Compatibility path ("Iniciar chat"): the neutral assistant with the
+   * primary agent. Reopens the existing assistant member for that agent when
+   * there is one, so a plain chat resumes instead of multiplying members.
+   */
+  async start(input: MemberContext & { runtime?: ChatRuntime | null; model?: string | null; accountId?: string | null }): Promise<ChatSession> {
+    const resolved = this.resolveChoice(input);
+    const existing = this.deps.repo.listMembers(input.workId).find((m) => m.roleId === ASSISTANT_ROLE_ID && m.runtime === resolved.runtime && m.accountId === resolved.accountId && m.model === resolved.model);
+    if (existing) return this.openMember(existing.id, input);
+    return this.addMember({ ...input, roleId: ASSISTANT_ROLE_ID });
+  }
+
+  private resolveChoice(input: { runtime?: ChatRuntime | null; model?: string | null; accountId?: string | null }): { runtime: ChatRuntime; model: string | null; accountId: string | null } {
+    const primary = this.resolvePrimary();
+    const runtime = input.runtime ?? primary.runtime;
+    const model = input.runtime ? (input.model ?? null) : (input.model ?? primary.model);
+    const accountId = runtime === 'opencode' ? null : (input.accountId ?? (input.runtime ? SYSTEM_ACCOUNT_ID : primary.accountId ?? SYSTEM_ACCOUNT_ID));
+    return { runtime, model, accountId };
+  }
+
+  listMessages(chatId: string): ChatMessage[] {
+    return this.route(chatId).listMessages(chatId);
+  }
+
+  send(chatId: string, text: string): Promise<void> {
+    return this.route(chatId).send(chatId, text);
+  }
+
+  abort(chatId: string): Promise<void> {
+    return this.route(chatId).abort(chatId);
+  }
+
+  replyPermission(chatId: string, requestId: string, reply: PermissionReply): Promise<void> {
+    return this.route(chatId).replyPermission(chatId, requestId, reply);
+  }
+
+  replyQuestion(chatId: string, requestId: string, answers: string[][] | null): Promise<void> {
+    return this.route(chatId).replyQuestion(chatId, requestId, answers);
+  }
+
+  stop(chatId: string): void {
+    this.sessions.delete(chatId);
+    for (const adapter of this.adapters()) {
+      if (adapter.owns(chatId)) {
+        adapter.stop(chatId);
+        return;
+      }
+    }
+  }
+
+  shutdown(): void {
+    this.sessions.clear();
+    for (const adapter of this.adapters()) adapter.shutdown();
+  }
+
+  /** Persist a runtime session id learned after start (Claude reveals it with its first reply). */
+  rememberSession(chatId: string, sessionId: string): void {
+    if (this.deps.repo.findMember(chatId)) this.deps.repo.setMemberSession(chatId, sessionId, this.clock());
+  }
+
+  private adapters(): RuntimeAdapter[] {
+    return [this.deps.opencode, this.deps.claude, ...(this.deps.codex ? [this.deps.codex] : [])];
+  }
+
+  private adapterFor(runtime: ChatRuntime): RuntimeAdapter {
+    if (runtime === 'opencode') return this.deps.opencode;
+    if (runtime === 'claude') return this.deps.claude;
+    if (this.deps.codex) return this.deps.codex;
+    throw new UnavailableError('Codex support is not available in this build');
+  }
+
+  private route(chatId: string): RuntimeAdapter {
+    for (const adapter of this.adapters()) if (adapter.owns(chatId)) return adapter;
+    throw new NotFoundError('Chat', chatId);
+  }
+}
+
+function scrub(env: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) if (typeof v === 'string' && !/^(ORCA_|CLAUDE_CODE_)/i.test(k) && k.toUpperCase() !== 'CLAUDECODE') out[k] = v;
+  return out;
+}
