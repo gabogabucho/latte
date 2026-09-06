@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUpRight, Bookmark, Check, ChevronDown, Circle, Copy, FileText, Folder, LoaderCircle, Maximize2, MessageSquare, Minimize2, Minus, Plus, Save, Settings2, Square, TerminalSquare, X } from 'lucide-react';
+import { ArrowUpRight, Bookmark, Check, ChevronDown, Circle, Copy, FileText, Folder, LoaderCircle, MessageSquare, Minus, Plus, Save, Settings2, Square, TerminalSquare, X } from 'lucide-react';
 import type { Brand, Work, Decision, RuntimeStatus, AgentSession, Provider, ChatSession, ChatRuntimeStatus, PrimaryAgent, AgentRuntimeInfo, AgentRole, TeamMember, TeamMemberOptions, WorkDocument, DocumentKind, UntrackedFile } from '../shared/contracts';
 import { api, chatStore, isDesktop } from './browser-api';
 import { DocumentsView, NewDocumentDialog } from './DocumentsView';
@@ -54,18 +54,19 @@ export function App() {
   const [agentMode, setAgentMode] = useState<AgentMode>('chat');
   // Settings is a screen of its own: the workspace shell unmounts while it is open (no document controls in the DOM) and comes back untouched.
   const [settings, setSettings] = useState<SettingsSection | null>(null);
-  // The agent panel is resizable (drag its left edge) and can take most of the window for long conversations.
-  const [agentWidth, setAgentWidth] = useState<number>(readAgentWidth), [dragging, setDragging] = useState(false), [expanded, setExpanded] = useState(false);
-  const savedWidth = useRef(agentWidth);
+  // Review retains its resizable split; conversation focus leaves that width untouched.
+  const [agentWidth, setAgentWidth] = useState<number>(readAgentWidth), [dragging, setDragging] = useState(false);
+  const [layout, setLayout] = useState<'conversation' | 'review'>('conversation');
+  const focusChat = Boolean(work) && layout === 'conversation' && view === 'brief';
+  useEffect(() => { setLayout('conversation'); setAgentMode('chat'); }, [work?.id]);
   const persistWidth = (value: number) => { try { localStorage.setItem(AGENT_WIDTH_KEY, String(value)); } catch { /* per-viewer convenience only */ } };
   const startResize = (e: React.PointerEvent) => {
-    e.preventDefault(); setDragging(true); setExpanded(false);
+    e.preventDefault(); setDragging(true);
     const move = (ev: PointerEvent) => setAgentWidth(clampAgentWidth(window.innerWidth - ev.clientX));
-    const up = (ev: PointerEvent) => { const w = clampAgentWidth(window.innerWidth - ev.clientX); setAgentWidth(w); savedWidth.current = w; persistWidth(w); setDragging(false); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    const up = (ev: PointerEvent) => { const w = clampAgentWidth(window.innerWidth - ev.clientX); setAgentWidth(w); persistWidth(w); setDragging(false); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
-  const toggleExpanded = () => { if (expanded) { setAgentWidth(savedWidth.current); setExpanded(false); } else { savedWidth.current = agentWidth; setAgentWidth(maxAgentWidth()); setExpanded(true); } };
-  useEffect(() => { const onResize = () => setAgentWidth(w => clampAgentWidth(expanded ? maxAgentWidth() : w)); window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize); }, [expanded]);
+  useEffect(() => { const onResize = () => setAgentWidth(w => clampAgentWidth(w)); window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize); }, []);
   // Team: live sessions by chat id (= member id), the persisted roster of the current work, and the selected member per work.
   const [chats, setChats] = useState<Record<string, ChatSession>>({}), [startingChat, setStartingChat] = useState(false);
   const [trustedFolder, setTrustedFolder] = useState(false);
@@ -110,6 +111,7 @@ export function App() {
       const document = await api.saveAsDocument(work.id, guess as DocumentKind, title.trim(), text);
       await loadDocuments(work.id);
       setSelectedDoc(prev => ({ ...prev, [work.id]: document.id }));
+      setLayout('review'); setView('brief');
       setNotice(`${document.title} quedó como documento con versiones`);
     });
   };
@@ -120,6 +122,7 @@ export function App() {
       const document = await api.trackFile(work.id, fileName);
       await loadDocuments(work.id);
       setSelectedDoc(prev => ({ ...prev, [work.id]: document.id }));
+      setLayout('review'); setView('brief');
       setNotice(`${document.title} ahora es un documento con versiones`);
     });
   };
@@ -301,7 +304,7 @@ export function App() {
   const sessionWork = works.find(w => w.id === session?.workId);
   const activeTerminals = Object.values(sessions).filter(s => !endedSessions.has(s.id)).length, activeChats = liveChatIds.size;
   if (settings) return <SettingsScreen controls={isDesktop ? <WindowControls /> : null} section={settings} onSection={setSettings} onClose={() => { setSettings(null); setError(''); setNotice(''); }} onChanged={() => void refreshChatStatus()} onNotice={setNotice} onError={setError} notice={notice} error={error} onDismiss={() => { setError(''); setNotice(''); }} />;
-  return <div className={'app-shell' + (dragging ? ' dragging' : '')} style={{ ['--agent-width' as string]: `${agentWidth}px` }}>
+  return <div className={'app-shell' + (focusChat ? ' conversation-focus' : '') + (dragging ? ' dragging' : '')} style={{ ['--agent-width' as string]: `${agentWidth}px` }}>
     <aside className="sidebar">
       <div className="wordmark"><span className="logo-mark" aria-hidden="true" />Latte<span className="alpha">ALPHA</span></div>
       <div className="brand-picker"><select aria-label="Marca activa" value={brand?.id ?? ''} onChange={e => { const b = brands.find(b => b.id === e.target.value); if (b) selectBrand(b); }}>{!brands.length && <option value="">Tu primera marca</option>}{brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select><ChevronDown size={15} /></div>
@@ -312,8 +315,8 @@ export function App() {
       <nav className="work-nav">{works.map(w => <button key={w.id} className={work?.id === w.id && (view === 'brief' || view === 'decisions') ? 'work-active' : ''} onClick={() => selectWork(w)}><Folder size={17} /><span>{w.title}</span>{(workHasLiveChat(w.id) || sessions[w.id]) && <i className={sessions[w.id] && endedSessions.has(sessions[w.id].id) && !workHasLiveChat(w.id) ? 'ended-dot' : 'live-dot'} />}</button>)}{!works.length && <p className="sidebar-hint">Un espacio para cada idea que querés llevar adelante.</p>}</nav>
       <div className="sidebar-bottom"><button disabled={!brand || transitioning} onClick={() => { setName(''); setModal('work'); }}><Plus size={20} />Nuevo trabajo</button><div className="sidebar-rule" /><nav><button onClick={() => setSettings('agents')}><Settings2 size={17} />Ajustes</button></nav><div className="profile"><span className="avatar">G</span><div>Tu estudio<small>Local · Sin cuenta de Latte</small></div></div></div>
     </aside>
-    <header className="topbar"><div className="breadcrumb">{brand?.name ?? 'Bienvenido a Latte'}<span>/</span><strong>{work?.title ?? 'Tu espacio de marketing'}</strong></div><span className="local-badge"><i />{isDesktop ? 'Local' : 'Vista previa web'}</span>{isDesktop && <WindowControls />}</header>
-    <main className="workspace">
+    <header className="topbar"><div className="breadcrumb">{brand?.name ?? 'Bienvenido a Latte'}<span>/</span><strong>{work?.title ?? 'Tu espacio de marketing'}</strong></div>{work && <div className="workspace-modes" role="group" aria-label="Vista del trabajo"><button aria-pressed={focusChat} onClick={() => { setLayout('conversation'); setView('brief'); setAgentMode('chat'); }}><MessageSquare size={15} />Conversar</button><button aria-pressed={!focusChat} onClick={() => { setLayout('review'); setView('brief'); }}><FileText size={15} />Revisar</button></div>}<span className="local-badge"><i />{isDesktop ? 'Local' : 'Vista previa web'}</span>{isDesktop && <WindowControls />}</header>
+    <main className="workspace" aria-hidden={focusChat} inert={focusChat}>
       <div className="tabs"><button className={view === 'brief' ? 'selected' : ''} onClick={() => setView('brief')}>Documentos <span>{documents.length}</span></button><button className={view === 'decisions' ? 'selected' : ''} onClick={() => setView('decisions')}>Decisiones <span>{decisions.length}</span></button><div className="tab-spacer" /></div>
       {(error || notice) && <div role={error ? 'alert' : 'status'} className={'message ' + (error ? 'error' : '')}><span>{error || notice}</span><button aria-label="Cerrar aviso" onClick={() => { setError(''); setNotice(''); }}><X size={16} /></button></div>}
       {view === 'brief' && <DocumentsView work={work} brandName={brand?.name ?? ''} documents={documents} selectedId={selectedDocId} onSelect={id => work && setSelectedDoc(prev => ({ ...prev, [work.id]: id }))} onDocumentsChanged={async () => { if (work) await loadDocuments(work.id); }} onWorkUpdated={onWorkUpdated} onDirtyChange={setDocumentDirty} onNotice={setNotice} onError={setError} onCreate={() => setModal('document')} onUseFolder={useFolder} hasBrand={Boolean(brand)} onStart={() => { setName(''); setModal(brand ? 'work' : 'brand'); }} untracked={untracked} onTrack={trackFile} editors={editors} busy={busy} />}
@@ -322,7 +325,7 @@ export function App() {
       {view === 'memory' && <div className="document-scroll"><div className="document-kicker">MEMORIA DE MARCA · ENGRAM</div><h1>El trabajo sigue.<br />El contexto también.</h1><p className="intro">Conocimiento seleccionado, no una copia de cada conversación. Los recuerdos de esta marca se consultan por separado.</p><div className="memory-result"><ReactMarkdown remarkPlugins={[remarkGfm]}>{memory || 'Sin resultados.'}</ReactMarkdown></div><label className="field-label" htmlFor="memory-note">CONSERVAR UN APRENDIZAJE</label><textarea id="memory-note" className="context-editor short" value={memoryNote} onChange={e => setMemoryNote(e.target.value)} placeholder="Qué aprendimos, por qué importa y de dónde surge…" /><button className="primary" disabled={!memoryAvailable || !memoryNote.trim() || busy} onClick={() => run(async () => { const r = await api.saveMemory(brand!.id, memoryNote); if (!r.available) throw new Error(r.text); setMemoryNote(''); setNotice('Aprendizaje guardado en Engram'); openMemory(); })}><Bookmark size={15} />Guardar aprendizaje</button></div>}
       <div className="document-footer"><span><FileText size={13} />{work ? `${documents.length} documento${documents.length === 1 ? '' : 's'} en este trabajo` : 'Un espacio para tu criterio'}</span><span>{work ? date(work.updatedAt) : 'An Agent Marketing Platform'}</span></div>
     </main>
-    <aside className="agent-panel"><button type="button" className={'panel-resizer' + (dragging ? ' dragging' : '')} aria-label="Ajustar ancho del panel del agente" title="Arrastrá para cambiar el ancho" onPointerDown={startResize} /><div className="agent-title">Tu equipo de trabajo<div className="agent-title-actions"><button className="icon-button" aria-label={expanded ? 'Reducir el chat' : 'Ampliar el chat'} title={expanded ? 'Reducir el chat' : 'Ampliar el chat'} onClick={toggleExpanded}>{expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button><button className="icon-button" aria-label="Proveedores de IA" title="Proveedores de IA" onClick={() => setSettings('agents')}><Settings2 size={16} /></button></div></div>
+    <aside className="agent-panel">{focusChat && (error || notice) && <div role={error ? 'alert' : 'status'} className={'message ' + (error ? 'error' : '')}><span>{error || notice}</span><button aria-label="Cerrar aviso" onClick={() => { setError(''); setNotice(''); }}><X size={16} /></button></div>}<button type="button" className={'panel-resizer' + (dragging ? ' dragging' : '')} aria-label="Ajustar ancho del panel del agente" title="Arrastrá para cambiar el ancho" onPointerDown={startResize} /><div className="agent-title">Tu equipo de trabajo<div className="agent-title-actions"><button className="icon-button" aria-label="Proveedores de IA" title="Proveedores de IA" onClick={() => setSettings('agents')}><Settings2 size={16} /></button></div></div>
       <div className="agent-mode-tabs" role="tablist" aria-label="Modo del agente"><button role="tab" aria-selected={agentMode === 'chat'} className={agentMode === 'chat' ? 'selected' : ''} onClick={() => setAgentMode('chat')}><MessageSquare size={15} />Conversación{liveChatIds.size > 0 && <span className="tag count">{liveChatIds.size}</span>}</button><button role="tab" aria-selected={agentMode === 'terminal'} className={agentMode === 'terminal' ? 'selected' : ''} onClick={() => setAgentMode('terminal')}><TerminalSquare size={15} />Terminal<span className="tag">AVANZADO</span></button></div>
       {agentMode === 'chat' && <TeamPanel work={work} team={team} chats={chats} selectedId={selectedMemberId} roles={roles} primaryLabel={primaryLabel} primaryDetail={primaryDetail} primaryReady={primaryReady} choices={runtimeChoices} busy={busy || startingChat} isDesktop={isDesktop} onSelect={selectMember} onAdd={addMember} onOpen={openMember} onPause={pauseMember} onFinish={finishMember} onRemove={removeMember} onSaveAsDocument={saveAnswerAsDocument} untracked={untracked.map(f => f.fileName)} onAdoptFile={fileName => void trackFile(fileName)} primaryRuntime={primaryRuntime} trustedFolder={trustedFolder} onTrustFolder={trustFolder} onProviders={() => setSettings('agents')} onRecheck={() => void refreshChatStatus()} onError={setError} />}
       {agentMode === 'terminal' && <><p className="agent-explanation">Tu CLI, con sus herramientas y su propia interfaz. Latte prepara el espacio y el contexto de este trabajo.</p><label className="field-label" htmlFor="provider">RUNTIME</label><select id="provider" value={provider} disabled={Boolean(session) || starting} onChange={e => setProvider(e.target.value as Provider)}>{(['opencode', 'claude', 'codex'] as Provider[]).map(p => <option key={p} value={p}>{p === 'opencode' ? 'OpenCode' : p === 'claude' ? 'Claude Code' : 'Codex'}{runtimes.find(r => r.provider === p)?.available ? ' · Detectado' : ''}</option>)}</select><p className="runtime-detail">{runtimes.find(r => r.provider === provider)?.detail ?? 'Comprobando disponibilidad…'}</p>

@@ -31,6 +31,12 @@ app.whenReady().then(async () => {
     await win.webContents.executeJavaScript('document.fonts.ready');
     await pause(900);
 
+    // A work opens on its conversation now. Everything below is about the
+    // documents, so switch to "Revisar" first: the other pane stays mounted but
+    // hidden, and innerText reads empty on hidden content.
+    await win.webContents.executeJavaScript(`(() => { const b = [...document.querySelectorAll('.workspace-modes button')].find(b => b.textContent.trim() === 'Revisar'); if (!b) throw new Error('Falta el botón Revisar'); b.click(); })()`);
+    await pause(500);
+
     const brand = (await backend.service.listBrands())[0];
     const work = (await backend.service.listWorks(brand.id))[0];
     const workDir = backend.files.workDir(brand.id, work.id);

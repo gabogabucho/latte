@@ -86,10 +86,13 @@ el navegador y **no ejecuta ningún agente**.
 
 ## Qué hace
 
+- **Conversar y revisar, separados.** Un trabajo abre en su conversación, a ancho completo. «Revisar» trae los documentos al lado. Las dos vistas son los mismos paneles montados, así que un borrador a medio escribir sobrevive al cambio.
 - **Conversaciones por rol.** Cada trabajo tiene un equipo: el Asistente neutral más roles opcionales (Estrategia, Investigación, Análisis, Revisión). Cada miembro es una conversación propia con su runtime y su cuenta.
 - **Instrucciones de marketing por defecto.** Toda conversación, incluida la neutral, recibe el comportamiento de marketing del pack `marketing-core`: objetivo, audiencia, oferta, etapa del embudo, baseline y restricciones antes de recomendar; hecho contra hipótesis; marca aprobada contra propuesta; experimentos con guardrail y cadencia de revisión.
 - **Varios entregables por trabajo.** Encargo, estrategia, calendario, investigación y piezas, cada uno con su archivo Markdown, sus versiones y su exportación.
 - **Guardado con verificación.** Un guardado hecho desde Latte se rechaza si el archivo cambió por fuera desde la última vez que Latte lo leyó, y se conservan las dos variantes.
+- **Permiso de carpeta, una vez.** Claude Code pide permiso por cada archivo que escribe. Podés concederlo de una sola vez, por trabajo, acotado a esa carpeta: adentro deja de preguntar, afuera y para comandos, web o herramientas MCP sigue preguntando.
+- **El archivo que dejó el agente no se duplica.** Cuando un agente escribe un archivo en la carpeta, Latte lo ve al terminar el turno y ofrece agregarlo, en vez de que guardes la respuesta del chat y termines con dos copias de lo mismo.
 - **Tres runtimes.** Claude Code y Codex con tu suscripción (login por navegador desde Ajustes), y proveedores por API key a través de OpenCode.
 
 ### Límites que conviene conocer

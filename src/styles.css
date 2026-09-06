@@ -412,3 +412,34 @@ html,body,#root{height:100%;overflow:hidden}
 .answer-file-hint span{font-size:10px;line-height:1.6;color:#b09a76}
 .answer-file-hint button{align-self:flex-start;padding:3px 9px;font-size:11px}
 .runtime-card.pending{opacity:.6}
+/* Conversation is the work surface; review preserves the same mounted panes. */
+.workspace-modes{display:flex;gap:4px;margin-left:auto;flex-shrink:0}
+.workspace-modes button{font-size:12px;padding:7px 11px}
+.workspace-modes button[aria-pressed=true]{background:#efe0d3;border-color:#c89475;color:#874228}
+.topbar .breadcrumb{min-width:0;overflow:hidden}
+.topbar .breadcrumb strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app-shell.conversation-focus{grid-template-columns:232px minmax(0,1fr)}
+.conversation-focus>.topbar{grid-column:2}
+.conversation-focus>.workspace{position:absolute;visibility:hidden;pointer-events:none;left:232px;top:68px;bottom:34px;width:calc(100vw - 232px - var(--agent-width,355px));overflow:hidden}
+.conversation-focus>.agent-panel{grid-column:2;grid-row:2;border-left:0;padding:14px clamp(22px,5vw,80px) 8px}
+.conversation-focus>.statusbar{grid-column:1/3}
+.conversation-focus .panel-resizer{display:none}
+.agent-title{margin-bottom:8px}
+.team-switcher{display:flex;align-items:center;gap:8px;padding:10px 0;min-width:0}
+.team-switcher select{flex:1;min-width:0;width:auto;font-size:13px;padding:7px;min-height:34px}
+.team-switcher>button{font-size:11px;padding:7px;white-space:nowrap}
+.team-switcher>.team-member-status{max-width:100px}
+.team-roster[hidden]{display:none}
+.team>.chat-pane{min-height:0;overflow:hidden}
+.team>.role-picker{overflow-y:auto;min-height:0;flex-shrink:1}
+.team-roster{max-height:28vh;flex-shrink:1;min-height:0}
+.chat-pane .chat-scroll{min-height:0}
+.chat-pane .prompt-form{flex-shrink:0;margin:10px 0 0;padding:12px}
+.chat-pane .prompt-form textarea{font-size:14px;line-height:1.6;min-height:64px;max-height:160px;resize:vertical}
+.chat-pane .prompt-form small{font-size:11px}
+.conversation-new-messages{align-self:center;flex-shrink:0;padding:5px 12px;font-size:12px;background:var(--paper);margin-top:6px}
+.conversation-focus .chat-scroll{padding:20px 24px}
+.conversation-focus .chat-markdown p,.conversation-focus .chat-markdown li{font-size:14px}
+.conversation-focus .agent-mode-tabs{font-size:12px}
+.conversation-focus .session-heading>span{max-width:none}
+@media(max-width:1100px){.topbar{gap:10px}.workspace-modes button{padding:6px 8px}.team-switcher{flex-wrap:wrap}.team-switcher select{flex-basis:60%}}

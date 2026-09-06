@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, CircleCheck, FolderCheck, FolderLock, LoaderCircle, MessageSquare, Pause, Play, Plug, Plus, Trash2, UserPlus, X } from 'lucide-react';
 import type { AgentRole, ChatRuntime, ChatSession, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
 import { chatStore } from './browser-api';
@@ -51,13 +51,26 @@ const RUNTIME_SHORT: Record<ChatRuntime, string> = { opencode: 'OpenCode', claud
  */
 export function TeamPanel(props: TeamPanelProps) {
   const { work, team, chats, selectedId, roles, busy, isDesktop } = props;
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(false), [managing, setManaging] = useState(false);
+  useEffect(() => { setAdding(false); setManaging(false); }, [work?.id]);
   const selected = team.find(m => m.id === selectedId) ?? null;
   const liveChat = selected ? chats[selected.id] ?? null : null;
+  const selectedState = useChatState(chatStore, liveChat?.id ?? null);
+  const selectedLive = Boolean(liveChat) && !selectedState.closed;
+  const selectedStatus: TeamMemberStatus = selectedLive ? (selectedState.status === 'idle' ? 'idle' : 'working') : selected?.status === 'ended' ? 'ended' : 'paused';
   const showPicker = adding || (team.length === 0 && Boolean(work));
 
   return <div className="team">
-    {work && team.length > 0 && <div className="team-roster" role="listbox" aria-label="Miembros del equipo">
+    {work && team.length > 0 && <div className="team-switcher">
+      <label className="visually-hidden" htmlFor="active-agent">Agente activo</label>
+      <select id="active-agent" value={selectedId ?? ''} onChange={e => props.onSelect(e.target.value)}>
+        {!selected && <option value="">Elegí un agente</option>}
+        {team.map(member => <option key={member.id} value={member.id}>{member.roleName} · {RUNTIME_SHORT[member.runtime]}</option>)}
+      </select>
+      {selected && <span className="team-member-status" role="status">{statusLabel(selectedStatus, selectedLive && (selectedState.permissions.length > 0 || selectedState.questions.length > 0))}</span>}
+      <button aria-expanded={managing} aria-controls="team-management" onClick={() => setManaging(v => !v)}>Equipo ({team.length})</button>
+    </div>}
+    {work && team.length > 0 && <div id="team-management" className="team-roster" hidden={!managing} role="group" aria-label="Administrar equipo">
       {team.map(member => <MemberRow key={member.id} member={member} chat={chats[member.id] ?? null} selected={member.id === selectedId} busy={busy} onSelect={() => props.onSelect(member.id)} onPause={() => props.onPause(member.id)} onFinish={() => props.onFinish(member.id)} onRemove={() => props.onRemove(member.id)} />)}
       {!adding && <button className="team-add" disabled={busy || !isDesktop} onClick={() => setAdding(true)}><UserPlus size={15} />Sumar un rol al equipo</button>}
       {(props.primaryRuntime === 'claude' || team.some(m => m.runtime === 'claude')) && <FolderTrust trusted={props.trustedFolder} busy={busy} onChange={props.onTrustFolder} />}
@@ -100,8 +113,8 @@ function MemberRow({ member, chat, selected, busy, onSelect, onPause, onFinish, 
   const live = Boolean(chat) && !state.closed;
   const status: TeamMemberStatus = live ? (state.status === 'idle' ? 'idle' : 'working') : member.status === 'ended' ? 'ended' : 'paused';
   const attention = live && (state.permissions.length > 0 || state.questions.length > 0);
-  return <div className={'team-member' + (selected ? ' selected' : '') + ' status-' + status} role="option" aria-selected={selected}>
-    <button className="team-member-main" onClick={onSelect} title={member.label}>
+  return <div className={'team-member' + (selected ? ' selected' : '') + ' status-' + status} role="group" aria-label={member.roleName}>
+    <button className="team-member-main" aria-pressed={selected} onClick={onSelect} title={member.label}>
       <span className="team-avatar" data-role={member.roleId} aria-hidden="true">{member.initial}</span>
       <span className="team-member-name"><strong>{member.roleName}</strong><span className="team-sep">/</span>{RUNTIME_SHORT[member.runtime]}</span>
       <span className="team-member-status">{statusLabel(status, attention)}</span>

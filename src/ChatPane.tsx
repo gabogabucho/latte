@@ -6,6 +6,7 @@ import type { ChatMessage, ChatPart, ChatPermission, ChatQuestion, ChatSession, 
 import { api, chatStore } from './browser-api';
 import { useChatState } from './chat-store';
 import { friendlyTool } from './tool-names';
+import { isNearConversationEnd } from './conversation-scroll';
 
 const displayError = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -15,16 +16,36 @@ export function ChatPane({ session, onStop, onError, onSaveAsDocument, untracked
   const setDraft = (text: string) => chatStore.setDraft(session.id, text);
   const [sending, setSending] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
+  const following = useRef(true);
+  const [unread, setUnread] = useState(false);
   const busy = state.status === 'busy' || state.status === 'retry';
 
   useEffect(() => {
     const el = scroller.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (following.current) el.scrollTop = el.scrollHeight;
+    else setUnread(true);
   }, [state.messages, state.permissions.length, state.questions.length]);
+
+  // Layout switches resize this same mounted pane. Keep following only if the
+  // reader already was at the end; never reset an older-message reading position.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => { if (following.current) el.scrollTop = el.scrollHeight; });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const showLatest = () => {
+    following.current = true;
+    setUnread(false);
+    if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+  };
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending || state.closed) return;
+    if (!text || sending || busy || state.closed) return;
     setSending(true);
     try {
       await api.sendChat(session.id, text);
@@ -46,7 +67,11 @@ export function ChatPane({ session, onStop, onError, onSaveAsDocument, untracked
         <button aria-label="Pausar conversación" title="Pausar (la conversación queda guardada y se puede reanudar)" onClick={onStop}><X size={13} /></button>
       </div>
     </div>
-    <div className="chat-scroll" ref={scroller} aria-live="polite">
+    <div className="chat-scroll" ref={scroller} aria-live="polite" onScroll={e => {
+      const el = e.currentTarget;
+      following.current = isNearConversationEnd(el.scrollTop, el.clientHeight, el.scrollHeight);
+      if (following.current) setUnread(false);
+    }}>
       {state.messages.length === 0 && <p className="chat-empty">Conversación nueva con {session.roleName}. Trabaja en la carpeta de este trabajo y lee el contexto de marca, el brief y las decisiones registradas.</p>}
       {state.messages.map(message => <MessageView key={message.id} message={message} roleName={session.roleName} onSaveAsDocument={onSaveAsDocument} untracked={untracked} onAdoptFile={onAdoptFile} />)}
       {state.permissions.map(permission => <PermissionCard key={permission.id} chatId={session.id} runtime={session.provider} request={permission} onError={onError} />)}
@@ -54,9 +79,10 @@ export function ChatPane({ session, onStop, onError, onSaveAsDocument, untracked
       {busy && <div className="chat-status"><LoaderCircle className="spin" size={13} />{state.status === 'retry' ? state.statusDetail || 'Reintentando…' : 'El agente está trabajando…'}</div>}
       {state.error && <div className="chat-error" role="alert"><CircleAlert size={14} /><span>{state.error}</span><button aria-label="Cerrar error" onClick={() => chatStore.clearError(session.id)}><X size={13} /></button></div>}
     </div>
+    {unread && <button className="conversation-new-messages" onClick={showLatest}>Hay mensajes nuevos · Ir al final</button>}
     <form className="prompt-form" onSubmit={e => { e.preventDefault(); void send(); }}>
       <textarea aria-label="Mensaje al agente" placeholder={state.closed ? 'Conversación en pausa' : '¿Qué trabajamos ahora?'} value={draft} disabled={state.closed} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} />
-      <div><small>{state.closed ? 'Conversación en pausa' : busy ? 'Podés escribir; se envía cuando el agente termine' : 'Enter envía · Shift+Enter salto de línea'}</small><button className="primary icon-button" disabled={!draft.trim() || sending || busy || state.closed} aria-label="Enviar mensaje"><ArrowUpRight size={18} /></button></div>
+      <div><small>{state.closed ? 'Conversación en pausa' : busy ? 'Podés preparar tu mensaje y enviarlo cuando termine' : 'Enter envía · Shift+Enter salto de línea'}</small><button className="primary icon-button" disabled={!draft.trim() || sending || busy || state.closed} aria-label="Enviar mensaje"><ArrowUpRight size={18} /></button></div>
     </form>
   </div>;
 }

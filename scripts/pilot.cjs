@@ -63,6 +63,8 @@ app.whenReady().then(async () => {
       const click = async (text, selector) => { const b = byText(text, selector); if (!b) throw new Error('No encuentro: ' + text); if (b.disabled) throw new Error('Deshabilitado: ' + text); b.click(); await pause(400); };
       const clickWhenEnabled = async (text, selector) => { for (let i = 0; i < 240; i++) { const b = byText(text, selector); if (b && !b.disabled) { b.click(); await pause(400); return; } await pause(250); } throw new Error('Nunca se habilitó: ' + text); };
       const type = async (selector, value) => { const el = document.querySelector(selector); if (!el) throw new Error('No encuentro campo: ' + selector); const proto = Object.getPrototypeOf(el); Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); await pause(250); };
+      const mode = async (label) => { const b = [...document.querySelectorAll('.workspace-modes button')].find(b => b.textContent.trim() === label); if (!b) throw new Error('Falta el modo: ' + label); b.click(); await pause(500); };
+      const openTeam = async () => { const b = document.querySelector('[aria-controls="team-management"]'); if (b && document.querySelector('#team-management').hidden) { b.click(); await pause(300); } };
       const screen = () => document.body.innerText.split(String.fromCharCode(10)).map(l => l.trim()).filter(Boolean).join(' | ');
     `;
     const act = (body) => run(`(async () => {${helpers}${body}})()`);
@@ -86,6 +88,7 @@ app.whenReady().then(async () => {
       await click('Nuevo trabajo');
       await type('#new-name', 'Lanzamiento en redes');
       await click('Crear trabajo');
+      await mode('Revisar');
       await click('Editar');
       await type('[aria-label="Editar documento en Markdown"]', ${JSON.stringify(BRIEF)});
       await click('Guardar');
@@ -98,6 +101,7 @@ app.whenReady().then(async () => {
     console.log('3. Sumar un Strategist sobre Claude Code y pedirle la estrategia');
     await backend.service.setPrimaryAgent({ runtime: 'claude', model: null, accountId: 'system' });
     log.member = await act(`
+      await mode('Conversar');
       // Con el equipo vacío el selector ya está abierto; con miembros hay que pedirlo.
       if (byText('Sumar un rol')) await click('Sumar un rol');
       await click('Strategist', '.role-card');
@@ -110,6 +114,7 @@ app.whenReady().then(async () => {
     // permisos siguen apareciendo después.
     console.log('   concediendo la carpeta desde el panel del equipo');
     log.folderGrant = await act(`
+      await openTeam();
       const row = document.querySelector('.folder-trust');
       if (!row) return { ok: false, why: 'no apareció la fila de permiso de carpeta' };
       row.open = true;
@@ -201,6 +206,7 @@ app.whenReady().then(async () => {
     // ------------------------------------------- 5. adoptar, versionar, exportar
     console.log('4. Adoptar lo que dejó, versionar y exportar');
     log.adopted = await act(`
+      await mode('Revisar');
       const add = byText('Agregar ');
       if (!add) return { adopted: false, why: 'no había nada para adoptar' };
       add.click();
@@ -210,6 +216,7 @@ app.whenReady().then(async () => {
     await shot('adoptado');
 
     log.versions = await act(`
+      await mode('Revisar');
       await click('Conservar versión');
       await pause(600);
       await click('Versiones');
@@ -225,6 +232,7 @@ app.whenReady().then(async () => {
     // --------------------------------------------- 6. calendario desde estrategia
     console.log('5. Crear el calendario derivado de la estrategia');
     log.calendar = await act(`
+      await mode('Revisar');
       await click('Documento', '.doc-add');
       await pause(600);
       await click('Calendario', '.kind-card');
@@ -256,6 +264,7 @@ app.whenReady().then(async () => {
     // ----------------------------------------------------- 7. decisión registrada
     console.log('6. Registrar una decisión');
     log.decision = await act(`
+      await mode('Revisar');
       await click('Decisiones');
       await pause(500);
       await type('[aria-label="Nueva decisión"]', 'Publicamos 3 veces por semana en Instagram y una newsletter quincenal: es lo que una persona sola sostiene sin bajar la calidad.');
@@ -271,6 +280,7 @@ app.whenReady().then(async () => {
     const strategyFile = (await backend.service.listDocuments(work.id)).find(d => d.kind === 'strategy');
     if (strategyFile) {
       log.conflict = await act(`
+        await mode('Revisar');
         await click('Documentos');
         await pause(500);
         await click('Estrategia', '.doc-tabs button');
@@ -300,6 +310,7 @@ app.whenReady().then(async () => {
     // ------------------------------------------------------------- 9. exportar
     console.log('8. Exportar el entregable');
     log.exported = await act(`
+      await mode('Revisar');
       const download = document.querySelector('[title="Exportar este documento"]');
       if (!download) return { ok: false };
       download.click();

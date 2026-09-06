@@ -77,6 +77,10 @@ app.whenReady().then(async () => {
       part: { type: 'tool', id: 'tool_edit_probe', tool: 'Write', status: 'running', title: targetFile, input: '', output: '', error: '' },
     });
     await pause(600);
+    // Documents live behind "Revisar" now: the work opens on the conversation.
+    // innerText reads empty on the hidden pane, so switch before reading it.
+    await win.webContents.executeJavaScript(`(() => { const b = [...document.querySelectorAll('.workspace-modes button')].find(b => b.textContent.trim() === 'Revisar'); if (!b) throw new Error('Falta el botón Revisar'); b.click(); })()`);
+    await pause(500);
     result.editing = await win.webContents.executeJavaScript(`(() => ({
       tabDot: Boolean(document.querySelector('.doc-editing')),
       dotRole: document.querySelector('.doc-editing')?.getAttribute('data-role') ?? null,
@@ -95,7 +99,9 @@ app.whenReady().then(async () => {
 
     // The conversation must be the only thing that scrolls, and the composer
     // must be fully visible: it used to be cut off by a second scroll.
-    // Measure with a live conversation on screen, not a paused member.
+    // Measure with a live conversation on screen, not a paused member, and in
+    // the split layout: that is the narrow case where the composer used to be
+    // cut off. Conversation focus gives the panel far more room.
     await win.webContents.executeJavaScript("[...document.querySelectorAll('.team-member-main')][0].click()");
     await pause(700);
     result.layout = await win.webContents.executeJavaScript(`(() => {
