@@ -348,3 +348,14 @@ html,body,#root{height:100%;overflow:hidden}
 .mcp-form .context-editor.short{min-height:70px}
 .tools-view code{font:11.5px Consolas,monospace;background:#f0ebe2;padding:2px 5px;border-radius:3px}
 .tools-view .footnote{display:flex;gap:7px;align-items:flex-start}
+
+/* --- Diálogos: el encabezado y la X no scrollean --------------------------- */
+.modal{display:flex;flex-direction:column;overflow:hidden;padding:0}
+.modal.roomy{width:620px}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:30px 34px 14px;border-bottom:1px solid var(--line);flex-shrink:0}
+.modal-head h2{margin:0}
+.modal-head .document-kicker{margin-bottom:10px}
+.modal-body{overflow-y:auto;padding:22px 34px 32px;min-height:0}
+.modal-close{position:static;padding:6px;flex-shrink:0}
+.modal-body>.intro{margin-top:0}
+@media(max-width:850px){.modal-head{padding:22px 20px 12px}.modal-body{padding:18px 20px 24px}.modal.roomy{width:auto}}

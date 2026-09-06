@@ -105,6 +105,39 @@ app.whenReady().then(async () => {
       return { baseBanner: (document.querySelector('.doc-banner.base')?.innerText ?? '').replace(/\\s+/g, ' ').trim() };
     })()`);
 
+    // 6c. The new-document dialog: the close button must stay visible even
+    // when the body scrolls, and it must fit without scrolling at 1280x800.
+    result.dialog = await win.webContents.executeJavaScript(`(async () => {
+      const pause = (ms) => new Promise(r => setTimeout(r, ms));
+      const addBtn = document.querySelector('.doc-add'); if (!addBtn) return { opened: false, why: 'no add button' }; if (addBtn.disabled) return { opened: false, why: 'add disabled' }; addBtn.click();
+      await pause(1400);
+      const modal = document.querySelector('.modal');
+      const body = document.querySelector('.modal-body');
+      const close = document.querySelector('.modal-close');
+      if (!modal || !body || !close) return { opened: false, why: 'modal=' + Boolean(modal) + ' body=' + Boolean(body) + ' close=' + Boolean(close) + ' dialogs=' + document.querySelectorAll('[role=dialog]').length };
+      const closeTopBefore = close.getBoundingClientRect().top;
+      body.scrollTop = 99999;
+      await pause(250);
+      const rect = close.getBoundingClientRect();
+      const result = {
+        opened: true,
+        width: Math.round(modal.getBoundingClientRect().width),
+        closeStaysPut: Math.abs(rect.top - closeTopBefore) < 1,
+        closeVisible: rect.top >= 0 && rect.bottom <= window.innerHeight,
+        bodyScrolls: body.scrollHeight > body.clientHeight + 1,
+        modalScrolls: modal.scrollHeight > modal.clientHeight + 1,
+      };
+      return result;
+    })()`);
+
+    win.setSize(1280, 800);
+    await pause(500);
+    const dialogShot = path.join(__dirname, '..', 'assets', 'latte-dialog-1280x800.png');
+    fs.writeFileSync(dialogShot, (await win.webContents.capturePage()).toPNG());
+    result.shots.push(path.basename(dialogShot));
+    await win.webContents.executeJavaScript("[...document.querySelectorAll('.modal-close')].pop().click()");
+    await pause(400);
+
     // 7. Export writes the selected document, not the work.
     await backend.service.exportDocument(calendar.id);
     result.exported = fs.readFileSync(path.join(root, 'export.md'), 'utf8').slice(0, 40);
@@ -121,6 +154,7 @@ app.whenReady().then(async () => {
       && result.calendarBase.base && result.calendarBase.pinned
       && result.baseOutdated
       && result.step6.baseBanner.includes('base')
+      && result.dialog.opened && result.dialog.closeStaysPut && result.dialog.closeVisible && result.dialog.modalScrolls === false && result.dialog.width >= 560
       && result.exported.startsWith('#')
       && errors.length === 0;
     if (!ok) process.exitCode = 1;

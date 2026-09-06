@@ -270,9 +270,14 @@ export function DocumentsView(props: DocumentsViewProps) {
 
     {showVersions && <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowVersions(false); }}>
       <section role="dialog" aria-modal="true" aria-labelledby="versions-title" className="modal wide">
-        <button className="modal-close" aria-label="Cerrar" onClick={() => setShowVersions(false)}><X size={20} /></button>
-        <div className="document-kicker">{kindLabel}</div>
-        <h2 id="versions-title">La historia de este documento.</h2>
+        <div className="modal-head">
+          <div>
+            <div className="document-kicker">{kindLabel}</div>
+            <h2 id="versions-title">La historia de este documento.</h2>
+          </div>
+          <button className="modal-close" aria-label="Cerrar" onClick={() => setShowVersions(false)}><X size={20} /></button>
+        </div>
+        <div className="modal-body">
         <p className="intro">Versiones inmutables. Una escritura externa se marca como tal: Latte no adivina quién la hizo.</p>
         <div className="revision-layout">
           <div className="revision-list">
@@ -285,6 +290,7 @@ export function DocumentsView(props: DocumentsViewProps) {
             <div><h4>VERSIÓN CONSERVADA</h4><pre>{pickedRevision.content}</pre></div>
             <div><h4>TEXTO ACTUAL</h4><pre>{editing?.content ?? ''}</pre></div>
           </div>}
+        </div>
         </div>
       </section>
     </div>}
@@ -304,10 +310,15 @@ export function NewDocumentDialog({ documents, busy, onCancel, onCreate }: {
   const suggestion = KIND_LABEL[kind];
   const canDerive = documents.filter(d => d.kind !== kind || d.id !== base);
   return <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget && !busy) onCancel(); }}>
-    <section role="dialog" aria-modal="true" aria-labelledby="new-doc-title" className="modal">
-      <button className="modal-close" aria-label="Cerrar" onClick={onCancel}><X size={20} /></button>
-      <div className="document-kicker">UN TRABAJO, VARIOS ENTREGABLES</div>
-      <h2 id="new-doc-title">Un documento nuevo.</h2>
+    <section role="dialog" aria-modal="true" aria-labelledby="new-doc-title" className="modal roomy">
+      <div className="modal-head">
+        <div>
+          <div className="document-kicker">UN TRABAJO, VARIOS ENTREGABLES</div>
+          <h2 id="new-doc-title">Un documento nuevo.</h2>
+        </div>
+        <button className="modal-close" aria-label="Cerrar" onClick={onCancel}><X size={20} /></button>
+      </div>
+      <div className="modal-body">
       <p className="intro">Cada documento tiene su archivo Markdown, sus versiones y su exportación. Ninguno es obligatorio.</p>
       <div className="kind-list" role="radiogroup" aria-label="Tipo de documento">
         {NEW_KINDS.map(k => <button key={k} role="radio" aria-checked={kind === k} className={'kind-card' + (kind === k ? ' selected' : '')} onClick={() => setKind(k)}>
@@ -325,6 +336,7 @@ export function NewDocumentDialog({ documents, busy, onCancel, onCreate }: {
         <p className="footnote">Latte guarda la versión exacta que tomó como base. Si esa base cambia después, este documento avisa que hay que revisarlo; no se regenera solo.</p>
       </>}
       <button className="primary" disabled={busy || !title.trim()} onClick={() => void onCreate(kind, title.trim(), base || null)}><Plus size={15} />Crear documento</button>
+      </div>
     </section>
   </div>;
 }
