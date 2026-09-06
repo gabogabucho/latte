@@ -18,6 +18,10 @@ let unregisterIpc: (() => void) | null = null;
 app.setName('Latte');
 
 if (!app.requestSingleInstanceLock()) {
+  // Only one Latte at a time: they would share the same data directory.
+  // Say so, or this looks like "the app simply did not open".
+  console.error('[latte] Ya hay una ventana de Latte abierta. Se trae al frente esa y esta instancia se cierra.');
+  console.error('[latte] Si no la ves, cerrá el proceso electron.exe desde el Administrador de tareas y volvé a intentar.');
   app.quit();
 } else {
   app.on('second-instance', () => {

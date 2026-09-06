@@ -23,11 +23,32 @@ const child = spawn(electronBinary, ['.'], {
   windowsHide: false,
 });
 
-const shutdown = async () => {
+const startedAt = Date.now();
+const shutdown = async (code = 0) => {
   await server.close();
-  process.exit(0);
+  process.exit(code);
 };
 
-child.on('exit', shutdown);
+// Electron failing to start is the one case that used to be invisible: Vite
+// stayed up, no window appeared and nothing was printed.
+child.on('error', async (error) => {
+  console.error('');
+  console.error(`[latte] No se pudo iniciar Electron: ${error.message}`);
+  console.error('[latte] Probá "npm ci" de nuevo; el binario de Electron se baja durante la instalación.');
+  console.error('');
+  await shutdown(1);
+});
+
+child.on('exit', async (code) => {
+  const quickExit = Date.now() - startedAt < 4000 && code !== 0;
+  if (quickExit) {
+    console.error('');
+    console.error(`[latte] Electron se cerró enseguida (código ${code}) y no se abrió ninguna ventana.`);
+    console.error('[latte] Causa más común: ya hay otra instancia de Latte abierta (solo se permite una).');
+    console.error('[latte] Cerrala y volvé a correr "npm run dev".');
+    console.error('');
+  }
+  await shutdown(quickExit ? 1 : 0);
+});
 process.on('SIGINT', () => { child.kill(); void shutdown(); });
 process.on('SIGTERM', () => { child.kill(); void shutdown(); });

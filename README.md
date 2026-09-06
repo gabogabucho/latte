@@ -38,6 +38,13 @@ genera un ejecutable distribuible. Los dos comandos están configurados pero **n
 fueron validados en esta entrega**: si `npm start` no encuentra `dist/`, te
 dice exactamente qué correr.
 
+### Si `npm run dev` levanta el servidor pero no abre la ventana
+
+Latte permite **una sola instancia**: las dos compartirían la misma carpeta de
+datos. Si ya hay una ventana abierta, la nueva se cierra y te lo dice en la
+consola. Cerrá la que está abierta y volvé a intentar. Si no la encontrás,
+terminá `electron.exe` desde el Administrador de tareas.
+
 ### Requisitos
 
 | Requisito | Detalle |
