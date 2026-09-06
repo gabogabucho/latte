@@ -92,7 +92,19 @@ export function App() {
   useEffect(() => { if (!work) { setTeam([]); return; } void loadTeam(work.id).catch(e => setError(displayError(e))); }, [work?.id]);
   useEffect(() => { if (!brand) return; const n = ++generation.current; setWork(null); setWorks([]); setDecisions([]); setDocuments([]); void api.listWorks(brand.id).then(list => { if (n !== generation.current) return; setWorks(list); if (list[0]) setWork(list[0]); }).catch(e => setError(displayError(e))); }, [brand?.id]);
   useEffect(() => { if (!work) { setDocuments([]); setDecisions([]); return; } let active = true; void Promise.all([api.listDocuments(work.id), api.listDecisions(work.id)]).then(([docs, d]) => { if (active) { setDocuments(docs); setDecisions(d); } }).catch(e => setError(displayError(e))); return () => { active = false; }; }, [work?.id]);
-  useEffect(() => { const warn = (e: BeforeUnloadEvent) => { if (dirty || contextDirty || Object.keys(sessions).length || Object.keys(chats).length) { e.preventDefault(); e.returnValue = ''; } }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn); }, [dirty, contextDirty, sessions, chats]);
+  // Only real unsaved edits are worth a confirmation. Open chats and terminals
+  // are not: closing the app is how you end them.
+  const unsaved = dirty || contextDirty;
+  useEffect(() => {
+    // Desktop: report the state and let the main process ask with a native
+    // dialog. A cancelled beforeunload shows nothing in Electron and would
+    // leave the close button silently doing nothing.
+    if (isDesktop) { api.reportUnsaved(unsaved); return; }
+    // Web preview: the browser does show its own confirmation, so use it.
+    const warn = (e: BeforeUnloadEvent) => { if (unsaved) { e.preventDefault(); e.returnValue = ''; } };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [unsaved]);
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 4500); return () => clearTimeout(timer); }, [notice]);
   useEffect(() => api.onAgentEvent(event => { if (event.type === 'exit') { setEndedSessions(previous => new Set(previous).add(event.sessionId)); setNotice('Una sesión finalizó. Podés actualizar su documento desde disco.'); } if (event.type === 'error') setError(event.data); }), []);
   useEffect(() => {

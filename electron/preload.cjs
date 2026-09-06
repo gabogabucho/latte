@@ -67,6 +67,7 @@ const METHODS = [
 
 const AGENT_EVENT_CHANNEL = 'latte:agent-event';
 const CHAT_EVENT_CHANNEL = 'latte:chat-event';
+const UNSAVED_CHANNEL = 'latte:unsaved';
 
 function unwrap(envelope) {
   if (envelope && envelope.ok === true) return envelope.value;
@@ -79,6 +80,10 @@ const api = {};
 for (const method of METHODS) {
   api[method] = (...args) => ipcRenderer.invoke(`latte:${method}`, ...args).then(unwrap);
 }
+
+// One-way: the renderer states whether there is unsaved work; the main process
+// decides what to do about it when the window is closed.
+api.reportUnsaved = (hasUnsavedWork) => ipcRenderer.send(UNSAVED_CHANNEL, Boolean(hasUnsavedWork));
 
 api.onAgentEvent = (callback) => {
   if (typeof callback !== 'function') throw new TypeError('onAgentEvent expects a function');

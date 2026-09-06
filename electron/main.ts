@@ -3,9 +3,12 @@ import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
 import type { AgentEvent, ChatEvent } from '../shared/contracts';
 import { createBackend, type Backend } from './bootstrap';
 import { AGENT_EVENT_CHANNEL, CHAT_EVENT_CHANNEL } from './ipc/channels';
+import { attachCloseGuard } from './windowClose';
 import { registerIpc } from './ipc/register';
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL ?? null;
+/** Last state reported by the renderer; only affects the close confirmation. */
+let hasUnsavedWork = false;
 const PRELOAD = path.join(__dirname, 'preload.cjs');
 
 let mainWindow: BrowserWindow | null = null;
@@ -54,6 +57,12 @@ async function start(): Promise<void> {
     isTrustedSender: (sender) => mainWindow !== null && !mainWindow.isDestroyed() && sender.id === mainWindow.webContents.id,
     log: (message) => console.error(message),
   });
+  // One-way state from the renderer. Same sender check as every other channel;
+  // a value from anywhere else is ignored rather than trusted.
+  ipcMain.on('latte:unsaved', (event, value: unknown) => {
+    if (mainWindow === null || mainWindow.isDestroyed() || event.sender.id !== mainWindow.webContents.id) return;
+    hasUnsavedWork = value === true;
+  });
   createWindow();
   armSmokeExit();
 
@@ -87,6 +96,20 @@ function createWindow(): void {
   win.once('ready-to-show', () => win.show());
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
+  });
+
+  attachCloseGuard(win, {
+    hasUnsavedWork: () => hasUnsavedWork,
+    confirm: () => dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      buttons: ['Cerrar igual', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Cambios sin guardar',
+      message: 'Tenés cambios sin guardar en un documento.',
+      detail: 'Si cerrás ahora, se pierden. Las conversaciones abiertas y las versiones ya guardadas no se ven afectadas.',
+      noLink: true,
+    }) === 0,
   });
 
   // The renderer never opens windows or navigates away. External http(s)

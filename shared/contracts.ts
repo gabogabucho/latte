@@ -186,6 +186,12 @@ export interface LatteAPI {
   replyPermission(chatId: string, requestId: string, reply: PermissionReply): Promise<void>;
   replyQuestion(chatId: string, requestId: string, answers: string[][] | null): Promise<void>;
   onChatEvent(callback: (event: ChatEvent) => void): () => void;
+  /**
+   * Tells the main process whether closing now would lose work. Electron does
+   * not show a dialog for a cancelled `beforeunload`, so the window would just
+   * refuse to close; the confirmation is a native dialog instead.
+   */
+  reportUnsaved(hasUnsavedWork: boolean): void;
   // Providers
   listProviders(): Promise<ProviderInfo[]>;
   /** Stores an API key in the runtime's own credential store (Latte never persists it). */

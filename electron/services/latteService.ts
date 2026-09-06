@@ -50,7 +50,7 @@ import { documentFileName, fingerprintOf, type DocumentOnDisk, type WorkspaceFil
 import { LIMITS, requireId, requireInt, requireLabel, requireRequestId, requireText } from './validation';
 
 /** Everything the renderer can call, minus the event subscriptions (wired in the preload). */
-export type BackendApi = Omit<LatteAPI, 'onAgentEvent' | 'onChatEvent'>;
+export type BackendApi = Omit<LatteAPI, 'onAgentEvent' | 'onChatEvent' | 'reportUnsaved'>;
 
 export interface LatteServiceDeps {
   repo: LatteRepository;
