@@ -38,6 +38,8 @@ export interface DocumentsViewProps {
   onError: (text: string) => void;
   onCreate: () => void;
   onUseFolder: () => void;
+  /** Role currently writing to each file, by file name. */
+  editors: Record<string, { roleId: string; roleName: string }>;
   busy: boolean;
 }
 
@@ -205,6 +207,7 @@ export function DocumentsView(props: DocumentsViewProps) {
       <div className="doc-tab-list" role="tablist" aria-label="Documentos del trabajo">
       {documents.map(doc => <button key={doc.id} role="tab" aria-selected={doc.id === selected?.id} className={doc.id === selected?.id ? 'selected' : ''} onClick={() => props.onSelect(doc.id)}>
         <span className="doc-kind">{KIND_LABEL[doc.kind]}</span>{doc.title.toLowerCase() === KIND_LABEL[doc.kind].toLowerCase() ? null : <span className="doc-tab-title">{doc.title}</span>}
+        {props.editors[doc.fileName] && <i className="doc-editing" data-role={props.editors[doc.fileName].roleId} title={props.editors[doc.fileName].roleName + ' está escribiendo en este documento'} />}
       </button>)}
       </div>
       <button className="doc-add" onClick={props.onCreate} disabled={props.busy}><Plus size={14} />Documento</button>
@@ -232,6 +235,11 @@ export function DocumentsView(props: DocumentsViewProps) {
         <button className="primary" disabled={saving} onClick={() => void keepMine()}>Guardar la mía</button>
         <button disabled={saving} onClick={() => void keepDisk()}>Quedarme con la del archivo</button>
       </div>
+    </div>}
+
+    {selected && props.editors[selected.fileName] && <div className="doc-banner editing" role="status" data-role={props.editors[selected.fileName].roleId}>
+      <i className="doc-editing" data-role={props.editors[selected.fileName].roleId} />
+      <span><strong>{props.editors[selected.fileName].roleName}</strong> está escribiendo en este documento. Esperá a que termine antes de guardar, o tu versión va a entrar en conflicto.</span>
     </div>}
 
     {!conflict && external && <div className="doc-banner" role="status">

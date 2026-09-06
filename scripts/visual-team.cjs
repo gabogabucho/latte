@@ -12,6 +12,8 @@ const { registerIpc } = require('../electron/ipc/register.ts');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'latte-visual-team-'));
 app.setPath('userData', path.join(root, 'electron-profile'));
 app.commandLine.appendSwitch('disable-gpu');
+const pause = (ms) => new Promise(r => setTimeout(r, ms));
+
 app.whenReady().then(async () => {
   let backend, win, unregister;
   const errors = [];
@@ -60,11 +62,44 @@ app.whenReady().then(async () => {
       const afterPause = body();
       return { roles: roles.map(r => r.id), rolesOnScreen, strategistActive: afterFirst.includes('Strategist') && afterFirst.includes('Activo'), team: team.map(m => [m.roleName, m.runtime, m.status]), pausedShown: afterPause.includes('En pausa'), resumeShown: afterPause.includes('Reanudar conversación') };
     })()`);
+    // A member writing to a document is shown on its tab, with the role colour.
+    // The event is the same one the runtime emits while its edit tool runs.
+    const brandForEdit = (await backend.service.listBrands())[0];
+    const workForEdit = (await backend.service.listWorks(brandForEdit.id))[0];
+    const members = await backend.service.listTeam(workForEdit.id);
+    const documents = await backend.service.listDocuments(workForEdit.id);
+    const writer = members[0];
+    const targetFile = documents[0].fileName;
+    win.webContents.send('latte:chat-event', {
+      chatId: writer.id,
+      type: 'part',
+      messageId: 'msg_edit_probe',
+      part: { type: 'tool', id: 'tool_edit_probe', tool: 'Write', status: 'running', title: targetFile, input: '', output: '', error: '' },
+    });
+    await pause(600);
+    result.editing = await win.webContents.executeJavaScript(`(() => ({
+      tabDot: Boolean(document.querySelector('.doc-editing')),
+      dotRole: document.querySelector('.doc-editing')?.getAttribute('data-role') ?? null,
+      banner: (document.querySelector('.doc-banner.editing')?.innerText ?? '').split(String.fromCharCode(10)).join(' ').trim(),
+    }))()`);
+    // When the tool finishes, the badge goes away: nothing is left flashing.
+    win.webContents.send('latte:chat-event', {
+      chatId: writer.id,
+      type: 'part',
+      messageId: 'msg_edit_probe',
+      part: { type: 'tool', id: 'tool_edit_probe', tool: 'Write', status: 'completed', title: targetFile, input: '', output: 'ok', error: '' },
+    });
+    await pause(600);
+    result.editing.clearedAfterFinish = await win.webContents.executeJavaScript("!document.querySelector('.doc-editing')");
+    result.editing.expectedRole = writer.roleId;
+
     await new Promise(resolve => setTimeout(resolve, 400));
     fs.writeFileSync(path.join(__dirname, '../assets/latte-team-desktop.png'), (await win.webContents.capturePage()).toPNG());
     result.errors = errors;
     console.log(JSON.stringify(result));
-    if (!result.strategistActive || result.team.length !== 2 || !result.pausedShown || errors.length) process.exitCode = 1;
+    const e = result.editing ?? {};
+    const editingOk = e.tabDot === true && e.dotRole === e.expectedRole && e.banner.includes('está escribiendo') && e.clearedAfterFinish === true;
+    if (!result.strategistActive || result.team.length !== 2 || !result.pausedShown || !editingOk || errors.length) process.exitCode = 1;
   } catch (error) { console.error(error); process.exitCode = 1; }
   unregister?.(); backend?.service.shutdown(); win?.destroy(); app.exit(process.exitCode || 0);
 });
