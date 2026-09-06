@@ -38,6 +38,9 @@ export interface DocumentsViewProps {
   onError: (text: string) => void;
   onCreate: () => void;
   onUseFolder: () => void;
+  /** The empty screen needs a way in: create the first brand, or a work for the one there is. */
+  hasBrand: boolean;
+  onStart: () => void;
   /** Markdown in the folder that Latte is not tracking yet. */
   untracked: { fileName: string; title: string }[];
   onTrack: (fileName: string) => Promise<void>;
@@ -195,7 +198,12 @@ export function DocumentsView(props: DocumentsViewProps) {
     try { setRevisions(await api.listDocumentRevisions(selected.id)); } catch (e) { props.onError(displayError(e)); }
   };
 
-  if (!work) return <div className="empty-state"><FileText size={38} /><h1>Tu próxima idea,<br />con lugar para crecer.</h1><p>Creá una marca y un trabajo. Los documentos, las versiones y las decisiones se quedan con vos.</p></div>;
+  if (!work) return <div className="empty-state">
+    <FileText size={38} />
+    <h1>Tu próxima idea,<br />con lugar para crecer.</h1>
+    <p>Creá una marca y un trabajo. Los documentos, las versiones y las decisiones se quedan con vos.</p>
+    <button className="primary" onClick={props.onStart}><Plus size={16} />{props.hasBrand ? 'Crear trabajo' : 'Crear mi primera marca'}</button>
+  </div>;
 
   const kindLabel = selected ? KIND_LABEL[selected.kind] : '';
   const linked = work?.folder ?? null;

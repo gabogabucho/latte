@@ -30,6 +30,8 @@ export interface TeamPanelProps {
   onProviders: () => void;
   onRecheck: () => void;
   onError: (message: string) => void;
+  /** Turns an answer into a document of the work. */
+  onSaveAsDocument?: (text: string) => void;
 }
 
 const RUNTIME_SHORT: Record<ChatRuntime, string> = { opencode: 'OpenCode', claude: 'Claude', codex: 'Codex' };
@@ -53,7 +55,7 @@ export function TeamPanel(props: TeamPanelProps) {
     </div>}
     {showPicker && <RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} busy={busy} isDesktop={isDesktop} canCancel={team.length > 0} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} />}
     {!work && <div className="agent-idle"><div className="agent-symbol"><MessageSquare size={27} /></div><h3>Un equipo listo<br />para trabajar.</h3><p className="footnote">Elegí o creá un trabajo para armar su equipo.</p></div>}
-    {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} /> : <ResumeCard member={selected} busy={busy} onOpen={() => props.onOpen(selected.id)} onRemove={() => props.onRemove(selected.id)} />)}
+    {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} onSaveAsDocument={props.onSaveAsDocument} /> : <ResumeCard member={selected} busy={busy} onOpen={() => props.onOpen(selected.id)} onRemove={() => props.onRemove(selected.id)} />)}
     {!showPicker && !selected && team.length > 0 && <p className="chat-empty">Elegí un miembro del equipo para ver su conversación.</p>}
   </div>;
 }

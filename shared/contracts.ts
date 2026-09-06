@@ -214,6 +214,11 @@ export interface LatteAPI {
   listUntrackedFiles(workId: string): Promise<UntrackedFile[]>;
   /** Adopts an existing file as a tracked document: versions, export, conflict check. */
   trackFile(workId: string, fileName: string): Promise<WorkDocument>;
+  /**
+   * Saves text from a conversation as a document of this work. The answer stops
+   * being trapped in the chat and gains versions, export and conflict checks.
+   */
+  saveAsDocument(workId: string, kind: DocumentKind, title: string, content: string): Promise<WorkDocument>;
   /** Re-points a derived document at the current version of its base, after the human reviewed the change. */
   acknowledgeBase(documentId: string): Promise<WorkDocument>;
   /**

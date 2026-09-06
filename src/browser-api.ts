@@ -37,7 +37,7 @@ export const browserAPI: LatteAPI = {
   listDocumentRevisions: async documentId => { const w = read().works.find(w => previewDocId(w.id) === documentId); return w ? read().revisions.filter(r => r.workId === w.id).reverse() : []; },
   exportDocument: async documentId => { const w = read().works.find(w => previewDocId(w.id) === documentId)!; return browserAPI.exportWork(w.id); },
   keepDraftAsVersion: unavailable,
-  listUntrackedFiles: async () => [], trackFile: unavailable,
+  listUntrackedFiles: async () => [], trackFile: unavailable, saveAsDocument: unavailable,
   acknowledgeBase: unavailable,
   useFolder: unavailable,
   snapshot: async workId => change(s => { const r: Revision = { id: id(), workId, documentId: previewDocId(workId), source: 'human', content: s.works.find(w => w.id === workId)!.brief, createdAt: now() }; s.revisions.push(r); return r; }),

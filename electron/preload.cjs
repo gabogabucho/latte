@@ -27,6 +27,7 @@ const METHODS = [
   'exportDocument',
   'listUntrackedFiles',
   'trackFile',
+  'saveAsDocument',
   'acknowledgeBase',
   'useFolder',
   'listDecisions',

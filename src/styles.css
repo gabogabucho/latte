@@ -381,3 +381,20 @@ html,body,#root{height:100%;overflow:hidden}
 .active-context>summary>span{letter-spacing:0;font-size:10px}
 .doc-banner.untracked{background:#eef1e8;color:#4c6146;border-bottom-color:#d6dfc9}
 .doc-banner.untracked strong{color:#302c26}
+
+/* --- Nombres largos de herramienta no deben romper el chat ------------------ */
+/* Un tool de MCP se llama `mcp__plugin_engram_engram__mem_search`: sin esto
+   estira la tarjeta, aplasta el texto en una columna y aparece scroll lateral. */
+.chat-scroll{overflow-x:hidden}
+.chat-message,.chat-card,.chat-bubble,.chat-markdown{min-width:0;max-width:100%}
+.chat-card.permission{display:block}
+.chat-card-title{flex-wrap:wrap;word-break:break-word}
+.chat-card-title strong{overflow-wrap:anywhere;min-width:0}
+.chat-card ul,.chat-card li{min-width:0;overflow-wrap:anywhere}
+.chat-card code{overflow-wrap:anywhere}
+.chat-tool-name,.chat-tool-title{overflow-wrap:anywhere;min-width:0}
+.chat-markdown pre,.chat-markdown code{overflow-wrap:anywhere;white-space:pre-wrap}
+.chat-markdown table{display:block;max-width:100%;overflow-x:auto}
+.save-as-document{margin-left:auto;border:0;font-size:10px;padding:3px 7px;color:var(--muted);letter-spacing:0;text-transform:none;gap:5px}
+.save-as-document:hover:not(:disabled){background:#eee8de;color:#302c26}
+.chat-role{align-items:center}

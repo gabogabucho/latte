@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUpRight, Check, ChevronRight, CircleAlert, LoaderCircle, ShieldQuestion, Square, Wrench, X } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronRight, CircleAlert, FilePlus, LoaderCircle, ShieldQuestion, Square, Wrench, X } from 'lucide-react';
 import type { ChatMessage, ChatPart, ChatPermission, ChatQuestion, ChatSession, ChatToolStatus } from '../shared/contracts';
 import { api, chatStore } from './browser-api';
 import { useChatState } from './chat-store';
+import { friendlyTool } from './tool-names';
 
 const displayError = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export function ChatPane({ session, onStop, onError }: { session: ChatSession; onStop: () => void; onError: (error: string) => void }) {
+export function ChatPane({ session, onStop, onError, onSaveAsDocument }: { session: ChatSession; onStop: () => void; onError: (error: string) => void; onSaveAsDocument?: (text: string) => void }) {
   const state = useChatState(chatStore, session.id);
   const draft = state.draft;
   const setDraft = (text: string) => chatStore.setDraft(session.id, text);
@@ -47,7 +48,7 @@ export function ChatPane({ session, onStop, onError }: { session: ChatSession; o
     </div>
     <div className="chat-scroll" ref={scroller} aria-live="polite">
       {state.messages.length === 0 && <p className="chat-empty">Conversación nueva con {session.roleName}. Trabaja en la carpeta de este trabajo y lee el contexto de marca, el brief y las decisiones registradas.</p>}
-      {state.messages.map(message => <MessageView key={message.id} message={message} roleName={session.roleName} />)}
+      {state.messages.map(message => <MessageView key={message.id} message={message} roleName={session.roleName} onSaveAsDocument={onSaveAsDocument} />)}
       {state.permissions.map(permission => <PermissionCard key={permission.id} chatId={session.id} request={permission} onError={onError} />)}
       {state.questions.map(question => <QuestionCard key={question.id} chatId={session.id} request={question} onError={onError} />)}
       {busy && <div className="chat-status"><LoaderCircle className="spin" size={13} />{state.status === 'retry' ? state.statusDetail || 'Reintentando…' : 'El agente está trabajando…'}</div>}
@@ -60,14 +61,19 @@ export function ChatPane({ session, onStop, onError }: { session: ChatSession; o
   </div>;
 }
 
-function MessageView({ message, roleName }: { message: ChatMessage; roleName: string }) {
+function MessageView({ message, roleName, onSaveAsDocument }: { message: ChatMessage; roleName: string; onSaveAsDocument?: (text: string) => void }) {
   const visible = message.parts.filter(p => p.type !== 'text' || p.text.trim().length > 0);
   if (message.role === 'user') {
     const text = message.parts.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('\n');
     return <div className="chat-message user"><div className="chat-role">Vos</div><div className="chat-bubble">{text}</div></div>;
   }
+  // An answer worth keeping should not stay trapped in the conversation.
+  const text = message.parts.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('\n\n').trim();
+  const worthKeeping = message.completed && !message.error && text.length > 400;
   return <div className="chat-message assistant">
-    <div className="chat-role">{roleName}{!message.completed && !message.error ? <LoaderCircle className="spin" size={11} /> : null}</div>
+    <div className="chat-role">{roleName}{!message.completed && !message.error ? <LoaderCircle className="spin" size={11} /> : null}
+      {worthKeeping && onSaveAsDocument && <button className="save-as-document" title="Guardar esta respuesta como un documento del trabajo" onClick={() => onSaveAsDocument(text)}><FilePlus size={12} />Guardar como documento</button>}
+    </div>
     {visible.map(part => <PartView key={part.id} part={part} />)}
     {message.error && <div className="chat-error"><CircleAlert size={14} /><span>{message.error}</span></div>}
   </div>;
@@ -100,7 +106,7 @@ function PermissionCard({ chatId, request, onError }: { chatId: string; request:
     api.replyPermission(chatId, request.id, value).catch(e => onError(displayError(e))).finally(() => setBusy(false));
   };
   return <div className="chat-card permission" role="group" aria-label="Solicitud de permiso">
-    <div className="chat-card-title"><ShieldQuestion size={15} />El agente pide permiso: <strong>{request.permission}</strong></div>
+    <div className="chat-card-title"><ShieldQuestion size={15} />El agente pide permiso<strong title={request.permission}>{friendlyTool(request.permission)}</strong></div>
     {request.title && <p>{request.title}</p>}
     {request.patterns.length > 0 && <ul>{request.patterns.map(p => <li key={p}><code>{p}</code></li>)}</ul>}
     <div className="chat-card-actions">

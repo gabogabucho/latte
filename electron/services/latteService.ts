@@ -378,6 +378,40 @@ export class LatteService implements BackendApi {
     return this.describeDocument(record);
   }
 
+  /**
+   * Turns an answer that lives in a conversation into a document of the work.
+   * A good answer is worth as much as a file, but only a file has versions,
+   * export and conflict checking, so this is how one becomes the other.
+   */
+  async saveAsDocument(workId: string, kind: DocumentKind, title: string, content: string): Promise<WorkDocument> {
+    const id = requireId(workId, 'workId');
+    if (!DOCUMENT_KINDS.includes(kind)) throw new TypeError('Unknown document kind');
+    const cleanTitle = requireLabel(title, 'Document title', LIMITS.title);
+    const clean = requireText(content, 'Document', LIMITS.document);
+    const work = this.syncFromDisk(this.deps.repo.getWork(id));
+    const fileName = documentFileName(kind, this.deps.repo.usedFileNames(work.id));
+    const now = this.clock();
+    this.deps.files.ensureWork(work.brandId, work.id, work.brief);
+    this.deps.files.writeDocument(work.brandId, work.id, clean, fileName);
+    const record: DocumentRecord = {
+      id: newId('doc'),
+      workId: work.id,
+      kind,
+      title: cleanTitle,
+      fileName,
+      status: 'draft',
+      baseDocumentId: null,
+      baseRevisionId: null,
+      baseFingerprint: null,
+      lastFingerprint: fingerprintOf(clean),
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.deps.repo.insertDocument(record);
+    this.refreshInstructions(this.deps.repo.getBrand(work.brandId), this.deps.repo.getWork(work.id));
+    return this.describeDocument(record);
+  }
+
   /** After the human reviewed the change, the derived document points at the base's current version. */
   async acknowledgeBase(documentId: string): Promise<WorkDocument> {
     const record = this.deps.repo.getDocument(requireId(documentId, 'documentId'));
