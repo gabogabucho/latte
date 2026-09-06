@@ -4,6 +4,7 @@ import { AccountStore } from './agents/accounts';
 import { ClaudeChatAdapter } from './agents/claude/claudeAdapter';
 import { CodexChatAdapter } from './agents/codex/codexAdapter';
 import { AgentHub } from './agents/hub';
+import { McpCatalog } from './agents/mcp';
 import { RoleCatalog } from './agents/roles';
 import { TranscriptStore } from './agents/transcripts';
 import { LattePaths } from './core/paths';
@@ -124,6 +125,8 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   const roles = new RoleCatalog(pack);
   const hub: AgentHub = new AgentHub({ opencode: chat, claude, codex, accounts, repo, detector, terminal, runner, roles, transcripts, promptDir: path.join(paths.root, 'prompts'), env });
 
+  const mcp = new McpCatalog({ runner, detector, accountEnv: (runtime, accountId) => accounts.envFor(runtime, accountId), env });
+
   const engram = new EngramClient({
     runner,
     locate: () => locateExecutable(runner, 'engram', platform, env),
@@ -137,6 +140,7 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
     chat,
     hub,
     engram,
+    mcp,
     pack,
     engineReason: reason,
     chooseExportPath: options.chooseExportPath,

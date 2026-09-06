@@ -75,6 +75,26 @@ app.whenReady().then(async () => {
       return { dataDir: dd[0] ?? '', engine: dd[1] ?? '', pack: dd[2] ?? '' };
     })()`);
 
+    // 2b. The MCP section lists what each runtime really has configured.
+    result.tools = await win.webContents.executeJavaScript(`(async () => {
+      const pause = (ms) => new Promise(r => setTimeout(r, ms));
+      [...document.querySelectorAll('.settings-nav button')].find(b => b.textContent.includes('Herramientas')).click();
+      await pause(600);
+      for (let i = 0; i < 60 && document.querySelectorAll('.runtime-card').length === 0; i++) await pause(500);
+      const cards = [...document.querySelectorAll('.tools-view .runtime-card')].map(c => c.querySelector('strong')?.textContent ?? '');
+      const servers = [...document.querySelectorAll('.mcp-card')].map(c => ({
+        name: c.querySelector('strong')?.textContent ?? '',
+        status: c.querySelector('.mcp-dot')?.className.replace('mcp-dot', '').trim() ?? '',
+      }));
+      const openText = [...document.querySelectorAll('.tools-view .footnote')].map(f => f.textContent).join(' ');
+      return { runtimeCards: cards, servers: servers.slice(0, 12), mentionsInteractive: openText.includes('opencode mcp add') };
+    })()`);
+    const toolsShot = path.join(__dirname, '..', 'assets', 'latte-tools-1280x800.png');
+    win.setSize(1280, 800);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    fs.writeFileSync(toolsShot, (await win.webContents.capturePage()).toPNG());
+    result.shots.push(path.basename(toolsShot));
+
     // 3. Back to the work: the draft, the work and the editor mode survive.
     Object.assign(result, await win.webContents.executeJavaScript(`(async () => {
       const pause = (ms) => new Promise(r => setTimeout(r, ms));

@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { ArrowLeft, HardDrive, Info, Plug } from 'lucide-react';
+import { ArrowLeft, HardDrive, Info, Plug, Wrench } from 'lucide-react';
 import type { AppInfo } from '../shared/contracts';
 import { api, isDesktop } from './browser-api';
 import { ProvidersView } from './ProvidersView';
+import { ToolsView } from './ToolsView';
 
-export type SettingsSection = 'agents' | 'workspace';
+export type SettingsSection = 'agents' | 'tools' | 'workspace';
 
 /**
  * Settings is its own screen, not a document view: no work breadcrumb, no
@@ -34,6 +35,7 @@ export function SettingsScreen({ controls, section, onSection, onClose, onChange
     </header>
     <nav className="settings-nav" aria-label="Secciones de ajustes">
       <button className={section === 'agents' ? 'selected' : ''} onClick={() => onSection('agents')}><Plug size={16} />Agentes y proveedores</button>
+      <button className={section === 'tools' ? 'selected' : ''} onClick={() => onSection('tools')}><Wrench size={16} />Herramientas (MCP)</button>
       <button className={section === 'workspace' ? 'selected' : ''} onClick={() => onSection('workspace')}><HardDrive size={16} />Espacio local</button>
     </nav>
     <main className="settings-main">
@@ -43,6 +45,7 @@ export function SettingsScreen({ controls, section, onSection, onClose, onChange
         <p className="settings-lead">Quién hace el trabajo cuando abrís una conversación. Latte no guarda claves ni tokens: cada runtime usa su propio almacén de credenciales.</p>
         <ProvidersView onChanged={onChanged} onNotice={onNotice} onError={onError} />
       </section>}
+      {section === 'tools' && <ToolsView onNotice={onNotice} onError={onError} />}
       {section === 'workspace' && <WorkspaceSection onError={onError} />}
     </main>
   </div>;

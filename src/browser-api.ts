@@ -57,6 +57,7 @@ export const browserAPI: LatteAPI = {
   windowControl: () => {},
   onWindowState: () => () => {},
   listProviders: async () => [], connectProviderKey: unavailable, disconnectProvider: unavailable, startProviderOAuth: unavailable, completeProviderOAuth: unavailable,
+  listMcpServers: async () => [], addMcpServer: unavailable, removeMcpServer: unavailable,
   getPrimaryAgent: async () => null, setPrimaryAgent: unavailable, listAgentRuntimes: async () => [], addAgentAccount: unavailable, removeAgentAccount: unavailable, startAccountLogin: unavailable, logoutAccount: unavailable,
   // The team roster is real only on desktop; the preview shows the roles so the concept is visible.
   listRoles: async () => [

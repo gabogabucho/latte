@@ -59,6 +59,35 @@ export interface FolderLinkResult {
   managedFiles: string[];
 }
 
+// --- MCP: the tools an agent can reach beyond this folder ----------------------
+
+/** A server as its runtime reports it. Latte neither implements MCP nor stores credentials. */
+export interface McpServer {
+  name: string;
+  transport: 'stdio' | 'http';
+  /** Command line or URL, as configured. */
+  target: string;
+  status: 'connected' | 'failed' | 'pending' | 'disabled' | 'configured';
+  detail: string;
+}
+export interface McpRuntimeTools {
+  runtime: ChatRuntime;
+  installed: boolean;
+  /** False when the runtime can only be read from here (OpenCode's add is interactive). */
+  canEdit: boolean;
+  detail: string;
+  servers: McpServer[];
+}
+export interface McpServerInput {
+  name: string;
+  transport: 'stdio' | 'http';
+  command: string;
+  args: string[];
+  url: string;
+  /** KEY=VALUE pairs handed to the runtime; Latte never persists them. */
+  env: string[];
+}
+
 /** Cheap poll answer used to notice external edits without a filesystem watcher. */
 export interface DocumentState { documentId: string; fingerprint: string; modifiedAt: string | null; baseOutdated: boolean }
 /**
@@ -240,6 +269,10 @@ export interface LatteAPI {
   getPrimaryAgent(): Promise<PrimaryAgent | null>;
   setPrimaryAgent(choice: { runtime: ChatRuntime; model: string | null; accountId: string | null }): Promise<PrimaryAgent>;
   listAgentRuntimes(): Promise<AgentRuntimeInfo[]>;
+  /** MCP servers each runtime has configured, with the real connection state it reports. */
+  listMcpServers(): Promise<McpRuntimeTools[]>;
+  addMcpServer(runtime: 'claude' | 'codex', input: McpServerInput): Promise<void>;
+  removeMcpServer(runtime: 'claude' | 'codex', name: string): Promise<void>;
   addAgentAccount(runtime: 'claude' | 'codex', label: string): Promise<AgentAccount>;
   removeAgentAccount(runtime: 'claude' | 'codex', accountId: string): Promise<void>;
   /** Starts the runtime's own login (browser OAuth). Claude runs inside an embedded terminal session; Codex returns a URL. */

@@ -45,6 +45,20 @@ datos. Si ya hay una ventana abierta, la nueva se cierra y te lo dice en la
 consola. Cerrá la que está abierta y volvé a intentar. Si no la encontrás,
 terminá `electron.exe` desde el Administrador de tareas.
 
+### Herramientas de los agentes (MCP)
+
+Sin MCP, un agente solo ve los archivos del trabajo. En **Ajustes → Herramientas
+(MCP)** se ve qué servidores tiene configurado cada runtime, con el estado real
+que ese runtime reporta, y se pueden conectar o quitar en Claude Code y Codex.
+
+Latte **no implementa MCP y no guarda credenciales**: ejecuta el comando `mcp`
+de cada CLI, así que lo que agregues también va a estar cuando uses ese CLI por
+fuera de Latte. OpenCode queda en solo lectura porque su `opencode mcp add` es
+interactivo y no se puede automatizar sin inventar respuestas.
+
+Una herramienta MCP puede leer y escribir fuera de la carpeta del trabajo, según
+lo que ese servidor permita. Los permisos los aplica el runtime, no Latte.
+
 ### Usar una carpeta que ya tenés
 
 Si ya venís trabajando en una carpeta del cliente, un trabajo puede apuntar a

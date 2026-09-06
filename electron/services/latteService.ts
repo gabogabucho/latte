@@ -17,6 +17,8 @@ import type {
   DocumentState,
   DocumentStatus,
   LatteAPI,
+  McpRuntimeTools,
+  McpServerInput,
   MemoryResult,
   PermissionReply,
   PrimaryAgent,
@@ -40,6 +42,7 @@ import { WORK_FILES } from '../core/paths';
 import { EngramClient, memoryProjectFor } from '../memory/engram';
 import { AccountStore } from '../agents/accounts';
 import { isAccountRuntime, isChatRuntime, type AgentHub, type MemberContext } from '../agents/hub';
+import type { McpCatalog } from '../agents/mcp';
 import { RoleCatalog } from '../agents/roles';
 import type { ChatManager } from '../opencode/chatManager';
 import { RuntimeDetector } from '../runtime/detect';
@@ -65,6 +68,8 @@ export interface LatteServiceDeps {
   /** Routes chats across OpenCode / Claude Code / Codex and owns the primary agent. */
   hub: AgentHub;
   engram: EngramClient;
+  /** MCP servers, read and written through each runtime's own CLI. */
+  mcp?: McpCatalog;
   /** Opens a native save dialog; returns the chosen path or null on cancel. */
   chooseExportPath: (suggestedFileName: string) => Promise<string | null>;
   /** Opens a native folder picker; returns the chosen folder or null on cancel. */
@@ -568,6 +573,33 @@ export class LatteService implements BackendApi {
 
   async listAgentRuntimes(): Promise<AgentRuntimeInfo[]> {
     return this.deps.hub.listAgentRuntimes();
+  }
+
+  // MCP: shown and operated through each runtime's own CLI ---------------------
+
+  async listMcpServers(): Promise<McpRuntimeTools[]> {
+    if (!this.deps.mcp) return [];
+    return this.deps.mcp.list();
+  }
+
+  async addMcpServer(runtime: 'claude' | 'codex', input: McpServerInput): Promise<void> {
+    if (!isAccountRuntime(runtime)) throw new TypeError('Unknown runtime');
+    if (!this.deps.mcp) throw new UnavailableError('MCP requiere la aplicación de escritorio');
+    if (typeof input !== 'object' || input === null) throw new TypeError('Invalid input');
+    const transport = input.transport === 'http' ? 'http' : 'stdio';
+    const name = requireLabel(input.name, 'Server name', 64);
+    const command = transport === 'stdio' ? requireLabel(input.command, 'Command', 400) : '';
+    const url = transport === 'http' ? requireLabel(input.url, 'URL', 500) : '';
+    if (transport === 'http' && !/^https?:\/\//.test(url)) throw new TypeError('La URL tiene que empezar con http:// o https://');
+    const args = Array.isArray(input.args) ? input.args.slice(0, 30).map((a) => requireText(String(a), 'Argument', 300)) : [];
+    const envPairs = Array.isArray(input.env) ? input.env.slice(0, 20).map((a) => requireText(String(a), 'Variable', 400)) : [];
+    await this.deps.mcp.add(runtime, { name, transport, command, args, url, env: envPairs });
+  }
+
+  async removeMcpServer(runtime: 'claude' | 'codex', name: string): Promise<void> {
+    if (!isAccountRuntime(runtime)) throw new TypeError('Unknown runtime');
+    if (!this.deps.mcp) throw new UnavailableError('MCP requiere la aplicación de escritorio');
+    await this.deps.mcp.remove(runtime, requireLabel(name, 'Server name', 64));
   }
 
   async addAgentAccount(runtime: 'claude' | 'codex', label: string): Promise<AgentAccount> {
