@@ -46,3 +46,8 @@ docs/REVIEW-2026-09-06.md
 # Publish only screenshots individually reviewed for private information.
 assets/*.png
 !assets/latte-documents-1440x1000.png
+# The app icon is part of the product, not a screenshot.
+!assets/icon-512.png
+!assets/icon-256.png
+!assets/icon-64.png
+!assets/favicon.png

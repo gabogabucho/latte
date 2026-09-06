@@ -10,6 +10,7 @@ const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL ?? null;
 /** Last state reported by the renderer; only affects the close confirmation. */
 let hasUnsavedWork = false;
 const PRELOAD = path.join(__dirname, 'preload.cjs');
+const APP_ICON = path.join(__dirname, '..', 'assets', 'icon-256.png');
 
 let mainWindow: BrowserWindow | null = null;
 let backend: Backend | null = null;
@@ -42,6 +43,7 @@ async function start(): Promise<void> {
     emit: emitAgentEvent,
     emitChat: emitChatEvent,
     chooseExportPath,
+    chooseFolder,
     openExternal: async (url) => { if (isExternalHttp(url)) await shell.openExternal(url); },
     log: (line) => console.log(line.trimEnd()),
   });
@@ -93,6 +95,7 @@ function createWindow(): void {
     minWidth: 1024,
     minHeight: 640,
     title: 'Latte',
+    icon: APP_ICON,
     backgroundColor: '#f5f0e8',
     autoHideMenuBar: true,
     show: false,
@@ -277,6 +280,14 @@ async function chooseExportPath(suggestedFileName: string): Promise<string | nul
     : await dialog.showSaveDialog(options);
   if (result.canceled || !result.filePath) return null;
   return result.filePath;
+}
+
+/** Folder picker for pointing a work at an existing folder. */
+async function chooseFolder(title: string): Promise<string | null> {
+  const options = { title, properties: ['openDirectory' as const, 'dontAddToRecent' as const], buttonLabel: 'Usar esta carpeta' };
+  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
 }
 
 app.on('window-all-closed', () => {

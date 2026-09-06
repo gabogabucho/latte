@@ -40,8 +40,8 @@ describe.each(ENGINES)('LatteRepository on %s', (engine) => {
     repo.updateBrandContext('brd_one', 'new context');
     expect(repo.getBrand('brd_one').context).toBe('new context');
 
-    repo.insertWork({ id: 'wrk_a', brandId: 'brd_one', title: 'A', brief: '', updatedAt: '2026-01-03T00:00:00.000Z' });
-    repo.insertWork({ id: 'wrk_b', brandId: 'brd_one', title: 'B', brief: '', updatedAt: '2026-01-04T00:00:00.000Z' });
+    repo.insertWork({ id: 'wrk_a', brandId: 'brd_one', title: 'A', brief: '', folder: null, updatedAt: '2026-01-03T00:00:00.000Z' });
+    repo.insertWork({ id: 'wrk_b', brandId: 'brd_one', title: 'B', brief: '', folder: null, updatedAt: '2026-01-04T00:00:00.000Z' });
     expect(repo.listWorks('brd_one').map((w) => w.id)).toEqual(['wrk_b', 'wrk_a']);
     expect(repo.listWorks('brd_two')).toEqual([]);
 
@@ -66,7 +66,7 @@ describe.each(ENGINES)('LatteRepository on %s', (engine) => {
 
   it('enforces revision immutability at the database level', () => {
     repo.insertBrand({ id: 'brd_one', name: 'One', context: '', createdAt: '2026-01-01T00:00:00.000Z' });
-    repo.insertWork({ id: 'wrk_a', brandId: 'brd_one', title: 'A', brief: '', updatedAt: '2026-01-03T00:00:00.000Z' });
+    repo.insertWork({ id: 'wrk_a', brandId: 'brd_one', title: 'A', brief: '', folder: null, updatedAt: '2026-01-03T00:00:00.000Z' });
     repo.insertRevision({ id: 'rev_1', workId: 'wrk_a', documentId: briefDocumentId('wrk_a'), source: 'human', content: 'v1', createdAt: '2026-01-06T00:00:00.000Z' });
 
     expect(() => driver.run('UPDATE revisions SET content = ? WHERE id = ?', ['hacked', 'rev_1'])).toThrow(/immutable/);
@@ -76,7 +76,7 @@ describe.each(ENGINES)('LatteRepository on %s', (engine) => {
 
   it('enforces foreign keys', () => {
     expect(() =>
-      repo.insertWork({ id: 'wrk_orphan', brandId: 'brd_ghost', title: 'X', brief: '', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      repo.insertWork({ id: 'wrk_orphan', brandId: 'brd_ghost', title: 'X', brief: '', folder: null, updatedAt: '2026-01-01T00:00:00.000Z' }),
     ).toThrow();
   });
 
@@ -84,7 +84,7 @@ describe.each(ENGINES)('LatteRepository on %s', (engine) => {
     repo.insertBrand({ id: 'brd_one', name: 'One', context: '', createdAt: '2026-01-01T00:00:00.000Z' });
     expect(() =>
       repo.transaction(() => {
-        repo.insertWork({ id: 'wrk_a', brandId: 'brd_one', title: 'A', brief: '', updatedAt: '2026-01-03T00:00:00.000Z' });
+        repo.insertWork({ id: 'wrk_a', brandId: 'brd_one', title: 'A', brief: '', folder: null, updatedAt: '2026-01-03T00:00:00.000Z' });
         throw new Error('boom');
       }),
     ).toThrow('boom');

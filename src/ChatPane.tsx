@@ -39,7 +39,7 @@ export function ChatPane({ session, onStop, onError }: { session: ChatSession; o
 
   return <div className="chat-pane">
     <div className="session-heading">
-      <span title={`${session.roleName} · ${session.label}`}><i className={state.closed ? 'ended-dot' : busy ? 'busy-dot' : 'live-dot'} /><strong>{session.roleName}</strong><span className="chat-heading-runtime">{session.label}</span>{session.resumed ? ' · reanudado' : ''}</span>
+      <span title={`${session.roleName} · ${session.label}`}><i className={'role-dot ' + (state.closed ? 'ended' : busy ? 'busy' : '')} data-role={session.roleId} /><strong>{session.roleName}</strong><span className="chat-heading-runtime">{session.label}</span>{session.resumed ? ' · reanudado' : ''}</span>
       <div className="chat-heading-actions">
         {busy && <button aria-label="Detener respuesta" title="Detener respuesta" onClick={abort}><Square size={12} /></button>}
         <button aria-label="Pausar conversación" title="Pausar (la conversación queda guardada y se puede reanudar)" onClick={onStop}><X size={13} /></button>

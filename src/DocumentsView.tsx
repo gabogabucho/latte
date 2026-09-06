@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { AlertTriangle, Check, Download, FileText, History, Layers, LoaderCircle, Plus, RefreshCw, Save, X } from 'lucide-react';
+import { AlertTriangle, Check, Download, FileText, FolderOpen, History, Layers, LoaderCircle, Plus, RefreshCw, Save, X } from 'lucide-react';
 import type { DocumentContent, DocumentKind, Revision, WorkDocument, Work } from '../shared/contracts';
 import { api } from './browser-api';
 import { documentDrafts } from './document-drafts';
@@ -37,6 +37,7 @@ export interface DocumentsViewProps {
   onNotice: (text: string) => void;
   onError: (text: string) => void;
   onCreate: () => void;
+  onUseFolder: () => void;
   busy: boolean;
 }
 
@@ -192,6 +193,7 @@ export function DocumentsView(props: DocumentsViewProps) {
   if (!work) return <div className="empty-state"><FileText size={38} /><h1>Tu próxima idea,<br />con lugar para crecer.</h1><p>Creá una marca y un trabajo. Los documentos, las versiones y las decisiones se quedan con vos.</p></div>;
 
   const kindLabel = selected ? KIND_LABEL[selected.kind] : '';
+  const linked = work?.folder ?? null;
   // Optional help, not a required sequence: the usual next document, offered once.
   const suggestion = !documents.some(d => d.kind === 'strategy')
     ? { label: 'Un paso habitual:', hint: 'una estrategia que decida objetivo, audiencia y elecciones antes de bajar a piezas.' }
@@ -244,6 +246,8 @@ export function DocumentsView(props: DocumentsViewProps) {
       <button onClick={() => void api.acknowledgeBase(selected.id).then(async () => { setBaseOutdated(false); await props.onDocumentsChanged(); props.onNotice('Referencia actualizada a la versión actual de la base.'); }).catch(e => props.onError(displayError(e)))}>Ya lo revisé</button>
     </div>}
 
+    {linked && <div className="doc-folder" title={linked}><FolderOpen size={13} /><span>Este trabajo usa tu carpeta: <code>{linked}</code></span></div>}
+    {!linked && <div className="doc-folder subtle-folder"><FolderOpen size={13} /><span>Este trabajo guarda sus documentos dentro de Latte.</span><button onClick={props.onUseFolder} disabled={props.busy}>Usar una carpeta mía</button></div>}
     {suggestion && <div className="doc-suggestion">
       <span><strong>{suggestion.label}</strong> {suggestion.hint}</span>
       <button onClick={props.onCreate}><Plus size={13} />Crear</button>

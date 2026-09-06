@@ -40,11 +40,26 @@ export class LattePaths {
   readonly root: string;
   readonly dbFile: string;
   readonly brandsDir: string;
+  /**
+   * Works linked to a folder the user picked. Latte then works IN that folder
+   * instead of keeping a copy: no duplicate of the client's material.
+   */
+  private readonly linked = new Map<string, string>();
 
   constructor(root: string) {
     this.root = path.resolve(root);
     this.dbFile = path.join(this.root, 'latte.db');
     this.brandsDir = path.join(this.root, 'brands');
+  }
+
+  /** Registers an external folder for a work. The path is validated by the caller. */
+  linkWork(workId: string, directory: string): void {
+    assertId(workId, 'workId');
+    this.linked.set(workId, path.resolve(directory));
+  }
+
+  isLinked(workId: string): boolean {
+    return this.linked.has(workId);
   }
 
   brandDir(brandId: string): string {
@@ -54,6 +69,8 @@ export class LattePaths {
 
   workDir(brandId: string, workId: string): string {
     assertId(workId, 'workId');
+    const linked = this.linked.get(workId);
+    if (linked) return linked;
     return safeJoin(this.brandDir(brandId), 'works', workId);
   }
 

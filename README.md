@@ -45,6 +45,18 @@ datos. Si ya hay una ventana abierta, la nueva se cierra y te lo dice en la
 consola. Cerrá la que está abierta y volvé a intentar. Si no la encontrás,
 terminá `electron.exe` desde el Administrador de tareas.
 
+### Usar una carpeta que ya tenés
+
+Si ya venís trabajando en una carpeta del cliente, un trabajo puede apuntar a
+esa carpeta en vez de guardar una copia dentro de Latte. **No se copia ni se
+mueve nada**: Latte trabaja ahí.
+
+A cambio, Latte crea dentro de esa carpeta `CLAUDE.md`, `AGENTS.md`,
+`README.md` y `.latte/` (versiones), y los agentes que abras van a tener esa
+carpeta como espacio de trabajo. La app lo dice antes de vincular. Los `.md`
+del primer nivel pasan a ser documentos con versiones; el resto queda como está
+y el agente puede leerlo.
+
 ### Requisitos
 
 | Requisito | Detalle |

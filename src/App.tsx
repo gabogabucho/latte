@@ -146,6 +146,37 @@ export function App() {
       setNotice('Documento creado');
     });
   };
+  /**
+   * Points this work at a folder the person already uses. Latte then works in
+   * it: no copy. It writes its context files there and agents get that folder,
+   * so the confirmation says exactly that before anything happens.
+   */
+  const useFolder = () => {
+    if (!work) return;
+    const warning = [
+      'Latte va a trabajar directamente en la carpeta que elijas. No copia nada.',
+      '',
+      'Dentro de esa carpeta va a crear o actualizar:',
+      '  CLAUDE.md y AGENTS.md (contexto para los agentes)',
+      '  README.md y .latte/ (versiones)',
+      '',
+      'Los agentes que abras van a tener esa carpeta como espacio de trabajo.',
+      '',
+      '¿Elegimos la carpeta?',
+    ].join('\n');
+    if (!window.confirm(warning)) return;
+    void run(async () => {
+      const result = await api.useFolder(work.id);
+      if (!result) return;
+      onWorkUpdated(result.work);
+      await loadDocuments(work.id);
+      const extra = result.otherFiles.length + result.subfolders.length;
+      setNotice(result.documents.length > 0
+        ? `Listo. ${result.documents.length} documento${result.documents.length === 1 ? '' : 's'} de esa carpeta ahora tienen versiones${extra ? `; hay ${extra} archivo(s) y carpeta(s) más que el agente puede leer` : ''}.`
+        : 'Listo. La carpeta quedó vinculada; pedile al asistente que arme los documentos.');
+    });
+  };
+
   // Nothing is saved implicitly. Opening a member warns instead of writing the editor's text.
   const warnUnsaved = () => { if (dirty) setNotice('Tenés cambios sin guardar: el agente va a leer la versión guardada en disco.'); };
   const start = async () => { if (!work || starting || session) return; setStarting(true); setError(''); try { warnUnsaved(); const s = await api.startAgent(work.id, provider); setSession(s); setNotice('Sesión iniciada en el espacio del trabajo'); } catch (e) { setError(displayError(e)); } finally { setStarting(false); } };
@@ -183,7 +214,7 @@ export function App() {
     <main className="workspace">
       <div className="tabs"><button className={view === 'brief' ? 'selected' : ''} onClick={() => setView('brief')}>Documentos <span>{documents.length}</span></button><button className={view === 'decisions' ? 'selected' : ''} onClick={() => setView('decisions')}>Decisiones <span>{decisions.length}</span></button><div className="tab-spacer" /></div>
       {(error || notice) && <div role={error ? 'alert' : 'status'} className={'message ' + (error ? 'error' : '')}><span>{error || notice}</span><button aria-label="Cerrar aviso" onClick={() => { setError(''); setNotice(''); }}><X size={16} /></button></div>}
-      {view === 'brief' && <DocumentsView work={work} brandName={brand?.name ?? ''} documents={documents} selectedId={selectedDocId} onSelect={id => work && setSelectedDoc(prev => ({ ...prev, [work.id]: id }))} onDocumentsChanged={async () => { if (work) await loadDocuments(work.id); }} onWorkUpdated={onWorkUpdated} onDirtyChange={setDocumentDirty} onNotice={setNotice} onError={setError} onCreate={() => setModal('document')} busy={busy} />}
+      {view === 'brief' && <DocumentsView work={work} brandName={brand?.name ?? ''} documents={documents} selectedId={selectedDocId} onSelect={id => work && setSelectedDoc(prev => ({ ...prev, [work.id]: id }))} onDocumentsChanged={async () => { if (work) await loadDocuments(work.id); }} onWorkUpdated={onWorkUpdated} onDirtyChange={setDocumentDirty} onNotice={setNotice} onError={setError} onCreate={() => setModal('document')} onUseFolder={useFolder} busy={busy} />}
       {view === 'context' && <div className="document-scroll"><div className="document-kicker">EL PUNTO DE PARTIDA</div><h1>Una marca.<br />Un contexto compartido.</h1><p className="intro">Lo que el agente necesita saber: negocio, audiencia, tono, restricciones y decisiones vigentes. Se incorpora al iniciar cada sesión.</p><label className="field-label" htmlFor="brand-context">CONTEXTO DE {brand?.name}</label><textarea id="brand-context" className="context-editor" value={context} onChange={e => setContext(e.target.value)} placeholder="¿Qué ofrece la marca? ¿Para quién? ¿Qué no debemos asumir?" /><button className="primary" disabled={!contextDirty || busy} onClick={() => run(saveContext)}><Save size={16} />Guardar contexto</button><p className="footnote">Los cambios aplican a nuevas sesiones. No alteran retroactivamente el contexto de un agente en marcha.</p></div>}
       {view === 'decisions' && <div className="document-scroll"><div className="document-kicker">CRITERIO QUE PERMANECE</div><h1>No empezar<br />de cero otra vez.</h1><p className="intro">Registrá qué decidiste y por qué. Las decisiones pertenecen a este trabajo; no se convierten automáticamente en reglas de marca.</p>{work && <form className="decision-form" onSubmit={e => { e.preventDefault(); void run(async () => { if (!decision.trim()) return; await api.addDecision(work.id, decision.trim()); setDecisions(await api.listDecisions(work.id)); setDecision(''); }); }}><textarea aria-label="Nueva decisión" placeholder="Elegimos… porque…" value={decision} onChange={e => setDecision(e.target.value)} /><button className="primary" disabled={!decision.trim() || busy}><Plus size={15} />Registrar decisión</button></form>}<div className="decision-list">{decisions.map((d, i) => <div className="decision-card" key={d.id}><span className="decision-number">{String(i + 1).padStart(2, '0')}</span><div><p>{d.text}</p><small>{date(d.createdAt)}</small></div></div>)}{!decisions.length && <p className="footnote">Todavía no hay decisiones registradas.</p>}</div></div>}
       {view === 'memory' && <div className="document-scroll"><div className="document-kicker">MEMORIA DE MARCA · ENGRAM</div><h1>El trabajo sigue.<br />El contexto también.</h1><p className="intro">Conocimiento seleccionado, no una copia de cada conversación. Los recuerdos de esta marca se consultan por separado.</p><div className="memory-result"><ReactMarkdown remarkPlugins={[remarkGfm]}>{memory || 'Sin resultados.'}</ReactMarkdown></div><label className="field-label" htmlFor="memory-note">CONSERVAR UN APRENDIZAJE</label><textarea id="memory-note" className="context-editor short" value={memoryNote} onChange={e => setMemoryNote(e.target.value)} placeholder="Qué aprendimos, por qué importa y de dónde surge…" /><button className="primary" disabled={!memoryAvailable || !memoryNote.trim() || busy} onClick={() => run(async () => { const r = await api.saveMemory(brand!.id, memoryNote); if (!r.available) throw new Error(r.text); setMemoryNote(''); setNotice('Aprendizaje guardado en Engram'); openMemory(); })}><Bookmark size={15} />Guardar aprendizaje</button></div>}

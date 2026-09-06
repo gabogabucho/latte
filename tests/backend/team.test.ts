@@ -77,7 +77,7 @@ describe('Team members persistence', () => {
     expect(members.map((m) => [m.roleId, m.runtime, m.sessionId])).toEqual([['assistant', 'claude', 'sess-old'], ['assistant', 'opencode', 'ses_oc']]);
     expect(members[0].id).toMatch(/^mem_[a-f0-9]{20}$/);
     expect(driver.all("SELECT name FROM sqlite_master WHERE name = 'chat_sessions'")).toEqual([]);
-    expect(repo.getMeta('schema_version')).toBe('4');
+    expect(repo.getMeta('schema_version')).toBe('5');
     repo.close();
   });
 
@@ -86,7 +86,7 @@ describe('Team members persistence', () => {
     const repo = new LatteRepository(driver);
     repo.migrate();
     repo.insertBrand({ id: 'brd_1', name: 'Casa', context: '', createdAt: '2026-01-01T00:00:00.000Z' });
-    repo.insertWork({ id: 'wrk_1', brandId: 'brd_1', title: 'Uno', brief: '', updatedAt: '2026-01-01T00:00:00.000Z' });
+    repo.insertWork({ id: 'wrk_1', brandId: 'brd_1', title: 'Uno', brief: '', folder: null, updatedAt: '2026-01-01T00:00:00.000Z' });
     const base = { workId: 'wrk_1', roleId: 'strategist', roleName: 'Strategist', initial: 'S', runtime: 'codex' as const, model: null, accountId: SYSTEM_ACCOUNT_ID, sessionId: '', done: false, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
     repo.insertMember({ ...base, id: 'mem_a' });
     repo.insertMember({ ...base, id: 'mem_b', roleId: 'researcher', roleName: 'Researcher', initial: 'R', createdAt: '2026-01-02T00:00:00.000Z' });

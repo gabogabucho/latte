@@ -65,7 +65,7 @@ function MemberRow({ member, chat, selected, busy, onSelect, onPause, onFinish, 
   const attention = live && (state.permissions.length > 0 || state.questions.length > 0);
   return <div className={'team-member' + (selected ? ' selected' : '') + ' status-' + status} role="option" aria-selected={selected}>
     <button className="team-member-main" onClick={onSelect} title={member.label}>
-      <span className="team-avatar" aria-hidden="true">{member.initial}</span>
+      <span className="team-avatar" data-role={member.roleId} aria-hidden="true">{member.initial}</span>
       <span className="team-member-name"><strong>{member.roleName}</strong><span className="team-sep">/</span>{RUNTIME_SHORT[member.runtime]}</span>
       <span className="team-member-status">{statusLabel(status, attention)}</span>
     </button>
@@ -91,7 +91,7 @@ function ResumeCard({ member, busy, onOpen, onRemove }: { member: TeamMember; bu
   const [opening, setOpening] = useState(false);
   const open = async () => { setOpening(true); try { await onOpen(); } finally { setOpening(false); } };
   return <div className="agent-idle team-resume">
-    <span className="team-avatar large" aria-hidden="true">{member.initial}</span>
+    <span className="team-avatar large" data-role={member.roleId} aria-hidden="true">{member.initial}</span>
     <h3>{member.roleName}<br /><small>{member.label}</small></h3>
     <p>{member.status === 'ended' ? 'Este miembro terminó su trabajo. Podés reabrir la conversación donde quedó.' : 'La conversación está en pausa. Al reanudarla, el agente vuelve a leer el contexto actual del trabajo.'}</p>
     <button className="primary" disabled={busy || opening} onClick={() => void open()}>{opening ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}{opening ? 'Abriendo…' : member.status === 'ended' ? 'Reabrir conversación' : 'Reanudar conversación'}</button>
@@ -114,7 +114,7 @@ function RolePicker({ roles, choices, primaryLabel, primaryDetail, primaryReady,
     <div className="role-picker-head"><span className="field-label">{canCancel ? 'SUMAR UN ROL' : 'ARMÁ TU EQUIPO'}</span>{canCancel && <button className="icon-button" aria-label="Cancelar" onClick={onCancel}><X size={15} /></button>}</div>
     <p className="agent-explanation">Cada rol abre su propia conversación con una personalidad preestablecida. Todos comparten el contexto de marca, el brief y las decisiones de este trabajo.</p>
     <div className="role-list" role="radiogroup" aria-label="Rol">
-      {roles.map(role => <button key={role.id} role="radio" aria-checked={roleId === role.id} className={'role-card' + (roleId === role.id ? ' selected' : '')} onClick={() => setRoleId(role.id)}><span className="team-avatar" aria-hidden="true">{role.initial}</span><span><strong>{role.name}</strong><small>{role.summary}</small></span>{roleId === role.id && <Check size={14} />}</button>)}
+      {roles.map(role => <button key={role.id} role="radio" aria-checked={roleId === role.id} className={'role-card' + (roleId === role.id ? ' selected' : '')} onClick={() => setRoleId(role.id)}><span className="team-avatar" data-role={role.id} aria-hidden="true">{role.initial}</span><span><strong>{role.name}</strong><small>{role.summary}</small></span>{roleId === role.id && <Check size={14} />}</button>)}
     </div>
     <label className="field-label" htmlFor="member-runtime">CON QUÉ AGENTE</label>
     <select id="member-runtime" value={choice} disabled={busy || opening} onChange={e => setChoice(e.target.value)}>

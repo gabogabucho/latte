@@ -280,3 +280,41 @@ html,body,#root{height:100%;overflow:hidden}
 .settings-topbar button,.settings-topbar a{-webkit-app-region:no-drag}
 .settings-topbar .window-controls{margin-left:14px}
 .settings-scope{margin-left:auto}
+.doc-folder{display:flex;align-items:center;gap:9px;padding:8px 20px;background:#f2ede4;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);flex-shrink:0}
+.doc-folder>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-folder code{font:10.5px Consolas,monospace;background:#e8e1d5;padding:2px 6px;border-radius:3px}
+.doc-folder button{font-size:11px;padding:5px 10px;background:var(--paper);flex-shrink:0}
+
+/* --- Un color por rol: reconocer al miembro de un vistazo ------------------- */
+:root{
+  --role-assistant:#b75534; /* el acento de Latte, para el punto de partida */
+  --role-strategist:#5c6b4a;
+  --role-researcher:#4a6272;
+  --role-analyst:#9a7233;
+  --role-reviewer:#7a4f6b;
+  --role-default:#8a7f70;
+}
+.team-avatar{background:var(--role-default)}
+.team-avatar[data-role=assistant]{background:var(--role-assistant)}
+.team-avatar[data-role=strategist]{background:var(--role-strategist)}
+.team-avatar[data-role=researcher]{background:var(--role-researcher)}
+.team-avatar[data-role=analyst]{background:var(--role-analyst)}
+.team-avatar[data-role=reviewer]{background:var(--role-reviewer)}
+/* El estado sigue mandando sobre el color del rol: en pausa o finalizado se apaga. */
+.team-member.status-ended .team-avatar,.team-member.status-paused .team-avatar{filter:grayscale(.65) brightness(1.08)}
+.team-member.selected{border-left:3px solid var(--role-default)}
+.team-member.selected:has(.team-avatar[data-role=assistant]){border-left-color:var(--role-assistant)}
+.team-member.selected:has(.team-avatar[data-role=strategist]){border-left-color:var(--role-strategist)}
+.team-member.selected:has(.team-avatar[data-role=researcher]){border-left-color:var(--role-researcher)}
+.team-member.selected:has(.team-avatar[data-role=analyst]){border-left-color:var(--role-analyst)}
+.team-member.selected:has(.team-avatar[data-role=reviewer]){border-left-color:var(--role-reviewer)}
+.role-card.selected .team-avatar{box-shadow:0 0 0 3px #ffffff,0 0 0 4px currentColor}
+.role-dot{height:8px;width:8px;border-radius:50%;display:inline-block;margin-right:7px;background:var(--role-default);flex-shrink:0}
+.role-dot[data-role=assistant]{background:var(--role-assistant)}
+.role-dot[data-role=strategist]{background:var(--role-strategist)}
+.role-dot[data-role=researcher]{background:var(--role-researcher)}
+.role-dot[data-role=analyst]{background:var(--role-analyst)}
+.role-dot[data-role=reviewer]{background:var(--role-reviewer)}
+.role-dot.busy{animation:pulse 1.2s ease-in-out infinite}
+.role-dot.ended{background:#b5ab9c}
+@keyframes pulse{50%{opacity:.35}}

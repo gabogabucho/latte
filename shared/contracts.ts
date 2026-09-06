@@ -1,6 +1,17 @@
 export type Provider = 'claude' | 'codex' | 'opencode';
 export interface Brand { id: string; name: string; context: string; createdAt: string }
-export interface Work { id: string; brandId: string; title: string; brief: string; updatedAt: string }
+export interface Work {
+  id: string;
+  brandId: string;
+  title: string;
+  brief: string;
+  /**
+   * Folder the user chose for this work. Latte works IN it: no copy is made.
+   * null means Latte keeps the work in its own data directory.
+   */
+  folder: string | null;
+  updatedAt: string;
+}
 /** Where a stored version came from. `external` = the file changed outside Latte; we never guess who wrote it. */
 export type RevisionSource = 'human' | 'external' | 'latte';
 export interface Revision { id: string; workId: string; documentId: string; source: RevisionSource; content: string; createdAt: string }
@@ -35,6 +46,19 @@ export interface DocumentContent {
   /** True when the base document moved on since this document declared its base version. */
   baseOutdated: boolean;
 }
+/** What linking a folder found and registered. Nothing is copied or moved. */
+export interface FolderLinkResult {
+  work: Work;
+  folder: string;
+  /** Markdown found at the top level and now tracked with versions of its own. */
+  documents: WorkDocument[];
+  /** Other files at the top level: left exactly as they are, readable by an agent. */
+  otherFiles: string[];
+  subfolders: string[];
+  /** Files Latte created or refreshed inside the folder. */
+  managedFiles: string[];
+}
+
 /** Cheap poll answer used to notice external edits without a filesystem watcher. */
 export interface DocumentState { documentId: string; fingerprint: string; modifiedAt: string | null; baseOutdated: boolean }
 /**
@@ -152,6 +176,13 @@ export interface LatteAPI {
   exportDocument(documentId: string): Promise<string | null>;
   /** Re-points a derived document at the current version of its base, after the human reviewed the change. */
   acknowledgeBase(documentId: string): Promise<WorkDocument>;
+  /**
+   * Points a work at a folder you already work in. Nothing is copied: that
+   * folder becomes the work. Latte adds its managed context files and a
+   * versions folder inside it, and agents get it as their directory.
+   * Returns null when the user cancels the picker.
+   */
+  useFolder(workId: string): Promise<FolderLinkResult | null>;
   listDecisions(workId: string): Promise<Decision[]>;
   addDecision(workId: string, text: string): Promise<Decision>;
   runtimeStatus(): Promise<RuntimeStatus[]>;

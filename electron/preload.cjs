@@ -26,6 +26,7 @@ const METHODS = [
   'listDocumentRevisions',
   'exportDocument',
   'acknowledgeBase',
+  'useFolder',
   'listDecisions',
   'addDecision',
   'runtimeStatus',

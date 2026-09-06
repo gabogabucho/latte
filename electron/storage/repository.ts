@@ -5,7 +5,7 @@ import type { SqlDriver, SqlRow } from './driver';
 import { SCHEMA_SQL, SCHEMA_VERSION } from './schema';
 
 interface BrandRow extends SqlRow { id: string; name: string; context: string; created_at: string }
-interface WorkRow extends SqlRow { id: string; brand_id: string; title: string; brief: string; updated_at: string }
+interface WorkRow extends SqlRow { id: string; brand_id: string; title: string; brief: string; dir: string | null; updated_at: string }
 interface RevisionRow extends SqlRow { id: string; work_id: string; document_id: string | null; source: string; content: string; created_at: string }
 interface DecisionRow extends SqlRow { id: string; work_id: string; text: string; created_at: string }
 interface DocumentRow extends SqlRow { id: string; work_id: string; kind: string; title: string; file_name: string; status: string; base_doc_id: string | null; base_rev_id: string | null; base_print: string | null; last_print: string | null; created_at: string; updated_at: string }
@@ -46,7 +46,7 @@ export interface TeamMemberRecord {
 }
 
 const toBrand = (r: BrandRow): Brand => ({ id: r.id, name: r.name, context: r.context, createdAt: r.created_at });
-const toWork = (r: WorkRow): Work => ({ id: r.id, brandId: r.brand_id, title: r.title, brief: r.brief, updatedAt: r.updated_at });
+const toWork = (r: WorkRow): Work => ({ id: r.id, brandId: r.brand_id, title: r.title, brief: r.brief, folder: r.dir ?? null, updatedAt: r.updated_at });
 const toRevision = (r: RevisionRow): Revision => ({
   id: r.id,
   workId: r.work_id,
@@ -112,6 +112,8 @@ export class LatteRepository {
     // idempotent, so it is gated on pragma_table_info; existing rows keep
     // document_id NULL ("the work's brief document") because the immutability
     // trigger forbids updating them.
+    const workColumns = this.db.all<{ name: string }>("SELECT name FROM pragma_table_info('works')").map((c) => c.name);
+    if (workColumns.length > 0 && !workColumns.includes('dir')) this.db.run('ALTER TABLE works ADD COLUMN dir TEXT');
     const revisionColumns = this.db.all<{ name: string }>("SELECT name FROM pragma_table_info('revisions')").map((c) => c.name);
     if (revisionColumns.length > 0 && !revisionColumns.includes('document_id')) this.db.run('ALTER TABLE revisions ADD COLUMN document_id TEXT');
     if (revisionColumns.length > 0 && !revisionColumns.includes('source')) this.db.run("ALTER TABLE revisions ADD COLUMN source TEXT NOT NULL DEFAULT 'human'");
@@ -211,10 +213,22 @@ export class LatteRepository {
   }
 
   insertWork(work: Work): Work {
-    this.db.run('INSERT INTO works(id, brand_id, title, brief, updated_at) VALUES (?, ?, ?, ?, ?)', [
-      work.id, work.brandId, work.title, work.brief, work.updatedAt,
+    this.db.run('INSERT INTO works(id, brand_id, title, brief, dir, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [
+      work.id, work.brandId, work.title, work.brief, work.folder ?? null, work.updatedAt,
     ]);
     return work;
+  }
+
+  /** Points a work at a folder the user chose, or back at Latte's own. */
+  setWorkFolder(id: string, folder: string | null, updatedAt: string): Work {
+    this.getWork(id);
+    this.db.run('UPDATE works SET dir = ?, updated_at = ? WHERE id = ?', [folder, updatedAt, id]);
+    return this.getWork(id);
+  }
+
+  /** Every work that lives in a user folder, for restoring the mapping at start. */
+  linkedWorks(): Array<{ id: string; dir: string }> {
+    return this.db.all<{ id: string; dir: string }>('SELECT id, dir FROM works WHERE dir IS NOT NULL AND dir <> ?', ['']);
   }
 
   updateBrief(id: string, brief: string, updatedAt: string): Work {

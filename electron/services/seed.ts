@@ -145,6 +145,7 @@ export function seedDemoIfEmpty(repo: LatteRepository, files: WorkspaceFiles, pa
     brandId: brand.id,
     title: 'Lanzamiento Cosecha 2026',
     brief: DEMO_DOCUMENT,
+    folder: null,
     updatedAt: createdAt,
   };
 

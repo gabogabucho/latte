@@ -72,6 +72,11 @@ export class WorkspaceFiles {
     return dir;
   }
 
+  /** Points a work at a folder the user chose; every path then resolves there. */
+  linkWork(workId: string, directory: string): void {
+    this.paths.linkWork(workId, directory);
+  }
+
   workDir(brandId: string, workId: string): string {
     return this.paths.workDir(brandId, workId);
   }

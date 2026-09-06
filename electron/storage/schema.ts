@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS works (
   brand_id   TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
   title      TEXT NOT NULL,
   brief      TEXT NOT NULL DEFAULT '',
+  -- Absolute folder chosen by the user, or NULL for a folder Latte manages.
+  dir        TEXT,
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_works_brand ON works(brand_id, updated_at DESC);
@@ -92,4 +94,4 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `;
 
-export const SCHEMA_VERSION = '4';
+export const SCHEMA_VERSION = '5';

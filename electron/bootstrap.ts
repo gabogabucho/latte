@@ -27,6 +27,8 @@ export interface BackendOptions {
   /** Structured chat events; optional so older harnesses keep working. */
   emitChat?: (event: ChatEvent) => void;
   chooseExportPath: (suggestedFileName: string) => Promise<string | null>;
+  /** Opens a native folder picker (desktop only). */
+  chooseFolder?: (title: string) => Promise<string | null>;
   seedDemo?: boolean;
   driver?: DriverPreference;
   runner?: CommandRunner;
@@ -62,6 +64,8 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   repo.migrate();
 
   const files = new WorkspaceFiles(paths);
+  // Works linked to a user folder resolve there from the first read on.
+  for (const linked of repo.linkedWorks()) files.linkWork(linked.id, linked.dir);
   const runner = options.runner ?? execFileRunner;
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
@@ -136,6 +140,7 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
     pack,
     engineReason: reason,
     chooseExportPath: options.chooseExportPath,
+    chooseFolder: options.chooseFolder,
     openExternal: options.openExternal,
   });
 

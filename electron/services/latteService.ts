@@ -12,6 +12,7 @@ import type {
   ChatSession,
   Decision,
   DocumentContent,
+  FolderLinkResult,
   DocumentKind,
   DocumentState,
   DocumentStatus,
@@ -31,6 +32,7 @@ import type {
   Work,
   WorkDocument,
 } from '../../shared/contracts';
+import nodePath from 'node:path';
 import { writeFileAtomic } from '../core/atomicFile';
 import { UnavailableError, ValidationError } from '../core/errors';
 import { newId, nowIso, slugify } from '../core/ids';
@@ -45,6 +47,7 @@ import { assertProvider } from '../runtime/providers';
 import { TerminalManager } from '../runtime/terminalManager';
 import { briefDocumentId, type DocumentRecord, type LatteRepository } from '../storage/repository';
 import { renderInstructions, type InstructionPack } from '../workspace/instructions';
+import { checkFolder, kindFromFileName, scanFolder, titleFromFileName } from '../workspace/linkFolder';
 import { renderDocumentTemplate } from '../workspace/templates';
 import { documentFileName, fingerprintOf, type DocumentOnDisk, type WorkspaceFiles } from '../workspace/workspace';
 import { LIMITS, requireId, requireInt, requireLabel, requireRequestId, requireText } from './validation';
@@ -64,6 +67,8 @@ export interface LatteServiceDeps {
   engram: EngramClient;
   /** Opens a native save dialog; returns the chosen path or null on cancel. */
   chooseExportPath: (suggestedFileName: string) => Promise<string | null>;
+  /** Opens a native folder picker; returns the chosen folder or null on cancel. */
+  chooseFolder?: (title: string) => Promise<string | null>;
   /** Discipline pack prepended to every generated instruction file. */
   pack?: InstructionPack | null;
   /** Opens an http(s) URL in the system browser (OAuth logins). */
@@ -159,7 +164,7 @@ export class LatteService implements BackendApi {
     const cleanTitle = requireLabel(title, 'Work title', LIMITS.title);
     const brand = this.deps.repo.getBrand(id);
     const initialDocument = `# ${cleanTitle}\n\n`;
-    const work: Work = { id: newId('wrk'), brandId: id, title: cleanTitle, brief: initialDocument, updatedAt: this.clock() };
+    const work: Work = { id: newId('wrk'), brandId: id, title: cleanTitle, brief: initialDocument, folder: null, updatedAt: this.clock() };
     this.deps.repo.insertWork(work);
     this.deps.repo.insertDocument({
       id: briefDocumentId(work.id),
@@ -317,6 +322,72 @@ export class LatteService implements BackendApi {
     const base = this.deps.repo.getDocument(record.baseDocumentId);
     const pinned = this.pinBaseVersion(base);
     return this.describeDocument(this.deps.repo.updateDocument(record.id, { baseRevisionId: pinned.revisionId, baseFingerprint: pinned.fingerprint, updatedAt: this.clock() }));
+  }
+
+  /**
+   * Points a work at a folder the person already works in.
+   *
+   * Nothing is copied and nothing is moved: that folder becomes the work. In
+   * exchange Latte writes its managed context files and a versions folder
+   * inside it, and any agent opened for this work gets it as its working
+   * directory. Markdown at the top level is registered so it gets versions and
+   * export like any other deliverable.
+   */
+  async useFolder(workId: string): Promise<FolderLinkResult | null> {
+    const id = requireId(workId, 'workId');
+    const work = this.deps.repo.getWork(id);
+    if (!this.deps.chooseFolder) throw new UnavailableError('Elegir una carpeta requiere la aplicación de escritorio');
+    const chosen = await this.deps.chooseFolder('Elegí la carpeta de este trabajo');
+    if (!chosen) return null;
+
+    const check = checkFolder(chosen, this.deps.files.root);
+    if (!check.ok) throw new ValidationError(check.reason ?? 'No se puede usar esa carpeta');
+    const folder = nodePath.resolve(chosen);
+    // Two works pointing at the same folder would fight over the same files.
+    const taken = this.deps.repo.listWorks(work.brandId).find((w) => w.id !== work.id && w.folder && nodePath.resolve(w.folder) === folder);
+    if (taken) throw new ValidationError('Esa carpeta ya la usa el trabajo "' + taken.title + '"');
+
+    const scan = scanFolder(folder);
+    this.deps.repo.setWorkFolder(work.id, folder, this.clock());
+    this.deps.files.linkWork(work.id, folder);
+
+    // From here on, every path of this work resolves inside the chosen folder.
+    const brand = this.deps.repo.getBrand(work.brandId);
+    this.deps.files.ensureWork(brand.id, work.id, work.brief);
+    const now = this.clock();
+    const documents: WorkDocument[] = [];
+    const used = new Set(this.deps.repo.usedFileNames(work.id));
+    for (const name of scan.markdown) {
+      if (used.has(name)) continue;
+      const disk = this.deps.files.readDocument(brand.id, work.id, name);
+      const record: DocumentRecord = {
+        id: newId('doc'),
+        workId: work.id,
+        kind: kindFromFileName(name),
+        title: titleFromFileName(name),
+        fileName: name,
+        status: 'draft',
+        baseDocumentId: null,
+        baseRevisionId: null,
+        baseFingerprint: null,
+        lastFingerprint: disk.fingerprint,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.deps.repo.insertDocument(record);
+      used.add(name);
+      documents.push(this.describeDocument(record));
+    }
+    const synced = this.syncFromDisk(this.deps.repo.getWork(work.id));
+    this.refreshInstructions(brand, synced);
+    return {
+      work: synced,
+      folder,
+      documents,
+      otherFiles: scan.otherFiles.slice(0, 100),
+      subfolders: scan.subfolders.slice(0, 100),
+      managedFiles: [WORK_FILES.claude, WORK_FILES.agents, WORK_FILES.metaDir + '/', WORK_FILES.readme],
+    };
   }
 
   // Revisions (immutable snapshots) ----------------------------------------

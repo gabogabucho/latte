@@ -10,7 +10,7 @@ const id = () => crypto.randomUUID();
 function read(): Store {
   const raw = localStorage.getItem(KEY);
   if (raw) return JSON.parse(raw);
-  return { brands: [{ id: 'demo', name: 'Casa Oliva · Ejemplo', context: 'Marca ficticia de objetos de diseño. Tono cálido, preciso y cercano. Este espacio contiene material de demostración, no investigación real.', createdAt: now() }], works: [{ id: 'demo-work', brandId: 'demo', title: 'Lanzamiento primavera', brief: initialBrief, updatedAt: now() }], revisions: [], decisions: [] };
+  return { brands: [{ id: 'demo', name: 'Casa Oliva · Ejemplo', context: 'Marca ficticia de objetos de diseño. Tono cálido, preciso y cercano. Este espacio contiene material de demostración, no investigación real.', createdAt: now() }], works: [{ id: 'demo-work', brandId: 'demo', title: 'Lanzamiento primavera', brief: initialBrief, folder: null, updatedAt: now() }], revisions: [], decisions: [] };
 }
 function change<T>(fn: (store: Store) => T): T { const s = read(); const result = fn(s); localStorage.setItem(KEY, JSON.stringify(s)); return result; }
 /** The web preview tracks a single brief document per work; the real model lives on the desktop. */
@@ -24,7 +24,7 @@ export const browserAPI: LatteAPI = {
   createBrand: async name => change(s => { const b = { id: id(), name, context: '', createdAt: now() }; s.brands.push(b); return b; }),
   updateBrand: async (brandId, context) => change(s => { const b = s.brands.find(b => b.id === brandId)!; b.context = context; return b; }),
   listWorks: async brandId => read().works.filter(w => w.brandId === brandId),
-  createWork: async (brandId, title) => change(s => { const w = { id: id(), brandId, title, brief: '# ' + title + '\n\n## Objetivo\n\n## Contexto\n\n## Próximos pasos\n', updatedAt: now() }; s.works.push(w); return w; }),
+  createWork: async (brandId, title) => change(s => { const w: Work = { id: id(), brandId, title, brief: '# ' + title + '\n\n## Objetivo\n\n## Contexto\n\n## Próximos pasos\n', folder: null, updatedAt: now() }; s.works.push(w); return w; }),
   saveBrief: async (workId, brief): Promise<SaveOutcome> => change(s => { const w = s.works.find(w => w.id === workId)!; w.brief = brief; w.updatedAt = now(); return { status: 'saved', document: previewDocument(w), fingerprint: String(brief.length), work: w }; }),
   listRevisions: async workId => read().revisions.filter(r => r.workId === workId).reverse(),
   listDocuments: async workId => { const w = read().works.find(w => w.id === workId); return w ? [previewDocument(w)] : []; },
@@ -38,6 +38,7 @@ export const browserAPI: LatteAPI = {
   exportDocument: async documentId => { const w = read().works.find(w => previewDocId(w.id) === documentId)!; return browserAPI.exportWork(w.id); },
   keepDraftAsVersion: unavailable,
   acknowledgeBase: unavailable,
+  useFolder: unavailable,
   snapshot: async workId => change(s => { const r: Revision = { id: id(), workId, documentId: previewDocId(workId), source: 'human', content: s.works.find(w => w.id === workId)!.brief, createdAt: now() }; s.revisions.push(r); return r; }),
   listDecisions: async workId => read().decisions.filter(d => d.workId === workId),
   addDecision: async (workId, text) => change(s => { const d = { id: id(), workId, text, createdAt: now() }; s.decisions.push(d); return d; }),
