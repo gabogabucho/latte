@@ -131,6 +131,26 @@ describe('Adding a server through the runtime CLI', () => {
     expect(list.find((r) => r.runtime === 'codex')?.servers).toHaveLength(3);
   });
 
+  it('answers for one runtime alone, so the screen fills in as each lands', async () => {
+    const runner = fakeRunner((file, args) => {
+      if (file === 'where.exe' || file === 'which') return { code: 0, stdout: `C:\\bin\\${args[0]}.exe\n` };
+      if (args[0] === 'mcp' && args[2] === '--json') return { code: 0, stdout: CODEX_OUTPUT };
+      if (args[0] === 'mcp') return { code: 0, stdout: file.includes('opencode') ? OPENCODE_OUTPUT : CLAUDE_OUTPUT };
+      return { code: 0, stdout: '1.0\n' };
+    });
+    const catalog = new McpCatalog({
+      runner,
+      detector: new RuntimeDetector({ runner: fakeRunner((file, args) => (file === 'where.exe' || file === 'which' ? { code: 0, stdout: `C:\\bin\\${args[0]}.exe\n` } : { code: 0, stdout: '1.0\n' })), terminalAvailability: () => ({ available: false, reason: 'test' }), platform: 'win32', env: {} }),
+      accountEnv: () => ({}),
+      env: {},
+    });
+    const codex = await catalog.listOne('codex');
+    expect(codex).toMatchObject({ runtime: 'codex', installed: true, canEdit: true });
+    expect(codex.servers).toHaveLength(3);
+    // Asking for one must not have queried the slow one.
+    expect(runner.calls.filter((c) => c.args[0] === 'mcp')).toHaveLength(1);
+  });
+
   it('asks the three runtimes at the same time, not one after the other', async () => {
     // Claude Code health-checks every server before answering. Asked in turn,
     // the three timeouts stacked up and the screen stayed empty for a minute.

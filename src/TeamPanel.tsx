@@ -18,6 +18,8 @@ export interface TeamPanelProps {
   primaryLabel: string;
   primaryDetail: string;
   primaryReady: boolean;
+  /** Runtime the primary agent uses; the folder grant only changes anything for Claude. */
+  primaryRuntime: ChatRuntime;
   choices: RuntimeChoice[];
   busy: boolean;
   isDesktop: boolean;
@@ -32,6 +34,9 @@ export interface TeamPanelProps {
   onError: (message: string) => void;
   /** Turns an answer into a document of the work. */
   onSaveAsDocument?: (text: string) => void;
+  /** Files the agent left in the folder that are not documents yet. */
+  untracked: string[];
+  onAdoptFile: (fileName: string) => void;
   /** The team may read and write inside this work folder without asking each time. */
   trustedFolder: boolean;
   onTrustFolder: (trusted: boolean) => void;
@@ -55,11 +60,11 @@ export function TeamPanel(props: TeamPanelProps) {
     {work && team.length > 0 && <div className="team-roster" role="listbox" aria-label="Miembros del equipo">
       {team.map(member => <MemberRow key={member.id} member={member} chat={chats[member.id] ?? null} selected={member.id === selectedId} busy={busy} onSelect={() => props.onSelect(member.id)} onPause={() => props.onPause(member.id)} onFinish={() => props.onFinish(member.id)} onRemove={() => props.onRemove(member.id)} />)}
       {!adding && <button className="team-add" disabled={busy || !isDesktop} onClick={() => setAdding(true)}><UserPlus size={15} />Sumar un rol al equipo</button>}
-      {team.some(m => m.runtime === 'claude') && <FolderTrust trusted={props.trustedFolder} busy={busy} onChange={props.onTrustFolder} />}
+      {(props.primaryRuntime === 'claude' || team.some(m => m.runtime === 'claude')) && <FolderTrust trusted={props.trustedFolder} busy={busy} onChange={props.onTrustFolder} />}
     </div>}
     {showPicker && <RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} busy={busy} isDesktop={isDesktop} canCancel={team.length > 0} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} />}
     {!work && <div className="agent-idle"><div className="agent-symbol"><MessageSquare size={27} /></div><h3>Un equipo listo<br />para trabajar.</h3><p className="footnote">Elegí o creá un trabajo para armar su equipo.</p></div>}
-    {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} onSaveAsDocument={props.onSaveAsDocument} /> : <ResumeCard member={selected} busy={busy} onOpen={() => props.onOpen(selected.id)} onRemove={() => props.onRemove(selected.id)} />)}
+    {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} onSaveAsDocument={props.onSaveAsDocument} untracked={props.untracked} onAdoptFile={props.onAdoptFile} /> : <ResumeCard member={selected} busy={busy} onOpen={() => props.onOpen(selected.id)} onRemove={() => props.onRemove(selected.id)} />)}
     {!showPicker && !selected && team.length > 0 && <p className="chat-empty">Elegí un miembro del equipo para ver su conversación.</p>}
   </div>;
 }

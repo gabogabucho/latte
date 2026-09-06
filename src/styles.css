@@ -408,3 +408,7 @@ html,body,#root{height:100%;overflow:hidden}
 .folder-trust p{margin:0 8px 6px;font-size:10px;line-height:1.65;color:#8a7a63}
 .folder-trust .folder-trust-note{opacity:.75}
 .folder-trust>button{margin:0 8px 8px;padding:3px 9px;font-size:11px}
+.answer-file-hint{display:flex;flex-direction:column;gap:6px;margin:0 0 8px;padding:8px 10px;border:1px solid rgba(200,160,90,.35);border-radius:7px;background:rgba(200,160,90,.07)}
+.answer-file-hint span{font-size:10px;line-height:1.6;color:#b09a76}
+.answer-file-hint button{align-self:flex-start;padding:3px 9px;font-size:11px}
+.runtime-card.pending{opacity:.6}

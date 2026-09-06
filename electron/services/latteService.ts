@@ -695,9 +695,16 @@ export class LatteService implements BackendApi {
 
   // MCP: shown and operated through each runtime's own CLI ---------------------
 
-  async listMcpServers(): Promise<McpRuntimeTools[]> {
+  /**
+   * Without a runtime, all three. With one, only that one, so the screen can
+   * fill in as each answers: Claude Code health-checks every server and takes
+   * far longer than the other two, and waiting for it hid their results.
+   */
+  async listMcpServers(runtime: ChatRuntime | null = null): Promise<McpRuntimeTools[]> {
     if (!this.deps.mcp) return [];
-    return this.deps.mcp.list();
+    if (runtime === null) return this.deps.mcp.list();
+    if (runtime !== 'claude' && runtime !== 'codex' && runtime !== 'opencode') throw new TypeError('Unknown runtime');
+    return [await this.deps.mcp.listOne(runtime)];
   }
 
   async addMcpServer(runtime: 'claude' | 'codex', input: McpServerInput): Promise<void> {

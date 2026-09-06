@@ -103,18 +103,6 @@ export function App() {
   /** Saves an answer from the conversation as a document of this work. */
   const saveAnswerAsDocument = (text: string) => {
     if (!work) return;
-    // The agent may have already written a file with this same content. Saying
-    // so here is what stops the work from ending with two copies of one thing.
-    if (untracked.length > 0) {
-      const names = untracked.map(f => f.fileName).join(', ');
-      const adopt = window.confirm(
-        `El agente ya dejó ${untracked.length === 1 ? 'este archivo' : 'estos archivos'} en la carpeta: ${names}.
-
-Aceptar: agregarlo como documento (evita duplicar).
-Cancelar: igual guardo la respuesta del chat como un documento nuevo.`,
-      );
-      if (adopt) { void trackFile(untracked[0].fileName); return; }
-    }
     const title = window.prompt('¿Con qué título guardamos esta respuesta como documento?', 'Estrategia');
     if (!title || !title.trim()) return;
     const guess = /calendario|cronograma/i.test(title) ? 'calendar' : /estrateg/i.test(title) ? 'strategy' : /investigac|research/i.test(title) ? 'research' : /copy|pieza/i.test(title) ? 'copy' : 'note';
@@ -160,6 +148,28 @@ Cancelar: igual guardo la respuesta del chat como un documento nuevo.`,
   useEffect(() => { if (!work) { setTeam([]); setTrustedFolder(false); return; } void loadTeam(work.id).catch(e => setError(displayError(e))); void api.getFolderTrust(work.id).then(setTrustedFolder).catch(() => setTrustedFolder(false)); }, [work?.id]);
   useEffect(() => { if (!brand) return; const n = ++generation.current; setWork(null); setWorks([]); setDecisions([]); setDocuments([]); void api.listWorks(brand.id).then(list => { if (n !== generation.current) return; setWorks(list); if (list[0]) setWork(list[0]); }).catch(e => setError(displayError(e))); }, [brand?.id]);
   useEffect(() => { if (!work) { setDocuments([]); setDecisions([]); setUntracked([]); return; } let active = true; void Promise.all([api.listDocuments(work.id), api.listDecisions(work.id), api.listUntrackedFiles(work.id).catch(() => [])]).then(([docs, d, untrackedFiles]) => { if (active) { setDocuments(docs); setDecisions(d); setUntracked(untrackedFiles); } }).catch(e => setError(displayError(e))); return () => { active = false; }; }, [work?.id]);
+  /**
+   * When an agent finishes a turn, look at the folder again.
+   *
+   * An agent writes files directly to disk and has no way to register them, so
+   * without this Latte kept showing the folder as it was before the agent
+   * worked: the new file stayed invisible, the offer to adopt it never
+   * appeared, and saving the answer produced a second copy of the same thing.
+   * A real run is what surfaced it; the turn ending is the honest moment to look.
+   */
+  const workChatIds = Object.values(chats).filter(c => work && c.workId === work.id).map(c => c.id).join(',');
+  useEffect(() => {
+    if (!work) return;
+    const ids = workChatIds ? workChatIds.split(',') : [];
+    if (ids.length === 0) return;
+    const anyBusy = () => ids.some(id => chatStore.get(id).status !== 'idle');
+    let wasBusy = anyBusy();
+    return chatStore.subscribe(() => {
+      const busyNow = anyBusy();
+      if (wasBusy && !busyNow) void loadDocuments(work.id).catch(() => undefined);
+      wasBusy = busyNow;
+    });
+  }, [work?.id, workChatIds]);
   // Only real unsaved edits are worth a confirmation. Open chats and terminals
   // are not: closing the app is how you end them.
   const unsaved = dirty || contextDirty;
@@ -254,7 +264,34 @@ Cancelar: igual guardo la respuesta del chat como un documento nuevo.`,
   };
   const addMember = async (roleId: string, options: TeamMemberOptions | null) => { if (!work || startingChat) return; await openSession(() => api.addTeamMember(work.id, roleId, options), work.id).catch(() => undefined); };
   const openMember = async (memberId: string) => { if (!work || startingChat) return; chatStore.forget(memberId); await openSession(() => api.openTeamMember(memberId), work.id).catch(() => undefined); };
-  const trustFolder = (next: boolean) => { if (!work) return; void run(async () => { await api.setFolderTrust(work.id, next); setTrustedFolder(next); setNotice(next ? 'Listo. Las conversaciones que abras desde ahora escriben en esta carpeta sin preguntar.' : 'Vuelven a pedir permiso por cada archivo, desde la próxima conversación.'); }); };
+  /**
+   * The grant is a start-time flag of the agent process, so a conversation
+   * already running would not see it. Rather than say "next time", the idle
+   * Claude members are reopened right here: pause and resume keeps their
+   * history. One that is mid-answer is left alone and named.
+   */
+  const trustFolder = (next: boolean) => {
+    if (!work) return;
+    void run(async () => {
+      await api.setFolderTrust(work.id, next);
+      setTrustedFolder(next);
+      const claudeChats = Object.values(chats).filter(c => c.workId === work.id && c.provider === 'claude');
+      const busyNames = claudeChats.filter(c => chatStore.get(c.id).status !== 'idle').map(c => c.roleName);
+      const idle = claudeChats.filter(c => chatStore.get(c.id).status === 'idle');
+      for (const chat of idle) {
+        await api.pauseTeamMember(chat.id);
+        chatStore.forget(chat.id);
+        const reopened = await api.openTeamMember(chat.id);
+        setChats(prev => ({ ...prev, [reopened.id]: reopened }));
+        await chatStore.sync(reopened.id);
+      }
+      if (work) await loadTeam(work.id);
+      const applied = next ? 'Listo, escriben en esta carpeta sin preguntar.' : 'Vuelven a pedir permiso por cada archivo.';
+      setNotice(busyNames.length > 0
+        ? `${applied} ${busyNames.join(' y ')} está respondiendo: le aplica cuando termine y la reanudes.`
+        : applied);
+    });
+  };
   const dropChat = (memberId: string) => { setChats(prev => { const next = { ...prev }; delete next[memberId]; return next; }); chatStore.forget(memberId); };
   const pauseMember = (memberId: string) => run(async () => { await api.pauseTeamMember(memberId); dropChat(memberId); if (work) await loadTeam(work.id); });
   const finishMember = (memberId: string) => run(async () => { await api.finishTeamMember(memberId); dropChat(memberId); if (work) await loadTeam(work.id); setNotice('Miembro marcado como finalizado'); });
@@ -287,7 +324,7 @@ Cancelar: igual guardo la respuesta del chat como un documento nuevo.`,
     </main>
     <aside className="agent-panel"><button type="button" className={'panel-resizer' + (dragging ? ' dragging' : '')} aria-label="Ajustar ancho del panel del agente" title="Arrastrá para cambiar el ancho" onPointerDown={startResize} /><div className="agent-title">Tu equipo de trabajo<div className="agent-title-actions"><button className="icon-button" aria-label={expanded ? 'Reducir el chat' : 'Ampliar el chat'} title={expanded ? 'Reducir el chat' : 'Ampliar el chat'} onClick={toggleExpanded}>{expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button><button className="icon-button" aria-label="Proveedores de IA" title="Proveedores de IA" onClick={() => setSettings('agents')}><Settings2 size={16} /></button></div></div>
       <div className="agent-mode-tabs" role="tablist" aria-label="Modo del agente"><button role="tab" aria-selected={agentMode === 'chat'} className={agentMode === 'chat' ? 'selected' : ''} onClick={() => setAgentMode('chat')}><MessageSquare size={15} />Conversación{liveChatIds.size > 0 && <span className="tag count">{liveChatIds.size}</span>}</button><button role="tab" aria-selected={agentMode === 'terminal'} className={agentMode === 'terminal' ? 'selected' : ''} onClick={() => setAgentMode('terminal')}><TerminalSquare size={15} />Terminal<span className="tag">AVANZADO</span></button></div>
-      {agentMode === 'chat' && <TeamPanel work={work} team={team} chats={chats} selectedId={selectedMemberId} roles={roles} primaryLabel={primaryLabel} primaryDetail={primaryDetail} primaryReady={primaryReady} choices={runtimeChoices} busy={busy || startingChat} isDesktop={isDesktop} onSelect={selectMember} onAdd={addMember} onOpen={openMember} onPause={pauseMember} onFinish={finishMember} onRemove={removeMember} onSaveAsDocument={saveAnswerAsDocument} trustedFolder={trustedFolder} onTrustFolder={trustFolder} onProviders={() => setSettings('agents')} onRecheck={() => void refreshChatStatus()} onError={setError} />}
+      {agentMode === 'chat' && <TeamPanel work={work} team={team} chats={chats} selectedId={selectedMemberId} roles={roles} primaryLabel={primaryLabel} primaryDetail={primaryDetail} primaryReady={primaryReady} choices={runtimeChoices} busy={busy || startingChat} isDesktop={isDesktop} onSelect={selectMember} onAdd={addMember} onOpen={openMember} onPause={pauseMember} onFinish={finishMember} onRemove={removeMember} onSaveAsDocument={saveAnswerAsDocument} untracked={untracked.map(f => f.fileName)} onAdoptFile={fileName => void trackFile(fileName)} primaryRuntime={primaryRuntime} trustedFolder={trustedFolder} onTrustFolder={trustFolder} onProviders={() => setSettings('agents')} onRecheck={() => void refreshChatStatus()} onError={setError} />}
       {agentMode === 'terminal' && <><p className="agent-explanation">Tu CLI, con sus herramientas y su propia interfaz. Latte prepara el espacio y el contexto de este trabajo.</p><label className="field-label" htmlFor="provider">RUNTIME</label><select id="provider" value={provider} disabled={Boolean(session) || starting} onChange={e => setProvider(e.target.value as Provider)}>{(['opencode', 'claude', 'codex'] as Provider[]).map(p => <option key={p} value={p}>{p === 'opencode' ? 'OpenCode' : p === 'claude' ? 'Claude Code' : 'Codex'}{runtimes.find(r => r.provider === p)?.available ? ' · Detectado' : ''}</option>)}</select><p className="runtime-detail">{runtimes.find(r => r.provider === provider)?.detail ?? 'Comprobando disponibilidad…'}</p>
         <div className="terminal-stack">{Object.values(sessions).map(s => <div key={s.id} style={{ display: s.id === session?.id ? 'block' : 'none' }}><TerminalPane sessionId={s.id} onError={setError} /></div>)}</div>
         {session ? <><div className="session-heading"><span><i className={sessionEnded ? 'ended-dot' : 'live-dot'} />{session.provider} · {sessionWork?.title ?? 'Trabajo de la sesión'}</span><button aria-label="Detener agente" title="Detener agente" onClick={() => run(async () => { await api.stopAgent(session.id); setSession(null); })}><Square size={13} /></button></div><form className="prompt-form" onSubmit={e => { e.preventDefault(); if (!prompt.trim() || sessionEnded) return; void run(async () => { await api.writeAgent(session.id, prompt + '\r'); setPrompt(''); }); }}><textarea aria-label="Mensaje al agente" placeholder="¿Qué trabajamos ahora?" value={prompt} onChange={e => setPrompt(e.target.value)} /><div><small>{sessionEnded ? 'Sesión finalizada' : 'Se envía al CLI activo'}</small><button className="primary icon-button" disabled={!prompt.trim() || busy || sessionEnded} aria-label="Enviar mensaje"><ArrowUpRight size={18} /></button></div></form></> : <div className="agent-idle"><div className="agent-symbol"><TerminalSquare size={27} /></div><h3>Una terminal real<br />para tu CLI.</h3><p>Iniciá una sesión con tu CLI instalado. Sus permisos y autenticación siguen bajo tu control.</p><button className="primary" disabled={!work || starting || !runtimes.find(r => r.provider === provider)?.available} onClick={start}>{starting ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />}{starting ? 'Iniciando…' : 'Iniciar agente'}</button>{!isDesktop && <small className="preview-note">La vista web guarda en este navegador. Para ejecutar agentes, abrí Latte Desktop.</small>}</div>}</>}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Check, LoaderCircle, Plug, Plus, RefreshCw, Trash2, X } from 'lucide-react';
-import type { McpRuntimeTools, McpServer } from '../shared/contracts';
+import type { ChatRuntime, McpRuntimeTools, McpServer } from '../shared/contracts';
 import { api } from './browser-api';
 
 const RUNTIME_NAME: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode' };
@@ -26,16 +26,27 @@ export function ToolsView({ onNotice, onError }: { onNotice: (text: string) => v
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<'claude' | 'codex' | null>(null);
 
+  /**
+   * One query per runtime, all three at once, each card drawn as it answers.
+   * Claude Code health-checks every server it has configured, so it can take
+   * half a minute; Codex and OpenCode answer in a second and there is no
+   * reason to hide them behind the slow one.
+   */
   const load = async () => {
     setLoading(true);
-    try {
-      setRuntimes(await api.listMcpServers());
-    } catch (e) {
-      onError(displayError(e));
-      setRuntimes(r => r ?? []);
-    } finally {
-      setLoading(false);
-    }
+    setRuntimes(null);
+    const order: ChatRuntime[] = ['claude', 'codex', 'opencode'];
+    const done = new Map<ChatRuntime, McpRuntimeTools>();
+    await Promise.all(order.map(async runtime => {
+      try {
+        const [result] = await api.listMcpServers(runtime);
+        if (result) done.set(runtime, result);
+      } catch (e) {
+        onError(displayError(e));
+      }
+      setRuntimes(order.filter(r => done.has(r)).map(r => done.get(r) as McpRuntimeTools));
+    }));
+    setLoading(false);
   };
   useEffect(() => { void load(); }, []);
 
@@ -57,13 +68,11 @@ export function ToolsView({ onNotice, onError }: { onNotice: (text: string) => v
     </p>
     <button className="subtle" disabled={loading || busy} onClick={() => void load()}>{loading ? <LoaderCircle className="spin" size={13} /> : <RefreshCw size={13} />}Actualizar</button>
 
-    {/* A blank wait reads as "no hay nada". The three cards say what is pending. */}
-    {loading && !runtimes && <div className="provider-list">
-      {Object.entries(RUNTIME_NAME).map(([key, label]) => <div className="runtime-card" key={key}>
-        <div className="runtime-head"><strong>{label}</strong><small><LoaderCircle className="spin" size={12} /> Consultando…</small></div>
-      </div>)}
-      <p className="footnote">Se consultan los tres a la vez. El de Claude Code además prueba la conexión de cada herramienta, así que es el que más tarda.</p>
-    </div>}
+    {/* A blank wait reads as "no hay nada": name what is still pending. */}
+    {loading && Object.entries(RUNTIME_NAME).filter(([key]) => !runtimes?.some(r => r.runtime === key)).map(([key, label]) => <div className="runtime-card pending" key={key}>
+      <div className="runtime-head"><strong>{label}</strong><small><LoaderCircle className="spin" size={12} /> Consultando…</small></div>
+    </div>)}
+    {loading && <p className="footnote">El de Claude Code prueba la conexión de cada herramienta, así que es el que más tarda.</p>}
 
     {runtimes?.map(rt => <div className="runtime-card" key={rt.runtime}>
       <div className="runtime-head">

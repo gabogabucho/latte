@@ -35,19 +35,21 @@ export class McpCatalog {
   }
 
   /** What every runtime has configured, plus what Latte can and cannot do with it. */
+  /** One runtime, so the UI can show each card as it lands instead of waiting for the slowest. */
+  async listOne(runtime: ChatRuntime): Promise<McpRuntimeTools> {
+    const found = await this.deps.detector.resolve(runtime as 'claude' | 'codex' | 'opencode');
+    if (!found) return { runtime, installed: false, canEdit: false, detail: 'No está instalado o no está en el PATH.', servers: [] };
+    try {
+      return await this.listFor(runtime, found.executable);
+    } catch (error) {
+      return { runtime, installed: true, canEdit: canEdit(runtime), detail: describe(error), servers: [] };
+    }
+  }
+
   async list(): Promise<McpRuntimeTools[]> {
     // In parallel: Claude Code health-checks every server, so asking one after
     // the other took as long as all three timeouts stacked up.
-    return Promise.all(['claude', 'codex', 'opencode'].map(async (runtime) => {
-      const kind = runtime as ChatRuntime;
-      const found = await this.deps.detector.resolve(kind as 'claude' | 'codex' | 'opencode');
-      if (!found) return { runtime: kind, installed: false, canEdit: false, detail: 'No está instalado o no está en el PATH.', servers: [] };
-      try {
-        return await this.listFor(kind, found.executable);
-      } catch (error) {
-        return { runtime: kind, installed: true, canEdit: canEdit(kind), detail: describe(error), servers: [] };
-      }
-    }));
+    return Promise.all((['claude', 'codex', 'opencode'] as ChatRuntime[]).map((runtime) => this.listOne(runtime)));
   }
 
   private async listFor(runtime: ChatRuntime, executable: string): Promise<McpRuntimeTools> {

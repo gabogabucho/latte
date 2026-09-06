@@ -9,7 +9,7 @@ import { friendlyTool } from './tool-names';
 
 const displayError = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export function ChatPane({ session, onStop, onError, onSaveAsDocument }: { session: ChatSession; onStop: () => void; onError: (error: string) => void; onSaveAsDocument?: (text: string) => void }) {
+export function ChatPane({ session, onStop, onError, onSaveAsDocument, untracked = [], onAdoptFile }: { session: ChatSession; onStop: () => void; onError: (error: string) => void; onSaveAsDocument?: (text: string) => void; untracked?: string[]; onAdoptFile?: (fileName: string) => void }) {
   const state = useChatState(chatStore, session.id);
   const draft = state.draft;
   const setDraft = (text: string) => chatStore.setDraft(session.id, text);
@@ -48,7 +48,7 @@ export function ChatPane({ session, onStop, onError, onSaveAsDocument }: { sessi
     </div>
     <div className="chat-scroll" ref={scroller} aria-live="polite">
       {state.messages.length === 0 && <p className="chat-empty">Conversación nueva con {session.roleName}. Trabaja en la carpeta de este trabajo y lee el contexto de marca, el brief y las decisiones registradas.</p>}
-      {state.messages.map(message => <MessageView key={message.id} message={message} roleName={session.roleName} onSaveAsDocument={onSaveAsDocument} />)}
+      {state.messages.map(message => <MessageView key={message.id} message={message} roleName={session.roleName} onSaveAsDocument={onSaveAsDocument} untracked={untracked} onAdoptFile={onAdoptFile} />)}
       {state.permissions.map(permission => <PermissionCard key={permission.id} chatId={session.id} runtime={session.provider} request={permission} onError={onError} />)}
       {state.questions.map(question => <QuestionCard key={question.id} chatId={session.id} request={question} onError={onError} />)}
       {busy && <div className="chat-status"><LoaderCircle className="spin" size={13} />{state.status === 'retry' ? state.statusDetail || 'Reintentando…' : 'El agente está trabajando…'}</div>}
@@ -61,7 +61,7 @@ export function ChatPane({ session, onStop, onError, onSaveAsDocument }: { sessi
   </div>;
 }
 
-function MessageView({ message, roleName, onSaveAsDocument }: { message: ChatMessage; roleName: string; onSaveAsDocument?: (text: string) => void }) {
+function MessageView({ message, roleName, onSaveAsDocument, untracked, onAdoptFile }: { message: ChatMessage; roleName: string; onSaveAsDocument?: (text: string) => void; untracked: string[]; onAdoptFile?: (fileName: string) => void }) {
   const visible = message.parts.filter(p => p.type !== 'text' || p.text.trim().length > 0);
   if (message.role === 'user') {
     const text = message.parts.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('\n');
@@ -70,10 +70,18 @@ function MessageView({ message, roleName, onSaveAsDocument }: { message: ChatMes
   // An answer worth keeping should not stay trapped in the conversation.
   const text = message.parts.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('\n\n').trim();
   const worthKeeping = message.completed && !message.error && text.length > 400;
+  // If the agent already wrote a file, saying so with its own button is what
+  // stops the work from ending with two copies of one deliverable. Two named
+  // buttons, no dialog: the person picks the file or the answer, on sight.
+  const pending = worthKeeping ? untracked : [];
   return <div className="chat-message assistant">
     <div className="chat-role">{roleName}{!message.completed && !message.error ? <LoaderCircle className="spin" size={11} /> : null}
-      {worthKeeping && onSaveAsDocument && <button className="save-as-document" title="Guardar esta respuesta como un documento del trabajo" onClick={() => onSaveAsDocument(text)}><FilePlus size={12} />Guardar como documento</button>}
+      {worthKeeping && onSaveAsDocument && <button className="save-as-document" title="Guardar esta respuesta como un documento del trabajo" onClick={() => onSaveAsDocument(text)}><FilePlus size={12} />{pending.length > 0 ? 'Guardar la respuesta aparte' : 'Guardar como documento'}</button>}
     </div>
+    {pending.length > 0 && onAdoptFile && <div className="answer-file-hint">
+      <span>El agente dejó {pending.length === 1 ? 'este archivo' : 'estos archivos'} en la carpeta. Agregalo y evitás una copia de lo mismo.</span>
+      {pending.map(fileName => <button key={fileName} className="primary" onClick={() => onAdoptFile(fileName)}><FilePlus size={12} />Agregar {fileName}</button>)}
+    </div>}
     {visible.map(part => <PartView key={part.id} part={part} />)}
     {message.error && <div className="chat-error"><CircleAlert size={14} /><span>{message.error}</span></div>}
   </div>;

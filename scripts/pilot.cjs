@@ -106,6 +106,25 @@ app.whenReady().then(async () => {
     `);
     await shot('equipo-strategist');
 
+    // El punto de la corrida: conceder la carpeta de una vez y contar cuántos
+    // permisos siguen apareciendo después.
+    console.log('   concediendo la carpeta desde el panel del equipo');
+    log.folderGrant = await act(`
+      const row = document.querySelector('.folder-trust');
+      if (!row) return { ok: false, why: 'no apareció la fila de permiso de carpeta' };
+      row.open = true;
+      await pause(300);
+      const button = byText('Permitir en esta carpeta', '.folder-trust button');
+      if (!button) return { ok: false, why: 'no está el botón para permitir' };
+      button.click();
+      // Reabre la conversación para que el permiso aplique ya.
+      for (let i = 0; i < 60; i++) { await pause(500); if (document.querySelector('.folder-trust.granted')) break; }
+      return { ok: Boolean(document.querySelector('.folder-trust.granted')), aviso: (document.querySelector('.message')?.innerText ?? '').trim().slice(0, 160), resumen: (document.querySelector('.folder-trust summary')?.innerText ?? '').trim() };
+    `);
+    note(log.folderGrant.ok ? `Concedí la carpeta en un clic: "${log.folderGrant.resumen}"` : `No pude conceder la carpeta: ${log.folderGrant.why}`);
+    await shot('permiso-de-carpeta');
+    await pause(2500);
+
     console.log('   enviando el pedido al agente (usa tu cuenta de Claude Code)…');
     await act(`
       await type('[aria-label="Mensaje al agente"]', ${JSON.stringify(ASK)});
@@ -144,11 +163,27 @@ app.whenReady().then(async () => {
     const brand = (await backend.service.listBrands()).find(b => b.name === 'Tierra Fina');
     const workNow = (await backend.service.listWorks(brand.id))[0];
     const hasStrategy = (await backend.service.listDocuments(workNow.id)).some(d => d.kind === 'strategy');
-    if (!hasStrategy) {
+    const untrackedNow = await backend.service.listUntrackedFiles(workNow.id);
+    if (!hasStrategy && untrackedNow.length > 0) {
+      // El archivo ya está en la carpeta: se adopta con su propio botón. Sin
+      // diálogo, y sobre todo sin una segunda copia de lo mismo.
+      log.adoptFromChat = await act(`
+        const hint = document.querySelector('.answer-file-hint');
+        const aviso = hint ? hint.innerText.split(String.fromCharCode(10))[0] : '';
+        const button = byText('Agregar ', '.answer-file-hint button');
+        if (!button) return { ok: false, why: 'no apareció el botón para agregar el archivo' };
+        const label = button.innerText.trim();
+        button.click();
+        await pause(1800);
+        return { ok: true, label, aviso };
+      `);
+      note(log.adoptFromChat.ok ? 'Adopté el archivo desde la conversación: ' + log.adoptFromChat.label : 'No pude adoptarlo: ' + log.adoptFromChat.why);
+      await shot('adoptado-desde-chat');
+    } else if (!hasStrategy) {
       note('El agente respondió en el chat sin crear el archivo: uso "Guardar como documento"');
       win.webContents.executeJavaScript('window.prompt = () => "Estrategia de redes"');
       log.savedFromChat = await act(`
-        const save = byText('Guardar como documento');
+        const save = document.querySelector('.save-as-document');
         if (!save) return { ok: false, why: 'no apareció el botón' };
         save.click();
         await pause(1500);
@@ -206,8 +241,16 @@ app.whenReady().then(async () => {
       }
       await click('Crear documento');
       await pause(1200);
-      return { screen: screen().slice(0, 220), baseOptions: select ? [...select.options].map(o => o.textContent) : [] };
+      // ¿Ofrece completarlo, o nace vacío y se olvida de mí?
+      const draft = document.querySelector('[aria-label="Mensaje al agente"]');
+      return {
+        screen: screen().slice(0, 220),
+        baseOptions: select ? [...select.options].map(o => o.textContent) : [],
+        pedidoPreparado: draft ? draft.value : '',
+        aviso: (document.querySelector('.message')?.innerText ?? '').trim().slice(0, 200),
+      };
     `);
+    note(log.calendar.pedidoPreparado ? 'El calendario derivado dejó el pedido escrito para completarlo' : 'El calendario derivado nació vacío y no ofreció completarlo');
     await shot('calendario');
 
     // ----------------------------------------------------- 7. decisión registrada
@@ -270,11 +313,13 @@ app.whenReady().then(async () => {
     log.settings = await act(`
       await click('Ajustes');
       await pause(700);
+      const t0 = Date.now();
       await click('Herramientas');
-      for (let i = 0; i < 40 && document.querySelectorAll('.runtime-card').length === 0; i++) await pause(500);
+      const esperando = document.querySelectorAll('.runtime-card').length;
+      for (let i = 0; i < 80 && document.querySelectorAll('.mcp-card').length === 0; i++) await pause(500);
       const cards = [...document.querySelectorAll('.tools-view .runtime-card strong')].map(s => s.textContent);
       const servers = [...document.querySelectorAll('.mcp-card strong')].map(s => s.textContent);
-      return { cards, servers: servers.slice(0, 10) };
+      return { cards, servers: servers.slice(0, 10), tarjetasMientrasCarga: esperando, segundosHastaVerAlgo: Math.round((Date.now() - t0) / 1000) };
     `);
     await shot('ajustes-mcp');
     await act(`await click('Volver al trabajo'); await pause(600);`);

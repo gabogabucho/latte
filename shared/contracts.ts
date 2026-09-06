@@ -289,7 +289,8 @@ export interface LatteAPI {
   setPrimaryAgent(choice: { runtime: ChatRuntime; model: string | null; accountId: string | null }): Promise<PrimaryAgent>;
   listAgentRuntimes(): Promise<AgentRuntimeInfo[]>;
   /** MCP servers each runtime has configured, with the real connection state it reports. */
-  listMcpServers(): Promise<McpRuntimeTools[]>;
+  /** Omit the runtime for all three; pass one to get just that one, which lands sooner. */
+  listMcpServers(runtime?: ChatRuntime | null): Promise<McpRuntimeTools[]>;
   addMcpServer(runtime: 'claude' | 'codex', input: McpServerInput): Promise<void>;
   removeMcpServer(runtime: 'claude' | 'codex', name: string): Promise<void>;
   addAgentAccount(runtime: 'claude' | 'codex', label: string): Promise<AgentAccount>;

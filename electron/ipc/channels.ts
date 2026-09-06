@@ -135,7 +135,7 @@ export const API_ARITY: Record<ApiMethod, number> = {
   getPrimaryAgent: 0,
   setPrimaryAgent: 1,
   listAgentRuntimes: 0,
-  listMcpServers: 0,
+  listMcpServers: 1,
   addMcpServer: 2,
   removeMcpServer: 2,
   addAgentAccount: 2,
