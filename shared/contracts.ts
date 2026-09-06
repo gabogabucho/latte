@@ -88,6 +88,9 @@ export interface McpServerInput {
   env: string[];
 }
 
+/** A Markdown file in the work folder that is not a tracked document yet. */
+export interface UntrackedFile { fileName: string; title: string; kind: DocumentKind; bytes: number; modifiedAt: string | null }
+
 /** Cheap poll answer used to notice external edits without a filesystem watcher. */
 export interface DocumentState { documentId: string; fingerprint: string; modifiedAt: string | null; baseOutdated: boolean }
 /**
@@ -203,6 +206,14 @@ export interface LatteAPI {
   keepDraftAsVersion(documentId: string, content: string): Promise<Revision>;
   listDocumentRevisions(documentId: string): Promise<Revision[]>;
   exportDocument(documentId: string): Promise<string | null>;
+  /**
+   * Markdown files sitting in the work folder that Latte is not tracking yet,
+   * typically written by an agent. An agent cannot register a document itself,
+   * so Latte offers to adopt them.
+   */
+  listUntrackedFiles(workId: string): Promise<UntrackedFile[]>;
+  /** Adopts an existing file as a tracked document: versions, export, conflict check. */
+  trackFile(workId: string, fileName: string): Promise<WorkDocument>;
   /** Re-points a derived document at the current version of its base, after the human reviewed the change. */
   acknowledgeBase(documentId: string): Promise<WorkDocument>;
   /**

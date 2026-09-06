@@ -31,6 +31,7 @@ import type {
   SaveOutcome,
   TeamMember,
   TeamMemberOptions,
+  UntrackedFile,
   Work,
   WorkDocument,
 } from '../../shared/contracts';
@@ -87,6 +88,11 @@ const PROVIDER_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const FINGERPRINT = /^[a-f0-9]{16}$/;
 const DOCUMENT_KINDS: DocumentKind[] = ['brief', 'strategy', 'calendar', 'research', 'copy', 'note'];
 const DOCUMENT_STATUSES: DocumentStatus[] = ['draft', 'review', 'approved'];
+
+/** A kind guessed from a file name is only accepted when Latte knows it. */
+function kindOf(value: string): DocumentKind {
+  return (DOCUMENT_KINDS as string[]).includes(value) ? (value as DocumentKind) : 'note';
+}
 
 function requireProviderId(value: unknown): string {
   if (typeof value !== 'string' || !PROVIDER_ID.test(value)) throw new TypeError('Invalid provider id');
@@ -318,6 +324,58 @@ export class LatteService implements BackendApi {
     if (!target) return null;
     writeFileAtomic(target, disk.content);
     return target;
+  }
+
+  /**
+   * Markdown an agent (or anyone) left in the work folder that Latte does not
+   * track yet. An agent cannot register a document by itself: the managed
+   * instruction files are Latte's, and letting a runtime edit them would make
+   * the list of deliverables unverifiable. So Latte looks for the files and
+   * offers to adopt them.
+   */
+  async listUntrackedFiles(workId: string): Promise<UntrackedFile[]> {
+    const id = requireId(workId, 'workId');
+    const work = this.syncFromDisk(this.deps.repo.getWork(id));
+    this.deps.files.ensureWork(work.brandId, work.id, work.brief);
+    const directory = this.deps.files.workDir(work.brandId, work.id);
+    const tracked = new Set(this.deps.repo.usedFileNames(work.id));
+    const out: UntrackedFile[] = [];
+    for (const name of scanFolder(directory).markdown) {
+      if (tracked.has(name)) continue;
+      // Latte's own README is not a deliverable; one the client already had is.
+      if (name === WORK_FILES.readme && this.deps.files.readDocument(work.brandId, work.id, name).content.startsWith('# Latte work directory')) continue;
+      const stat = this.deps.files.statDocument(work.brandId, work.id, name);
+      out.push({ fileName: name, title: titleFromFileName(name), kind: kindOf(kindFromFileName(name)), bytes: stat.bytes, modifiedAt: stat.modifiedAt });
+    }
+    return out;
+  }
+
+  /** Adopts an existing file: from here it has versions, export and conflict checks. */
+  async trackFile(workId: string, fileName: string): Promise<WorkDocument> {
+    const id = requireId(workId, 'workId');
+    const work = this.syncFromDisk(this.deps.repo.getWork(id));
+    const candidates = await this.listUntrackedFiles(id);
+    const candidate = candidates.find((c) => c.fileName === fileName);
+    if (!candidate) throw new ValidationError('Ese archivo no está en la carpeta del trabajo o ya es un documento');
+    const now = this.clock();
+    const disk = this.deps.files.readDocument(work.brandId, work.id, candidate.fileName);
+    const record: DocumentRecord = {
+      id: newId('doc'),
+      workId: work.id,
+      kind: candidate.kind,
+      title: candidate.title,
+      fileName: candidate.fileName,
+      status: 'draft',
+      baseDocumentId: null,
+      baseRevisionId: null,
+      baseFingerprint: null,
+      lastFingerprint: disk.fingerprint,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.deps.repo.insertDocument(record);
+    this.refreshInstructions(this.deps.repo.getBrand(work.brandId), this.deps.repo.getWork(work.id));
+    return this.describeDocument(record);
   }
 
   /** After the human reviewed the change, the derived document points at the base's current version. */

@@ -92,6 +92,16 @@ export class WorkspaceFiles {
     writeFileAtomic(this.paths.workFile(brandId, workId, fileName), content);
   }
 
+  /** Size and mtime without reading the content: used to list untracked files. */
+  statDocument(brandId: string, workId: string, fileName: string): { bytes: number; modifiedAt: string | null } {
+    try {
+      const stat = fs.statSync(this.paths.workFile(brandId, workId, fileName));
+      return { bytes: stat.size, modifiedAt: stat.mtime.toISOString() };
+    } catch {
+      return { bytes: 0, modifiedAt: null };
+    }
+  }
+
   documentExists(brandId: string, workId: string, fileName: string): boolean {
     return fs.existsSync(this.paths.workFile(brandId, workId, fileName));
   }

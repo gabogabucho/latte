@@ -115,7 +115,7 @@ export function renderInstructions(input: InstructionsInput): string {
     `- Each tracked file listed above is a deliverable of its own. Write in the one your task belongs to; \`./${WORK_FILES.brief}\` holds the ask, not every result.`,
     '- The human edits these same files from Latte. Re-read a file immediately before editing it and keep it valid Markdown.',
     '- A save made THROUGH Latte is refused when the file no longer matches the version Latte last saw, and the version on disk is kept for the human to resolve. A write you make directly to the file is not intercepted: it replaces what was there and Latte only notices afterwards. Re-read a file immediately before editing it.',
-    '- A file you create that is not listed above is not tracked: no versions, no export. Tell the human to add it as a document if it matters.',
+    '- You cannot register a document yourself: this file is managed by Latte. But a Markdown file you create at the top level of this folder is offered to the human in the app as "agregar como documento", and once they accept it gets versions and export. So: create the file, then say plainly that it is there and worth adding.',
     `- \`./${WORK_FILES.claude}\` and \`./${WORK_FILES.agents}\` are managed by Latte. Do not edit them.`,
     `- \`./${WORK_FILES.metaDir}/\` holds immutable snapshots. Never modify or delete anything in it.`,
     '- Stay inside this directory. Do not touch other brands, other works or global tool configuration.',

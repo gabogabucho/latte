@@ -25,6 +25,8 @@ const METHODS = [
   'keepDraftAsVersion',
   'listDocumentRevisions',
   'exportDocument',
+  'listUntrackedFiles',
+  'trackFile',
   'acknowledgeBase',
   'useFolder',
   'listDecisions',

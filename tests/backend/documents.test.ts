@@ -243,3 +243,45 @@ describe('Migration v3 -> v4', () => {
     repo.close();
   });
 });
+
+describe('Adopting a file an agent left in the folder', () => {
+  let b: TestBackend | null = null;
+  afterEach(() => { b?.cleanup(); b = null; });
+
+  it('offers it, adopts it, and from then on it has versions and export', async () => {
+    const f = await fixture(); b = f.b;
+    // Exactly what happened in a real session: the agent wrote a file it could
+    // not register, because registering is Latte's job, not the runtime's.
+    f.writeOutside('# Qué necesito de vos\n\n- Objetivo\n- Audiencia\n', 'que-necesito.md');
+
+    const pending = await f.b.service.listUntrackedFiles(f.work.id);
+    expect(pending.map((p) => [p.fileName, p.title, p.kind])).toEqual([['que-necesito.md', 'Que necesito', 'note']]);
+    expect(pending[0].bytes).toBeGreaterThan(0);
+    // The managed files are never offered as documents.
+    expect(pending.map((p) => p.fileName)).not.toContain('CLAUDE.md');
+    expect(pending.map((p) => p.fileName)).not.toContain('AGENTS.md');
+
+    const document = await f.b.service.trackFile(f.work.id, 'que-necesito.md');
+    expect(document).toMatchObject({ fileName: 'que-necesito.md', title: 'Que necesito', kind: 'note' });
+    // Now it behaves like any other deliverable.
+    const read = await f.b.service.readDocument(document.id);
+    expect(read.content).toContain('Qué necesito de vos');
+    const revision = await f.b.service.snapshotDocument(document.id);
+    expect(revision.documentId).toBe(document.id);
+    expect(await f.b.service.listUntrackedFiles(f.work.id)).toEqual([]);
+    // And the instructions now list it for the agent.
+    const dir = f.b.files.workDir(f.brand.id, f.work.id);
+    expect(fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8')).toContain('que-necesito.md');
+  });
+
+  it('refuses to adopt what is not there, and never adopts twice', async () => {
+    const f = await fixture(); b = f.b;
+    await expect(f.b.service.trackFile(f.work.id, 'no-existe.md')).rejects.toThrow(/no está en la carpeta/);
+    // brief.md is already a document: it must not be offered or adopted again.
+    await expect(f.b.service.trackFile(f.work.id, 'brief.md')).rejects.toThrow(/ya es un documento/);
+    f.writeOutside('# Otra', 'otra.md');
+    await f.b.service.trackFile(f.work.id, 'otra.md');
+    await expect(f.b.service.trackFile(f.work.id, 'otra.md')).rejects.toThrow(/ya es un documento/);
+    expect((await f.b.service.listDocuments(f.work.id)).filter((d) => d.fileName === 'otra.md')).toHaveLength(1);
+  });
+});

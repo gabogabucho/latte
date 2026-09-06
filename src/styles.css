@@ -379,3 +379,5 @@ html,body,#root{height:100%;overflow:hidden}
 .active-context-body .agent-footnote{margin:6px 0 0}
 .active-context>summary{letter-spacing:1.1px;padding:9px 0 8px}
 .active-context>summary>span{letter-spacing:0;font-size:10px}
+.doc-banner.untracked{background:#eef1e8;color:#4c6146;border-bottom-color:#d6dfc9}
+.doc-banner.untracked strong{color:#302c26}

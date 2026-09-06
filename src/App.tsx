@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ArrowUpRight, Bookmark, Check, ChevronDown, Circle, Copy, FileText, Folder, LoaderCircle, Maximize2, MessageSquare, Minimize2, Minus, Plus, Save, Settings2, Square, TerminalSquare, X } from 'lucide-react';
-import type { Brand, Work, Decision, RuntimeStatus, AgentSession, Provider, ChatSession, ChatRuntimeStatus, PrimaryAgent, AgentRuntimeInfo, AgentRole, TeamMember, TeamMemberOptions, WorkDocument, DocumentKind } from '../shared/contracts';
+import type { Brand, Work, Decision, RuntimeStatus, AgentSession, Provider, ChatSession, ChatRuntimeStatus, PrimaryAgent, AgentRuntimeInfo, AgentRole, TeamMember, TeamMemberOptions, WorkDocument, DocumentKind, UntrackedFile } from '../shared/contracts';
 import { api, chatStore, isDesktop } from './browser-api';
 import { DocumentsView, NewDocumentDialog } from './DocumentsView';
 import { documentDrafts } from './document-drafts';
@@ -43,6 +43,7 @@ export function App() {
   // Documents of the current work: the editor lives in DocumentsView, App only tracks which one is open.
   const [documents, setDocuments] = useState<WorkDocument[]>([]), [selectedDoc, setSelectedDoc] = useState<Record<string, string>>({});
   const [documentDirty, setDocumentDirty] = useState(false);
+  const [untracked, setUntracked] = useState<UntrackedFile[]>([]);
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [modal, setModal] = useState<Modal>(null), [name, setName] = useState('');
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
@@ -91,7 +92,22 @@ export function App() {
     if (!session) continue;
     for (const file of files) editors[file] = { roleId: session.roleId, roleName: session.roleName };
   }
-  const loadDocuments = async (workId: string) => { const list = await api.listDocuments(workId); setDocuments(list); return list; };
+  const loadDocuments = async (workId: string) => {
+    const list = await api.listDocuments(workId);
+    setDocuments(list);
+    // An agent can create a file but cannot register it: Latte finds it and offers to adopt it.
+    void api.listUntrackedFiles(workId).then(setUntracked).catch(() => setUntracked([]));
+    return list;
+  };
+  const trackFile = async (fileName: string) => {
+    if (!work) return;
+    await run(async () => {
+      const document = await api.trackFile(work.id, fileName);
+      await loadDocuments(work.id);
+      setSelectedDoc(prev => ({ ...prev, [work.id]: document.id }));
+      setNotice(`${document.title} ahora es un documento con versiones`);
+    });
+  };
   const transitioning = busy || starting || startingChat;
   const guard = () => !transitioning && (!(dirty || contextDirty) || window.confirm('Tenés cambios sin guardar. ¿Querés descartarlos?'));
   const run = async (fn: () => Promise<void>) => { setError(''); setBusy(true); try { await fn(); } catch (e) { setError(displayError(e)); } finally { setBusy(false); } };
@@ -116,7 +132,7 @@ export function App() {
   useEffect(() => { void api.listBrands().then(list => { setBrands(list); if (list[0]) { setBrand(list[0]); setContext(list[0].context); } }).catch(e => setError(displayError(e))); void api.runtimeStatus().then(setRuntimes).catch(e => setError(displayError(e))); void api.listRoles().then(setRoles).catch(e => setError(displayError(e))); void refreshChatStatus(); }, []);
   useEffect(() => { if (!work) { setTeam([]); return; } void loadTeam(work.id).catch(e => setError(displayError(e))); }, [work?.id]);
   useEffect(() => { if (!brand) return; const n = ++generation.current; setWork(null); setWorks([]); setDecisions([]); setDocuments([]); void api.listWorks(brand.id).then(list => { if (n !== generation.current) return; setWorks(list); if (list[0]) setWork(list[0]); }).catch(e => setError(displayError(e))); }, [brand?.id]);
-  useEffect(() => { if (!work) { setDocuments([]); setDecisions([]); return; } let active = true; void Promise.all([api.listDocuments(work.id), api.listDecisions(work.id)]).then(([docs, d]) => { if (active) { setDocuments(docs); setDecisions(d); } }).catch(e => setError(displayError(e))); return () => { active = false; }; }, [work?.id]);
+  useEffect(() => { if (!work) { setDocuments([]); setDecisions([]); setUntracked([]); return; } let active = true; void Promise.all([api.listDocuments(work.id), api.listDecisions(work.id), api.listUntrackedFiles(work.id).catch(() => [])]).then(([docs, d, untrackedFiles]) => { if (active) { setDocuments(docs); setDecisions(d); setUntracked(untrackedFiles); } }).catch(e => setError(displayError(e))); return () => { active = false; }; }, [work?.id]);
   // Only real unsaved edits are worth a confirmation. Open chats and terminals
   // are not: closing the app is how you end them.
   const unsaved = dirty || contextDirty;
@@ -225,7 +241,7 @@ export function App() {
     <main className="workspace">
       <div className="tabs"><button className={view === 'brief' ? 'selected' : ''} onClick={() => setView('brief')}>Documentos <span>{documents.length}</span></button><button className={view === 'decisions' ? 'selected' : ''} onClick={() => setView('decisions')}>Decisiones <span>{decisions.length}</span></button><div className="tab-spacer" /></div>
       {(error || notice) && <div role={error ? 'alert' : 'status'} className={'message ' + (error ? 'error' : '')}><span>{error || notice}</span><button aria-label="Cerrar aviso" onClick={() => { setError(''); setNotice(''); }}><X size={16} /></button></div>}
-      {view === 'brief' && <DocumentsView work={work} brandName={brand?.name ?? ''} documents={documents} selectedId={selectedDocId} onSelect={id => work && setSelectedDoc(prev => ({ ...prev, [work.id]: id }))} onDocumentsChanged={async () => { if (work) await loadDocuments(work.id); }} onWorkUpdated={onWorkUpdated} onDirtyChange={setDocumentDirty} onNotice={setNotice} onError={setError} onCreate={() => setModal('document')} onUseFolder={useFolder} editors={editors} busy={busy} />}
+      {view === 'brief' && <DocumentsView work={work} brandName={brand?.name ?? ''} documents={documents} selectedId={selectedDocId} onSelect={id => work && setSelectedDoc(prev => ({ ...prev, [work.id]: id }))} onDocumentsChanged={async () => { if (work) await loadDocuments(work.id); }} onWorkUpdated={onWorkUpdated} onDirtyChange={setDocumentDirty} onNotice={setNotice} onError={setError} onCreate={() => setModal('document')} onUseFolder={useFolder} untracked={untracked} onTrack={trackFile} editors={editors} busy={busy} />}
       {view === 'context' && <div className="document-scroll"><div className="document-kicker">EL PUNTO DE PARTIDA</div><h1>Una marca.<br />Un contexto compartido.</h1><p className="intro">Lo que el agente necesita saber: negocio, audiencia, tono, restricciones y decisiones vigentes. Se incorpora al iniciar cada sesión.</p><label className="field-label" htmlFor="brand-context">CONTEXTO DE {brand?.name}</label><textarea id="brand-context" className="context-editor" value={context} onChange={e => setContext(e.target.value)} placeholder="¿Qué ofrece la marca? ¿Para quién? ¿Qué no debemos asumir?" /><button className="primary" disabled={!contextDirty || busy} onClick={() => run(saveContext)}><Save size={16} />Guardar contexto</button><p className="footnote">Los cambios aplican a nuevas sesiones. No alteran retroactivamente el contexto de un agente en marcha.</p></div>}
       {view === 'decisions' && <div className="document-scroll"><div className="document-kicker">CRITERIO QUE PERMANECE</div><h1>No empezar<br />de cero otra vez.</h1><p className="intro">Registrá qué decidiste y por qué. Las decisiones pertenecen a este trabajo; no se convierten automáticamente en reglas de marca.</p>{work && <form className="decision-form" onSubmit={e => { e.preventDefault(); void run(async () => { if (!decision.trim()) return; await api.addDecision(work.id, decision.trim()); setDecisions(await api.listDecisions(work.id)); setDecision(''); }); }}><textarea aria-label="Nueva decisión" placeholder="Elegimos… porque…" value={decision} onChange={e => setDecision(e.target.value)} /><button className="primary" disabled={!decision.trim() || busy}><Plus size={15} />Registrar decisión</button></form>}<div className="decision-list">{decisions.map((d, i) => <div className="decision-card" key={d.id}><span className="decision-number">{String(i + 1).padStart(2, '0')}</span><div><p>{d.text}</p><small>{date(d.createdAt)}</small></div></div>)}{!decisions.length && <p className="footnote">Todavía no hay decisiones registradas.</p>}</div></div>}
       {view === 'memory' && <div className="document-scroll"><div className="document-kicker">MEMORIA DE MARCA · ENGRAM</div><h1>El trabajo sigue.<br />El contexto también.</h1><p className="intro">Conocimiento seleccionado, no una copia de cada conversación. Los recuerdos de esta marca se consultan por separado.</p><div className="memory-result"><ReactMarkdown remarkPlugins={[remarkGfm]}>{memory || 'Sin resultados.'}</ReactMarkdown></div><label className="field-label" htmlFor="memory-note">CONSERVAR UN APRENDIZAJE</label><textarea id="memory-note" className="context-editor short" value={memoryNote} onChange={e => setMemoryNote(e.target.value)} placeholder="Qué aprendimos, por qué importa y de dónde surge…" /><button className="primary" disabled={!memoryAvailable || !memoryNote.trim() || busy} onClick={() => run(async () => { const r = await api.saveMemory(brand!.id, memoryNote); if (!r.available) throw new Error(r.text); setMemoryNote(''); setNotice('Aprendizaje guardado en Engram'); openMemory(); })}><Bookmark size={15} />Guardar aprendizaje</button></div>}

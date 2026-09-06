@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { AlertTriangle, Check, Download, FileText, FolderOpen, History, Layers, LoaderCircle, Plus, RefreshCw, Save, X } from 'lucide-react';
+import { AlertTriangle, Check, Download, FilePlus, FileText, FolderOpen, History, Layers, LoaderCircle, Plus, RefreshCw, Save, X } from 'lucide-react';
 import type { DocumentContent, DocumentKind, Revision, WorkDocument, Work } from '../shared/contracts';
 import { api } from './browser-api';
 import { documentDrafts } from './document-drafts';
@@ -38,6 +38,9 @@ export interface DocumentsViewProps {
   onError: (text: string) => void;
   onCreate: () => void;
   onUseFolder: () => void;
+  /** Markdown in the folder that Latte is not tracking yet. */
+  untracked: { fileName: string; title: string }[];
+  onTrack: (fileName: string) => Promise<void>;
   /** Role currently writing to each file, by file name. */
   editors: Record<string, { roleId: string; roleName: string }>;
   busy: boolean;
@@ -256,6 +259,14 @@ export function DocumentsView(props: DocumentsViewProps) {
 
     {linked && <div className="doc-folder" title={linked}><FolderOpen size={13} /><span>Este trabajo usa tu carpeta: <code>{linked}</code></span></div>}
     {!linked && <div className="doc-folder subtle-folder"><FolderOpen size={13} /><span>Este trabajo guarda sus documentos dentro de Latte.</span><button onClick={props.onUseFolder} disabled={props.busy}>Usar una carpeta mía</button></div>}
+    {props.untracked.length > 0 && <div className="doc-banner untracked" role="status">
+      <FilePlus size={14} />
+      <span>{props.untracked.length === 1
+        ? <>Hay un archivo en la carpeta que Latte no sigue: <strong>{props.untracked[0].fileName}</strong>. Si lo agregás, gana versiones y exportación.</>
+        : <>Hay {props.untracked.length} archivos en la carpeta que Latte no sigue. Si los agregás, ganan versiones y exportación.</>}</span>
+      {props.untracked.slice(0, 3).map(f => <button key={f.fileName} disabled={props.busy} onClick={() => void props.onTrack(f.fileName)}>Agregar {f.fileName}</button>)}
+    </div>}
+
     {suggestion && <div className="doc-suggestion">
       <span><strong>{suggestion.label}</strong> {suggestion.hint}</span>
       <button onClick={props.onCreate}><Plus size={13} />Crear</button>
