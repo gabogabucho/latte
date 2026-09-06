@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, HardDrive, Info, Plug } from 'lucide-react';
 import type { AppInfo } from '../shared/contracts';
 import { api, isDesktop } from './browser-api';
@@ -12,7 +12,9 @@ export type SettingsSection = 'agents' | 'workspace';
  * Opening or closing it never writes anything; the workspace state stays in
  * App and comes back untouched.
  */
-export function SettingsScreen({ section, onSection, onClose, onChanged, onNotice, onError, notice, error, onDismiss }: {
+export function SettingsScreen({ controls, section, onSection, onClose, onChanged, onNotice, onError, notice, error, onDismiss }: {
+  /** Window controls: Settings is a full screen, so it needs them too. */
+  controls: ReactNode;
   section: SettingsSection;
   onSection: (section: SettingsSection) => void;
   onClose: () => void;
@@ -28,6 +30,7 @@ export function SettingsScreen({ section, onSection, onClose, onChanged, onNotic
       <button className="settings-back" onClick={onClose}><ArrowLeft size={16} />Volver al trabajo</button>
       <h1>Ajustes de Latte</h1>
       <span className="settings-scope">Configuración de la aplicación</span>
+      {controls}
     </header>
     <nav className="settings-nav" aria-label="Secciones de ajustes">
       <button className={section === 'agents' ? 'selected' : ''} onClick={() => onSection('agents')}><Plug size={16} />Agentes y proveedores</button>

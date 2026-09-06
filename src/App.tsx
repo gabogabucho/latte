@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUpRight, Bookmark, Check, ChevronDown, Circle, FileText, Folder, LoaderCircle, Maximize2, MessageSquare, Minimize2, Plus, Save, Settings2, Square, TerminalSquare, X } from 'lucide-react';
+import { ArrowUpRight, Bookmark, Check, ChevronDown, Circle, Copy, FileText, Folder, LoaderCircle, Maximize2, MessageSquare, Minimize2, Minus, Plus, Save, Settings2, Square, TerminalSquare, X } from 'lucide-react';
 import type { Brand, Work, Decision, RuntimeStatus, AgentSession, Provider, ChatSession, ChatRuntimeStatus, PrimaryAgent, AgentRuntimeInfo, AgentRole, TeamMember, TeamMemberOptions, WorkDocument, DocumentKind } from '../shared/contracts';
 import { api, chatStore, isDesktop } from './browser-api';
 import { DocumentsView, NewDocumentDialog } from './DocumentsView';
@@ -20,6 +20,20 @@ const maxAgentWidth = () => Math.max(AGENT_MIN, window.innerWidth - SIDEBAR - WO
 const clampAgentWidth = (value: number) => Math.min(maxAgentWidth(), Math.max(AGENT_MIN, Math.round(value)));
 const readAgentWidth = () => { try { const raw = localStorage.getItem(AGENT_WIDTH_KEY); const n = raw ? Number(raw) : NaN; return Number.isFinite(n) ? clampAgentWidth(n) : 355; } catch { return 355; } };
 const displayError = (e: unknown) => e instanceof Error ? e.message : String(e);
+
+/**
+ * The window is frameless, so Latte draws its own controls. The title bar area
+ * is draggable; every button opts out of dragging so it stays clickable.
+ */
+export function WindowControls() {
+  const [maximized, setMaximized] = useState(false);
+  useEffect(() => api.onWindowState(state => setMaximized(state.maximized)), []);
+  return <div className="window-controls">
+    <button aria-label="Minimizar" title="Minimizar" onClick={() => api.windowControl('minimize')}><Minus size={15} /></button>
+    <button aria-label={maximized ? 'Restaurar' : 'Maximizar'} title={maximized ? 'Restaurar' : 'Maximizar'} onClick={() => api.windowControl('maximize')}>{maximized ? <Copy size={13} /> : <Square size={12} />}</button>
+    <button className="close" aria-label="Cerrar" title="Cerrar" onClick={() => api.windowControl('close')}><X size={16} /></button>
+  </div>;
+}
 export function App() {
   const [brands, setBrands] = useState<Brand[]>([]), [brand, setBrand] = useState<Brand | null>(null);
   const [works, setWorks] = useState<Work[]>([]), [work, setWork] = useState<Work | null>(null);
@@ -153,7 +167,7 @@ export function App() {
   const workHasLiveChat = (workId: string) => Object.values(chats).some(c => c.workId === workId);
   const sessionWork = works.find(w => w.id === session?.workId);
   const activeTerminals = Object.values(sessions).filter(s => !endedSessions.has(s.id)).length, activeChats = liveChatIds.size;
-  if (settings) return <SettingsScreen section={settings} onSection={setSettings} onClose={() => { setSettings(null); setError(''); setNotice(''); }} onChanged={() => void refreshChatStatus()} onNotice={setNotice} onError={setError} notice={notice} error={error} onDismiss={() => { setError(''); setNotice(''); }} />;
+  if (settings) return <SettingsScreen controls={isDesktop ? <WindowControls /> : null} section={settings} onSection={setSettings} onClose={() => { setSettings(null); setError(''); setNotice(''); }} onChanged={() => void refreshChatStatus()} onNotice={setNotice} onError={setError} notice={notice} error={error} onDismiss={() => { setError(''); setNotice(''); }} />;
   return <div className={'app-shell' + (dragging ? ' dragging' : '')} style={{ ['--agent-width' as string]: `${agentWidth}px` }}>
     <aside className="sidebar">
       <div className="wordmark"><span className="logo-mark" aria-hidden="true" />Latte<span className="alpha">ALPHA</span></div>
@@ -165,7 +179,7 @@ export function App() {
       <nav className="work-nav">{works.map(w => <button key={w.id} className={work?.id === w.id && (view === 'brief' || view === 'decisions') ? 'work-active' : ''} onClick={() => selectWork(w)}><Folder size={17} /><span>{w.title}</span>{(workHasLiveChat(w.id) || sessions[w.id]) && <i className={sessions[w.id] && endedSessions.has(sessions[w.id].id) && !workHasLiveChat(w.id) ? 'ended-dot' : 'live-dot'} />}</button>)}{!works.length && <p className="sidebar-hint">Un espacio para cada idea que querés llevar adelante.</p>}</nav>
       <div className="sidebar-bottom"><button disabled={!brand || transitioning} onClick={() => { setName(''); setModal('work'); }}><Plus size={20} />Nuevo trabajo</button><div className="sidebar-rule" /><nav><button onClick={() => setSettings('agents')}><Settings2 size={17} />Ajustes</button></nav><div className="profile"><span className="avatar">G</span><div>Tu estudio<small>Local · Sin cuenta de Latte</small></div></div></div>
     </aside>
-    <header className="topbar"><div className="breadcrumb">{brand?.name ?? 'Bienvenido a Latte'}<span>/</span><strong>{work?.title ?? 'Tu espacio de marketing'}</strong></div><span className="local-badge"><i />{isDesktop ? 'Local' : 'Vista previa web'}</span></header>
+    <header className="topbar"><div className="breadcrumb">{brand?.name ?? 'Bienvenido a Latte'}<span>/</span><strong>{work?.title ?? 'Tu espacio de marketing'}</strong></div><span className="local-badge"><i />{isDesktop ? 'Local' : 'Vista previa web'}</span>{isDesktop && <WindowControls />}</header>
     <main className="workspace">
       <div className="tabs"><button className={view === 'brief' ? 'selected' : ''} onClick={() => setView('brief')}>Documentos <span>{documents.length}</span></button><button className={view === 'decisions' ? 'selected' : ''} onClick={() => setView('decisions')}>Decisiones <span>{decisions.length}</span></button><div className="tab-spacer" /></div>
       {(error || notice) && <div role={error ? 'alert' : 'status'} className={'message ' + (error ? 'error' : '')}><span>{error || notice}</span><button aria-label="Cerrar aviso" onClick={() => { setError(''); setNotice(''); }}><X size={16} /></button></div>}

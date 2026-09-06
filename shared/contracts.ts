@@ -192,6 +192,10 @@ export interface LatteAPI {
    * refuse to close; the confirmation is a native dialog instead.
    */
   reportUnsaved(hasUnsavedWork: boolean): void;
+  /** Title bar controls. The window is frameless, so the app draws its own. */
+  windowControl(action: 'minimize' | 'maximize' | 'close'): void;
+  /** Fires when the window is maximised or restored, so the icon matches reality. */
+  onWindowState(callback: (state: { maximized: boolean }) => void): () => void;
   // Providers
   listProviders(): Promise<ProviderInfo[]>;
   /** Stores an API key in the runtime's own credential store (Latte never persists it). */

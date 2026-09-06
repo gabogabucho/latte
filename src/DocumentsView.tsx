@@ -202,7 +202,7 @@ export function DocumentsView(props: DocumentsViewProps) {
     <div className="doc-tabs">
       <div className="doc-tab-list" role="tablist" aria-label="Documentos del trabajo">
       {documents.map(doc => <button key={doc.id} role="tab" aria-selected={doc.id === selected?.id} className={doc.id === selected?.id ? 'selected' : ''} onClick={() => props.onSelect(doc.id)}>
-        <span className="doc-kind">{KIND_LABEL[doc.kind]}</span>{doc.title.toLowerCase() === KIND_LABEL[doc.kind].toLowerCase() ? '' : doc.title}
+        <span className="doc-kind">{KIND_LABEL[doc.kind]}</span>{doc.title.toLowerCase() === KIND_LABEL[doc.kind].toLowerCase() ? null : <span className="doc-tab-title">{doc.title}</span>}
       </button>)}
       </div>
       <button className="doc-add" onClick={props.onCreate} disabled={props.busy}><Plus size={14} />Documento</button>

@@ -68,6 +68,8 @@ const METHODS = [
 const AGENT_EVENT_CHANNEL = 'latte:agent-event';
 const CHAT_EVENT_CHANNEL = 'latte:chat-event';
 const UNSAVED_CHANNEL = 'latte:unsaved';
+const WINDOW_CHANNEL = 'latte:window';
+const WINDOW_STATE_CHANNEL = 'latte:window-state';
 
 function unwrap(envelope) {
   if (envelope && envelope.ok === true) return envelope.value;
@@ -84,6 +86,17 @@ for (const method of METHODS) {
 // One-way: the renderer states whether there is unsaved work; the main process
 // decides what to do about it when the window is closed.
 api.reportUnsaved = (hasUnsavedWork) => ipcRenderer.send(UNSAVED_CHANNEL, Boolean(hasUnsavedWork));
+
+api.windowControl = (action) => {
+  if (action === 'minimize' || action === 'maximize' || action === 'close') ipcRenderer.send(WINDOW_CHANNEL, action);
+};
+
+api.onWindowState = (callback) => {
+  if (typeof callback !== 'function') throw new TypeError('onWindowState expects a function');
+  const listener = (_event, payload) => callback({ maximized: Boolean(payload && payload.maximized) });
+  ipcRenderer.on(WINDOW_STATE_CHANNEL, listener);
+  return () => ipcRenderer.removeListener(WINDOW_STATE_CHANNEL, listener);
+};
 
 api.onAgentEvent = (callback) => {
   if (typeof callback !== 'function') throw new TypeError('onAgentEvent expects a function');

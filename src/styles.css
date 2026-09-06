@@ -224,3 +224,59 @@
 .doc-tabs{align-items:stretch;gap:10px;padding-right:16px}
 .doc-tab-list{display:flex;align-items:center;gap:6px;overflow-x:auto;min-width:0;flex:1;scrollbar-width:thin;padding-bottom:0}
 .doc-add{margin-left:0;align-self:center;flex-shrink:0}
+
+/* --- Scrollbars: discretas, sin flechas, y solo donde hacen falta ----------- */
+/* Sin esto Electron dibuja la barra clásica de Windows, con botones de flecha
+   arriba y abajo, que es lo que hace ver la app como una página web. */
+*{scrollbar-width:thin;scrollbar-color:#d3c8b8 transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#0000;border-radius:8px;border:3px solid transparent;background-clip:content-box}
+:hover::-webkit-scrollbar-thumb{background:#cec2b0;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:#b8a894;background-clip:content-box}
+::-webkit-scrollbar-button,::-webkit-scrollbar-corner{display:none;width:0;height:0}
+/* Una fila de pestañas nunca scrollea en vertical. */
+.doc-tabs{overflow:visible}
+.doc-tab-list{overflow-y:hidden;overscroll-behavior-x:contain}
+.doc-tab-list::-webkit-scrollbar{height:0}
+.doc-tab-list:hover::-webkit-scrollbar{height:6px}
+/* El panel del agente scrollea por dentro, no dos veces. */
+.agent-panel{overflow:hidden}
+.agent-panel>.team{overscroll-behavior:contain}
+/* Bloques cortos que no deben mostrar barra propia. */
+.active-context,.runtime-detail,.team-roster,.role-list,.kind-list{overflow:visible}
+.chat-tool pre,.chat-reasoning pre,.revision-comparison pre{overscroll-behavior:contain}
+
+/* --- Barra de título propia (ventana sin marco del sistema) ----------------- */
+.topbar{-webkit-app-region:drag;padding-right:0}
+/* Todo lo interactivo tiene que poder recibir el clic. */
+.topbar button,.topbar a,.topbar select,.topbar input{-webkit-app-region:no-drag}
+.window-controls{display:flex;align-items:stretch;align-self:stretch;margin-left:14px;-webkit-app-region:no-drag}
+.window-controls button{border:0;border-radius:0;width:46px;padding:0;color:#6f675c;background:transparent}
+.window-controls button:hover:not(:disabled){background:#e9e2d6;border:0;color:#302c26}
+.window-controls button:focus-visible{outline-offset:-3px}
+.window-controls .close:hover:not(:disabled){background:#c0392b;color:#fff}
+/* La barra lateral también arrastra en su franja superior, para que la ventana
+   se pueda mover desde cualquier lado de arriba. */
+.sidebar .wordmark{-webkit-app-region:drag}
+.sidebar .wordmark button{-webkit-app-region:no-drag}
+/* Las pestañas se adaptan al ancho en vez de scrollear: el título se recorta,
+   que es lo que un espacio de pocas palabras tiene que hacer. */
+.doc-tab-list{flex-wrap:nowrap;overflow-x:hidden}
+.doc-tab-list:has(>:nth-child(7)){overflow-x:auto}
+.doc-tabs button:not(.doc-add){flex:0 1 auto;min-width:0;overflow:hidden}
+.doc-tabs button:not(.doc-add) .doc-kind{flex-shrink:0}
+.doc-tab-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+/* --- La ventana no scrollea; scrollea el panel que corresponde -------------- */
+/* Sin esto el body crece detrás del layout: aparece un scroll larguísimo con
+   espacio vacío y la barra superior se va de pantalla al bajar. */
+html,body,#root{height:100%;overflow:hidden}
+.settings-shell{height:100%;overflow:hidden;min-height:0}
+.settings-main{min-height:0}
+.settings-nav{overflow-y:auto;min-height:0}
+.app-shell{height:100%}
+.settings-topbar{-webkit-app-region:drag;padding-right:0}
+.settings-topbar button,.settings-topbar a{-webkit-app-region:no-drag}
+.settings-topbar .window-controls{margin-left:14px}
+.settings-scope{margin-left:auto}

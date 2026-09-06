@@ -64,8 +64,15 @@ async function start(): Promise<void> {
   // One-way state from the renderer. Same sender check as every other channel;
   // a value from anywhere else is ignored rather than trusted.
   ipcMain.on('latte:unsaved', (event, value: unknown) => {
-    if (mainWindow === null || mainWindow.isDestroyed() || event.sender.id !== mainWindow.webContents.id) return;
+    if (!isMainSender(event.sender.id)) return;
     hasUnsavedWork = value === true;
+  });
+  // Window controls. The renderer can only ask for these three things.
+  ipcMain.on('latte:window', (event, action: unknown) => {
+    if (!isMainSender(event.sender.id) || mainWindow === null) return;
+    if (action === 'minimize') mainWindow.minimize();
+    else if (action === 'maximize') mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
+    else if (action === 'close') mainWindow.close();
   });
   createWindow();
   armSmokeExit();
@@ -73,6 +80,10 @@ async function start(): Promise<void> {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+}
+
+function isMainSender(senderId: number): boolean {
+  return mainWindow !== null && !mainWindow.isDestroyed() && senderId === mainWindow.webContents.id;
 }
 
 function createWindow(): void {
@@ -85,6 +96,9 @@ function createWindow(): void {
     backgroundColor: '#f5f0e8',
     autoHideMenuBar: true,
     show: false,
+    // The app draws its own title bar. 'hidden' keeps the native frame
+    // behaviour (snap, resize, rounded corners) without the system bar.
+    titleBarStyle: 'hidden',
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -98,6 +112,12 @@ function createWindow(): void {
   mainWindow = win;
 
   win.once('ready-to-show', () => win.show());
+  const sendState = () => {
+    if (!win.isDestroyed()) win.webContents.send('latte:window-state', { maximized: win.isMaximized() });
+  };
+  win.on('maximize', sendState);
+  win.on('unmaximize', sendState);
+  win.webContents.on('did-finish-load', sendState);
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });
