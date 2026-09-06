@@ -102,6 +102,18 @@ export function App() {
   /** Saves an answer from the conversation as a document of this work. */
   const saveAnswerAsDocument = (text: string) => {
     if (!work) return;
+    // The agent may have already written a file with this same content. Saying
+    // so here is what stops the work from ending with two copies of one thing.
+    if (untracked.length > 0) {
+      const names = untracked.map(f => f.fileName).join(', ');
+      const adopt = window.confirm(
+        `El agente ya dejó ${untracked.length === 1 ? 'este archivo' : 'estos archivos'} en la carpeta: ${names}.
+
+Aceptar: agregarlo como documento (evita duplicar).
+Cancelar: igual guardo la respuesta del chat como un documento nuevo.`,
+      );
+      if (adopt) { void trackFile(untracked[0].fileName); return; }
+    }
     const title = window.prompt('¿Con qué título guardamos esta respuesta como documento?', 'Estrategia');
     if (!title || !title.trim()) return;
     const guess = /calendario|cronograma/i.test(title) ? 'calendar' : /estrateg/i.test(title) ? 'strategy' : /investigac|research/i.test(title) ? 'research' : /copy|pieza/i.test(title) ? 'copy' : 'note';
@@ -184,7 +196,17 @@ export function App() {
       await loadDocuments(work.id);
       setSelectedDoc(prev => ({ ...prev, [work.id]: created.document.id }));
       setModal(null);
-      setNotice('Documento creado');
+      // A template is an empty structure on purpose: nobody wants invented data.
+      // But a derived document that stays empty is a dead end, so the ask to
+      // fill it is written out here and left in the chat for review, not sent.
+      const base = baseDocumentId ? documents.find(d => d.id === baseDocumentId) : null;
+      if (!base) { setNotice('Documento creado'); return; }
+      const ask = `Completá ${created.document.fileName} a partir de ${base.fileName}. Escribí el archivo en este turno con lo que ya tengamos, y marcá cada hueco como PENDIENTE: qué falta y por qué importa.`;
+      const open = selectedMemberId && chats[selectedMemberId] ? chats[selectedMemberId] : Object.values(chats).find(c => c.workId === work.id) ?? null;
+      if (!open) { setNotice(`${created.document.title} quedó con la estructura vacía. Sumá a alguien al equipo y pedile que lo complete desde ${base.title}.`); return; }
+      chatStore.setDraft(open.id, ask);
+      setSelectedMembers(prev => ({ ...prev, [work.id]: open.id }));
+      setNotice(`${created.document.title} quedó con la estructura vacía. Le dejé preparado el pedido a ${open.roleName}: revisalo y enviá.`);
     });
   };
   /**

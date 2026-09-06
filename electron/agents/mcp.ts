@@ -36,20 +36,18 @@ export class McpCatalog {
 
   /** What every runtime has configured, plus what Latte can and cannot do with it. */
   async list(): Promise<McpRuntimeTools[]> {
-    const out: McpRuntimeTools[] = [];
-    for (const runtime of ['claude', 'codex', 'opencode'] as const) {
-      const found = await this.deps.detector.resolve(runtime);
-      if (!found) {
-        out.push({ runtime, installed: false, canEdit: false, detail: 'No está instalado o no está en el PATH.', servers: [] });
-        continue;
-      }
+    // In parallel: Claude Code health-checks every server, so asking one after
+    // the other took as long as all three timeouts stacked up.
+    return Promise.all(['claude', 'codex', 'opencode'].map(async (runtime) => {
+      const kind = runtime as ChatRuntime;
+      const found = await this.deps.detector.resolve(kind as 'claude' | 'codex' | 'opencode');
+      if (!found) return { runtime: kind, installed: false, canEdit: false, detail: 'No está instalado o no está en el PATH.', servers: [] };
       try {
-        out.push(await this.listFor(runtime, found.executable));
+        return await this.listFor(kind, found.executable);
       } catch (error) {
-        out.push({ runtime, installed: true, canEdit: canEdit(runtime), detail: describe(error), servers: [] });
+        return { runtime: kind, installed: true, canEdit: canEdit(kind), detail: describe(error), servers: [] };
       }
-    }
-    return out;
+    }));
   }
 
   private async listFor(runtime: ChatRuntime, executable: string): Promise<McpRuntimeTools> {

@@ -49,7 +49,7 @@ export function ChatPane({ session, onStop, onError, onSaveAsDocument }: { sessi
     <div className="chat-scroll" ref={scroller} aria-live="polite">
       {state.messages.length === 0 && <p className="chat-empty">Conversación nueva con {session.roleName}. Trabaja en la carpeta de este trabajo y lee el contexto de marca, el brief y las decisiones registradas.</p>}
       {state.messages.map(message => <MessageView key={message.id} message={message} roleName={session.roleName} onSaveAsDocument={onSaveAsDocument} />)}
-      {state.permissions.map(permission => <PermissionCard key={permission.id} chatId={session.id} request={permission} onError={onError} />)}
+      {state.permissions.map(permission => <PermissionCard key={permission.id} chatId={session.id} runtime={session.provider} request={permission} onError={onError} />)}
       {state.questions.map(question => <QuestionCard key={question.id} chatId={session.id} request={question} onError={onError} />)}
       {busy && <div className="chat-status"><LoaderCircle className="spin" size={13} />{state.status === 'retry' ? state.statusDetail || 'Reintentando…' : 'El agente está trabajando…'}</div>}
       {state.error && <div className="chat-error" role="alert"><CircleAlert size={14} /><span>{state.error}</span><button aria-label="Cerrar error" onClick={() => chatStore.clearError(session.id)}><X size={13} /></button></div>}
@@ -99,7 +99,19 @@ function labelFor(status: ChatToolStatus): string {
   }
 }
 
-function PermissionCard({ chatId, request, onError }: { chatId: string; request: ChatPermission; onError: (e: string) => void }) {
+/**
+ * What "always" really covers, per runtime. Verified, not assumed: Claude Code
+ * writes the grant into `.claude/settings.local.json` inside the work folder,
+ * so it survives the conversation; Codex answers `acceptForSession`, so it does
+ * not. Saying which one you are in is what stops "¿por qué pregunta de nuevo?".
+ */
+const ALWAYS_SCOPE: Record<string, string> = {
+  claude: 'Claude Code guarda «siempre» en .claude/ dentro de la carpeta de este trabajo: no vuelve a preguntar por esta herramienta, ni siquiera mañana. Otra herramienta distinta sí pregunta.',
+  codex: 'Codex recuerda «siempre» mientras dure esta conversación. Si la pausás y la reanudás, vuelve a preguntar.',
+  opencode: 'OpenCode aplica «siempre» según su propia configuración. El permiso lo decide el runtime, no Latte.',
+};
+
+function PermissionCard({ chatId, runtime, request, onError }: { chatId: string; runtime: string; request: ChatPermission; onError: (e: string) => void }) {
   const [busy, setBusy] = useState(false);
   const reply = (value: 'once' | 'always' | 'reject') => {
     setBusy(true);
@@ -111,9 +123,10 @@ function PermissionCard({ chatId, request, onError }: { chatId: string; request:
     {request.patterns.length > 0 && <ul>{request.patterns.map(p => <li key={p}><code>{p}</code></li>)}</ul>}
     <div className="chat-card-actions">
       <button className="primary" disabled={busy} onClick={() => reply('once')}>Permitir una vez</button>
-      <button disabled={busy} onClick={() => reply('always')} title={request.always.length ? `Recordar para: ${request.always.join(', ')}` : undefined}>Permitir siempre</button>
+      <button disabled={busy} onClick={() => reply('always')}>Permitir siempre</button>
       <button disabled={busy} onClick={() => reply('reject')}>Rechazar</button>
     </div>
+    <small className="permission-scope">{ALWAYS_SCOPE[runtime] ?? ALWAYS_SCOPE.opencode}</small>
   </div>;
 }
 

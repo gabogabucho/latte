@@ -57,7 +57,13 @@ export function ToolsView({ onNotice, onError }: { onNotice: (text: string) => v
     </p>
     <button className="subtle" disabled={loading || busy} onClick={() => void load()}>{loading ? <LoaderCircle className="spin" size={13} /> : <RefreshCw size={13} />}Actualizar</button>
 
-    {loading && !runtimes && <p className="footnote"><LoaderCircle className="spin" size={13} /> Consultando cada runtime… El de Claude Code además prueba la conexión, puede tardar unos segundos.</p>}
+    {/* A blank wait reads as "no hay nada". The three cards say what is pending. */}
+    {loading && !runtimes && <div className="provider-list">
+      {Object.entries(RUNTIME_NAME).map(([key, label]) => <div className="runtime-card" key={key}>
+        <div className="runtime-head"><strong>{label}</strong><small><LoaderCircle className="spin" size={12} /> Consultando…</small></div>
+      </div>)}
+      <p className="footnote">Se consultan los tres a la vez. El de Claude Code además prueba la conexión de cada herramienta, así que es el que más tarda.</p>
+    </div>}
 
     {runtimes?.map(rt => <div className="runtime-card" key={rt.runtime}>
       <div className="runtime-head">

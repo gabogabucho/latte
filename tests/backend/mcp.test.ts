@@ -130,4 +130,31 @@ describe('Adding a server through the runtime CLI', () => {
     expect(list.find((r) => r.runtime === 'claude')?.canEdit).toBe(true);
     expect(list.find((r) => r.runtime === 'codex')?.servers).toHaveLength(3);
   });
+
+  it('asks the three runtimes at the same time, not one after the other', async () => {
+    // Claude Code health-checks every server before answering. Asked in turn,
+    // the three timeouts stacked up and the screen stayed empty for a minute.
+    let inFlight = 0;
+    let peak = 0;
+    const runner = fakeRunner(async (file, args) => {
+      if (file === 'where.exe' || file === 'which') return { code: 0, stdout: `C:\\bin\\${args[0]}.exe\n` };
+      if (args[0] !== 'mcp') return { code: 0, stdout: '1.0\n' };
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+      if (args[2] === '--json') return { code: 0, stdout: CODEX_OUTPUT };
+      return { code: 0, stdout: file.includes('opencode') ? OPENCODE_OUTPUT : CLAUDE_OUTPUT };
+    });
+    const catalog = new McpCatalog({
+      runner,
+      detector: new RuntimeDetector({ runner: fakeRunner((file, args) => (file === 'where.exe' || file === 'which' ? { code: 0, stdout: `C:\\bin\\${args[0]}.exe\n` } : { code: 0, stdout: '1.0\n' })), terminalAvailability: () => ({ available: false, reason: 'test' }), platform: 'win32', env: {} }),
+      accountEnv: () => ({}),
+      env: {},
+    });
+    const list = await catalog.list();
+    expect(peak).toBe(3);
+    // Order still has to be stable, or the cards would jump around on refresh.
+    expect(list.map((r) => r.runtime)).toEqual(['claude', 'codex', 'opencode']);
+  });
 });
