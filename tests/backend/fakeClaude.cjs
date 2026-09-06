@@ -58,6 +58,12 @@ rl.on('line', (line) => {
       }
       return;
     }
+    // Lets a test see the command line it was actually started with.
+    if (/argv/i.test(text)) {
+      reply(`ARGV ${args.join(' ')}`);
+      finish('ARGV', false);
+      return;
+    }
     if (/slow/i.test(text)) {
       reply('Thinking slowly...');
       return; // waits for interrupt

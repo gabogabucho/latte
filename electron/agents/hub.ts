@@ -51,6 +51,8 @@ export interface MemberContext {
   directory: string;
   title: string;
   extraEnv: Record<string, string>;
+  /** The human allowed reading and writing inside this work folder without asking each time. */
+  trustedFolder?: boolean;
 }
 
 export interface AddMemberInput extends MemberContext {
@@ -303,6 +305,7 @@ export class AgentHub {
       accountId: record.accountId,
       label,
       extraEnv: context.extraEnv,
+      trustedFolder: context.trustedFolder === true,
     };
     const result = await adapter.start(adapterInput);
     if (result.runtimeSessionId && result.runtimeSessionId !== record.sessionId) this.deps.repo.setMemberSession(record.id, result.runtimeSessionId, this.clock());

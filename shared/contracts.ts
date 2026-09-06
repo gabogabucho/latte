@@ -212,6 +212,9 @@ export interface LatteAPI {
    * so Latte offers to adopt them.
    */
   listUntrackedFiles(workId: string): Promise<UntrackedFile[]>;
+  /** Whether this work may read and write inside its own folder without asking each time. */
+  getFolderTrust(workId: string): Promise<boolean>;
+  setFolderTrust(workId: string, trusted: boolean): Promise<boolean>;
   /** Adopts an existing file as a tracked document: versions, export, conflict check. */
   trackFile(workId: string, fileName: string): Promise<WorkDocument>;
   /**

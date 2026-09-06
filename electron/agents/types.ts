@@ -20,6 +20,12 @@ export interface AdapterStartInput {
   accountId?: string | null;
   /** Human label shown in the chat header. */
   label: string;
+  /**
+   * The human granted this work permission to read and write inside its own
+   * folder. Verified against Claude Code: the grant is scoped to the folder,
+   * so anything outside it, and every other tool, still asks.
+   */
+  trustedFolder?: boolean;
   /** Extra environment for the agent process (ENGRAM_PROJECT etc.). */
   extraEnv?: Record<string, string>;
 }

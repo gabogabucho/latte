@@ -399,3 +399,12 @@ html,body,#root{height:100%;overflow:hidden}
 .save-as-document:hover:not(:disabled){background:#eee8de;color:#302c26}
 .chat-role{align-items:center}
 .permission-scope{display:block;margin-top:8px;font-size:10px;line-height:1.6;color:#8a7a63}
+.folder-trust{margin-top:6px;border:1px solid var(--line);border-radius:7px;background:rgba(255,255,255,.03)}
+.folder-trust.granted{border-color:rgba(120,180,140,.4)}
+.folder-trust>summary{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:11px;cursor:pointer;list-style:none;color:#9d8d75}
+.folder-trust>summary::-webkit-details-marker{display:none}
+.folder-trust>summary span{flex:1}
+.folder-trust.granted>summary{color:#8fbf9e}
+.folder-trust p{margin:0 8px 6px;font-size:10px;line-height:1.65;color:#8a7a63}
+.folder-trust .folder-trust-note{opacity:.75}
+.folder-trust>button{margin:0 8px 8px;padding:3px 9px;font-size:11px}

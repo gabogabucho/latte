@@ -26,6 +26,8 @@ const METHODS = [
   'listDocumentRevisions',
   'exportDocument',
   'listUntrackedFiles',
+  'getFolderTrust',
+  'setFolderTrust',
   'trackFile',
   'saveAsDocument',
   'acknowledgeBase',

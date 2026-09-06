@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, CircleCheck, LoaderCircle, MessageSquare, Pause, Play, Plug, Plus, Trash2, UserPlus, X } from 'lucide-react';
+import { Check, CircleCheck, FolderCheck, FolderLock, LoaderCircle, MessageSquare, Pause, Play, Plug, Plus, Trash2, UserPlus, X } from 'lucide-react';
 import type { AgentRole, ChatRuntime, ChatSession, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
 import { chatStore } from './browser-api';
 import { ChatPane } from './ChatPane';
@@ -32,6 +32,9 @@ export interface TeamPanelProps {
   onError: (message: string) => void;
   /** Turns an answer into a document of the work. */
   onSaveAsDocument?: (text: string) => void;
+  /** The team may read and write inside this work folder without asking each time. */
+  trustedFolder: boolean;
+  onTrustFolder: (trusted: boolean) => void;
 }
 
 const RUNTIME_SHORT: Record<ChatRuntime, string> = { opencode: 'OpenCode', claude: 'Claude', codex: 'Codex' };
@@ -52,12 +55,39 @@ export function TeamPanel(props: TeamPanelProps) {
     {work && team.length > 0 && <div className="team-roster" role="listbox" aria-label="Miembros del equipo">
       {team.map(member => <MemberRow key={member.id} member={member} chat={chats[member.id] ?? null} selected={member.id === selectedId} busy={busy} onSelect={() => props.onSelect(member.id)} onPause={() => props.onPause(member.id)} onFinish={() => props.onFinish(member.id)} onRemove={() => props.onRemove(member.id)} />)}
       {!adding && <button className="team-add" disabled={busy || !isDesktop} onClick={() => setAdding(true)}><UserPlus size={15} />Sumar un rol al equipo</button>}
+      {team.some(m => m.runtime === 'claude') && <FolderTrust trusted={props.trustedFolder} busy={busy} onChange={props.onTrustFolder} />}
     </div>}
     {showPicker && <RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} busy={busy} isDesktop={isDesktop} canCancel={team.length > 0} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} />}
     {!work && <div className="agent-idle"><div className="agent-symbol"><MessageSquare size={27} /></div><h3>Un equipo listo<br />para trabajar.</h3><p className="footnote">Elegí o creá un trabajo para armar su equipo.</p></div>}
     {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} onSaveAsDocument={props.onSaveAsDocument} /> : <ResumeCard member={selected} busy={busy} onOpen={() => props.onOpen(selected.id)} onRemove={() => props.onRemove(selected.id)} />)}
     {!showPicker && !selected && team.length > 0 && <p className="chat-empty">Elegí un miembro del equipo para ver su conversación.</p>}
   </div>;
+}
+
+/**
+ * One grant instead of a prompt per file.
+ *
+ * Every claim here was measured against a real Claude Code, not assumed: with
+ * the folder patterns a write inside the work folder stops asking, a read or
+ * write one level up still asks, and every other tool keeps asking. Codex
+ * already runs with its workspace writable, so the row only shows up when the
+ * team has a member this actually changes something for.
+ *
+ * It stays one line tall on purpose: the conversation below needs the height
+ * more than this does.
+ */
+function FolderTrust({ trusted, busy, onChange }: { trusted: boolean; busy: boolean; onChange: (v: boolean) => void }) {
+  return <details className={'folder-trust' + (trusted ? ' granted' : '')}>
+    <summary>
+      {trusted ? <FolderCheck size={13} /> : <FolderLock size={13} />}
+      <span>{trusted ? 'Escriben en esta carpeta sin preguntar' : 'Piden permiso por cada archivo'}</span>
+    </summary>
+    <p>{trusted
+      ? 'Leen y escriben en la carpeta de este trabajo sin preguntar. Fuera de la carpeta, y para comandos, web o herramientas MCP, siguen preguntando.'
+      : 'Claude Code pide permiso por cada archivo que escribe: son tres o cuatro cortes por tarea. Podés permitirlo de una vez, solo para esta carpeta.'}</p>
+    <p className="folder-trust-note">Aplica a las conversaciones que abras desde ahora.</p>
+    <button className="subtle" disabled={busy} onClick={() => onChange(!trusted)}>{trusted ? 'Volver a preguntar siempre' : 'Permitir en esta carpeta'}</button>
+  </details>;
 }
 
 function MemberRow({ member, chat, selected, busy, onSelect, onPause, onFinish, onRemove }: { member: TeamMember; chat: ChatSession | null; selected: boolean; busy: boolean; onSelect: () => void; onPause: () => Promise<void>; onFinish: () => Promise<void>; onRemove: () => Promise<void> }) {

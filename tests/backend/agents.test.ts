@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ChatEvent } from '../../shared/contracts';
 import { AccountStore, SYSTEM_ACCOUNT_ID } from '../../electron/agents/accounts';
-import { ClaudeChatAdapter, CLAUDE_HEADLESS_ARGS } from '../../electron/agents/claude/claudeAdapter';
+import { ClaudeChatAdapter, CLAUDE_HEADLESS_ARGS, FOLDER_TOOLS } from '../../electron/agents/claude/claudeAdapter';
 import { fakeRunner, makeBackend, makeTempDir, removeDir, type TestBackend } from './helpers';
 import { startFakeOpenCode, type FakeOpenCode } from './fakeOpenCode';
 
@@ -122,6 +122,31 @@ describe('ClaudeChatAdapter against a fake Claude Code', () => {
     expect(events.filter((e) => e.type === 'delta').length).toBeGreaterThanOrEqual(2);
     expect(events.some((e) => e.type === 'status' && e.status === 'busy')).toBe(true);
     await expect(adapter.send(session.id, 'x'.repeat(10))).resolves.toBeUndefined();
+  });
+
+  it('only grants the folder when the human asked for it, and only for the folder', async () => {
+    // Measured against a real Claude Code before wiring this: these patterns
+    // stop the prompt for a write inside the folder and keep asking for one
+    // above it, so the grant a marketer gives cannot leak past their work.
+    const argvOf = async (input: { trustedFolder?: boolean }) => {
+      const { session } = await adapter.start({ workId: 'wrk_1', directory: dir, title: 't', label: 'Claude', accountId: null, ...input });
+      await adapter.send(session.id, 'dame el argv');
+      await waitFor(() => adapter.listMessages(session.id).some((m) => m.parts.some((p) => p.type === 'text' && p.text.startsWith('ARGV'))));
+      const text = adapter.listMessages(session.id).flatMap((m) => m.parts).find((p) => p.type === 'text' && p.text.startsWith('ARGV')) as { text: string };
+      adapter.stop(session.id);
+      return text.text;
+    };
+
+    const withoutGrant = await argvOf({});
+    expect(withoutGrant).not.toContain('--allowedTools');
+    expect(withoutGrant).toContain('--permission-mode manual');
+
+    const withGrant = await argvOf({ trustedFolder: true });
+    expect(withGrant).toContain('--allowedTools Read(./**) Write(./**) Edit(./**)');
+    // Still manual: the grant narrows what gets asked, it does not turn asking off.
+    expect(withGrant).toContain('--permission-mode manual');
+    expect(withGrant).not.toContain('bypassPermissions');
+    expect(FOLDER_TOOLS.every((pattern) => pattern.includes('(./'))).toBe(true);
   });
 
   it('asks the user for tool permission over stdio and honours the decision', async () => {

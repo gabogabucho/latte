@@ -85,6 +85,16 @@ export const CLAUDE_HEADLESS_ARGS = [
 ];
 
 /**
+ * What "read and write in this folder" grants, when the human asked for it.
+ *
+ * The patterns are relative to the process cwd, which is the work directory.
+ * Measured against a real `claude`, not assumed: with them a write inside the
+ * folder stops prompting, and a read or write one level up still prompts, as
+ * does every tool absent from this list (Bash, WebFetch, MCP).
+ */
+export const FOLDER_TOOLS = ['Read(./**)', 'Write(./**)', 'Edit(./**)'];
+
+/**
  * Claude Code as a chat runtime: one headless `claude` process per chat,
  * speaking the stream-json protocol over stdio. The user's own subscription
  * login is used (system profile or a Latte-managed CLAUDE_CONFIG_DIR); Latte
@@ -120,6 +130,7 @@ export class ClaudeChatAdapter implements RuntimeAdapter {
     if (!runtime) throw new UnavailableError('Claude Code is not installed or not on PATH');
 
     const args = [...CLAUDE_HEADLESS_ARGS];
+    if (input.trustedFolder) args.push('--allowedTools', ...FOLDER_TOOLS);
     if (input.previousSessionId) args.push('--resume', input.previousSessionId);
     if (input.model) args.push('--model', input.model);
     const instructions = input.instructions?.trim() ?? '';

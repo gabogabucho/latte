@@ -187,6 +187,22 @@ describe('Team through the service', () => {
     await fake.close();
   });
 
+  it('keeps the folder grant off until asked, per work, and survives a reopen', async () => {
+    const brand = await b.service.createBrand('Casa');
+    const uno = await b.service.createWork(brand.id, 'Uno');
+    const dos = await b.service.createWork(brand.id, 'Dos');
+
+    expect(await b.service.getFolderTrust(uno.id)).toBe(false);
+    expect(await b.service.setFolderTrust(uno.id, true)).toBe(true);
+    expect(await b.service.getFolderTrust(uno.id)).toBe(true);
+    // A grant is about one folder. The next work starts closed, as it should.
+    expect(await b.service.getFolderTrust(dos.id)).toBe(false);
+
+    expect(await b.service.setFolderTrust(uno.id, false)).toBe(false);
+    expect(await b.service.getFolderTrust(uno.id)).toBe(false);
+    await expect(b.service.getFolderTrust('wrk_nope')).rejects.toThrow();
+  });
+
   it('lists roles, adds members with the primary agent, sends the role as system prompt and tracks status', async () => {
     const roles = await b.service.listRoles();
     expect(roles.map((r) => r.id)).toEqual(['assistant', 'strategist', 'researcher', 'analyst', 'reviewer']);

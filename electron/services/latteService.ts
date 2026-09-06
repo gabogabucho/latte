@@ -86,6 +86,8 @@ export interface LatteServiceDeps {
 
 const PROVIDER_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const FINGERPRINT = /^[a-f0-9]{16}$/;
+/** Per-work grant, kept in `meta` so no schema change is needed to add it. */
+const FOLDER_TRUST_KEY = 'trust-folder:';
 const DOCUMENT_KINDS: DocumentKind[] = ['brief', 'strategy', 'calendar', 'research', 'copy', 'note'];
 const DOCUMENT_STATUSES: DocumentStatus[] = ['draft', 'review', 'approved'];
 
@@ -622,7 +624,31 @@ export class LatteService implements BackendApi {
       directory: this.deps.files.workDir(work.brandId, work.id),
       title: `${brand.name} · ${work.title}`,
       extraEnv: { ENGRAM_PROJECT: memoryProjectFor(brand.id) },
+      trustedFolder: this.folderTrust(work.id),
     };
+  }
+
+  private folderTrust(workId: string): boolean {
+    return this.deps.repo.getMeta(FOLDER_TRUST_KEY + workId) === '1';
+  }
+
+  /**
+   * Whether this work's team may read and write inside its own folder without
+   * asking every time. Off by default: the human grants it, per work, and it
+   * covers that folder only. Everything else keeps asking.
+   */
+  async getFolderTrust(workId: string): Promise<boolean> {
+    const id = requireId(workId, 'workId');
+    this.deps.repo.getWork(id);
+    return this.folderTrust(id);
+  }
+
+  async setFolderTrust(workId: string, trusted: boolean): Promise<boolean> {
+    const id = requireId(workId, 'workId');
+    this.deps.repo.getWork(id);
+    if (typeof trusted !== 'boolean') throw new TypeError('Invalid folder trust value');
+    this.deps.repo.setMeta(FOLDER_TRUST_KEY + id, trusted ? '1' : '0');
+    return trusted;
   }
 
   async listChatMessages(chatId: string): Promise<ChatMessage[]> {
