@@ -90,6 +90,14 @@ el navegador y **no ejecuta ningún agente**.
 - **Conversaciones por rol.** Cada trabajo tiene un equipo: el Asistente neutral más roles opcionales (Estrategia, Investigación, Análisis, Revisión). Cada miembro es una conversación propia con su runtime y su cuenta.
 - **Instrucciones de marketing por defecto.** Toda conversación, incluida la neutral, recibe el comportamiento de marketing del pack `marketing-core`: objetivo, audiencia, oferta, etapa del embudo, baseline y restricciones antes de recomendar; hecho contra hipótesis; marca aprobada contra propuesta; experimentos con guardrail y cadencia de revisión.
 - **Varios entregables por trabajo.** Encargo, estrategia, calendario, investigación y piezas, cada uno con su archivo Markdown, sus versiones y su exportación.
+- **La lista al costado, el documento a pantalla completa.** Buscar, filtrar y la cola de revisión viven en una columna angosta; el documento se queda con el alto entero. Arriba: Documentos, Embudo y Decisiones.
+- **Embudo de campaña.** Cada documento puede estar en varias etapas a la vez —descubrimiento, consideración, conversión, retención— o en ninguna. La clasificación es virtual: no mueve ni renombra un solo archivo. Una etapa vacía se muestra como hallazgo, porque es la parte del recorrido que nadie está atendiendo.
+- **El agente propone la etapa, vos la aplicás.** Un agente no puede llamar a Latte, solo escribir archivos. Así que propone con un bloque `funnel: conversion, retention` al principio del markdown. Latte lo saca del archivo apenas lo ve —no llega al editor, ni a una versión, ni a una exportación— y lo deja pendiente hasta que aprietes Aplicar o Descartar.
+- **Ves toda la carpeta, no solo lo que Latte sigue.** Los `.docx`, los PDF y las subcarpetas del cliente aparecen listados. Tu agente los lee; pedirte que confíes en una carpeta que no podés inspeccionar sería otra cosa.
+- **Cola de revisión.** Todo lo que pide atención junto: por estado, o porque cambió el documento que toma como base. Marcar la base revisada no aprueba el documento.
+- **Perfiles de agente con archivos.** Cada perfil propio vive en `agents/<id>/` con `profile.json`, `SOUL.md` y `SKILL.md`. Se crean, se duplican y se editan desde Ajustes. Los incluidos son de solo lectura y clonables; un perfil roto se muestra como diagnóstico sin tumbar el resto del catálogo.
+- **Skills que vienen puestas.** Un rol es quién hace el trabajo; una skill es el oficio que comparten todos. La primera, «Escritura sin relleno», corta muletillas, frases vacías y cierres de efecto, y pide concreto. Viene activada y se apaga desde Ajustes.
+- **Conversación nueva sin miembro nuevo.** Empezar de cero con un rol ya no obliga a sumar un segundo miembro con el mismo rol: se descarta la conversación y el rol se queda en el equipo.
 - **Guardado con verificación.** Un guardado hecho desde Latte se rechaza si el archivo cambió por fuera desde la última vez que Latte lo leyó, y se conservan las dos variantes.
 - **Permiso de carpeta, una vez.** Claude Code pide permiso por cada archivo que escribe. Podés concederlo de una sola vez, por trabajo, acotado a esa carpeta: adentro deja de preguntar, afuera y para comandos, web o herramientas MCP sigue preguntando.
 - **El archivo que dejó el agente no se duplica.** Cuando un agente escribe un archivo en la carpeta, Latte lo ve al terminar el turno y ofrece agregarlo, en vez de que guardes la respuesta del chat y termines con dos copias de lo mismo.
@@ -100,7 +108,8 @@ el navegador y **no ejecuta ningún agente**.
 - Alpha de una sola persona: esperá bordes ásperos y cambios de esquema.
 - **No todo lo que hace un agente está aislado.** Latte le da al agente la carpeta del trabajo como contexto y las instrucciones lo dicen, pero un runtime puede escribir cualquier archivo al que tenga permiso. Las instrucciones no son un sandbox. Los permisos reales los aplica cada runtime, y Latte te muestra sus pedidos para que decidas.
 - Un guardado hecho **fuera** de Latte no se intercepta: reemplaza el archivo y Latte lo detecta después.
-- El comportamiento de los modelos frente a las instrucciones de marketing **no está evaluado en vivo todavía**. Hay fixtures listas en `docs/marketing-eval/` para hacerlo.
+- El comportamiento de los modelos frente a las instrucciones de marketing está **medido una sola vez**, no evaluado a fondo: un A/B de la skill de escritura contra Claude Code 2.1.263, mismo brief y mismo modelo, cambiando solo si la skill está en el `CLAUDE.md`. Hay fixtures en `docs/marketing-eval/` para hacerlo en serio.
+- Las skills y los perfiles se aplican **al iniciar o reanudar** una conversación, nunca a una que ya está abierta.
 - Sin publicación en redes, sin scheduling, sin integraciones y sin colaboración entre personas.
 
 ---
@@ -295,6 +304,54 @@ member's id is its chat id, so pausing and resuming keep the same identity;
 members are persisted in `team_members` (schema v3) and older
 `chat_sessions` rows migrate into Asistente members.
 
+### Funnel, and what an agent may propose
+
+A document can sit in several funnel stages at once (`discovery`,
+`consideration`, `conversion`, `retention`) or in none. The classification is
+virtual: `funnel_stages` is an additive column, and no file is moved or
+renamed. The instruction file lists each deliverable's stages plus a coverage
+block, so an empty stage is visible as the finding it is rather than buried in
+a list.
+
+An agent cannot register or classify a document itself — that barrier is
+deliberate. What it can do is **propose**: it opens a Markdown file with a
+front matter block (`---` / `funnel: conversion, retention` / `---`). Latte
+reads it, takes the block out of the file before the first fingerprint, and
+keeps the stages as a pending proposal until a human applies or dismisses it.
+The block never reaches the editor, a stored revision or an export: it was a
+message to Latte, not part of the deliverable. Anything unrecognised — a
+client file that merely opens with a rule, or a stage name Latte does not know
+— leaves the file byte-identical.
+
+### Agent profiles
+
+A profile is a role you own: `agents/<id>/profile.json`, `SOUL.md` (what it is
+responsible for) and `SKILL.md` (how it works). Saving writes the three files
+atomically behind a `.writing` marker and a directory lock, rolls back ordinary
+I/O failures, refuses to follow symlinks or Windows reserved names, and rejects
+a save when the files changed on disk since you opened them. Shipped profiles
+are read-only and clonable. One manually broken folder shows up as a
+non-editable diagnostic card instead of taking the whole catalog down.
+
+### Shipped skills
+
+A role is who does the job; a skill is the craft everyone shares, in every
+work. Skills live in `packs/marketing-core/skills/*.md` with the same front
+matter shape as roles, are declared in the manifest, and render into each
+work's `CLAUDE.md` / `AGENTS.md` under a `<!-- latte:skill <id> -->` marker.
+
+They ride the instruction file, written once per conversation — **not** the
+base prompt, which is charged on every message and stays under a 6 000-character
+budget enforced by a test.
+
+The first one, "Escritura sin relleno", is adapted from
+[no-ai-slop](https://github.com/petergyang/no-ai-slop) by Peter Yang (MIT).
+Half of the original is an editing service (paste a draft, get a "What changed"
+report); Latte's agents write deliverables rather than correct pasted drafts, so
+only the writing rules were kept and rewritten in Spanish, with attribution in
+the file. Skills ship **on**: quality that each person has to discover and
+switch on is quality almost nobody gets, so the switch exists to turn one off.
+
 ### Providers (no terminal required)
 
 The **Proveedores de IA** screen (sidebar, or the gear icon in the agent
@@ -343,12 +400,13 @@ relaxed only for the Vite dev origin).
 | Check | Result |
 | --- | --- |
 | `npm run typecheck:all` | clean |
-| `npm test` | 134 tests pass (15 files: documents/conflicts, transcripts, storage on both engines, paths/atomic files, service flow, validation/isolation, terminal, detection, IPC, chat protocol and provider management against a fake OpenCode, Claude Code and Codex adapters against fakes, team roles/migration/personality, frontend preview) |
+| `npm test` | 202 tests pass (25 files: documents/conflicts, transcripts, storage on both engines, paths/atomic files, service flow, validation/isolation, terminal, detection, IPC, chat protocol and provider management against a fake OpenCode, Claude Code and Codex adapters against fakes, team roles/migration/personality/restart, funnel metadata and proposals, file-backed profiles, shipped skills, frontend preview and organizer)
 | `npx vitest run --config docs/qa-vitest.config.ts` (integration QA harness) | 9/9 pass |
 | `node_modules/electron/dist/electron.exe docs/qa-desktop.cjs` (real sandboxed preload + IPC) | exit 0: bridge, snapshot, export, decisions, invalid ids rejected, no renderer errors |
 | `node docs/qa-stale-save.cjs` | `agentChangesRetained: true` — the reproduced data loss is fixed |
 | `node_modules/electron/dist/electron.exe scripts/visual-settings.cjs` | exit 0: Settings has no document controls, the unsaved draft survives the round trip, disk untouched |
 | `node_modules/electron/dist/electron.exe scripts/visual-documents.cjs` | exit 0: external change noticed, explicit conflict, both variants kept, base-changed notice |
+| `node_modules/electron/dist/electron.exe scripts/qa-marketing-workspace.cjs` (its own Vite server, sandboxed preload, synthetic data, no inference) | exit 0, 10/10 steps, 0 console errors: funnel classified and narrowing, draft preserved across selection, review queue, proposal adopted and applied, folder contents listed without Latte's own files, shipped skill listed and switchable, file-backed profile created and cloned |
 | `node_modules/electron/dist/electron.exe scripts/visual-team.cjs` (team roster through the real preload; opens members on OpenCode without sending messages) | exit 0: Strategist and Researcher opened, statuses Activo / En pausa, resume card, no renderer errors |
 | `npm run probe:electron` | Electron 44.2.0 · Node 24.20.0 · `node:sqlite` (SQLite 3.53.4) OK · node-pty loads · sql.js loads |
 | `npm run smoke:desktop` | renderer loaded, 0 console errors, demo seeded, node-pty ready, OpenCode runtime started and stopped with no orphan process |
