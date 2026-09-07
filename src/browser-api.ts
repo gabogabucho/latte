@@ -35,6 +35,7 @@ const shippedRoles = [
  {id:'strategist',name:'Strategist',initial:'S',summary:'Compara opciones y documenta decisiones.',builtin:false},
  {id:'researcher',name:'Researcher',initial:'R',summary:'Contrasta evidencia y fuentes.',builtin:false},
  {id:'analyst',name:'Analyst',initial:'A',summary:'Interpreta datos y explicita límites.',builtin:false},
+ {id:'paid-media',name:'Paid Media',initial:'P',summary:'Analizá campañas, inversión y resultados con evidencia; priorizá acciones sin modificar cuentas por tu cuenta.',builtin:false},
  {id:'reviewer',name:'Reviewer',initial:'V',summary:'Revisa entregables contra el brief.',builtin:false},
 ];
 const builtinProfiles:AgentProfile[]=shippedRoles.map(r=>({...r,soul:r.summary,skills:'',source:'builtin',directory:null,fingerprint:'builtin-'+r.id}));

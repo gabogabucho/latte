@@ -59,13 +59,13 @@ describe('Marketing base prompt composition', () => {
     const assistant = catalog.promptFor('assistant');
     expect(assistant).toContain('marketing, not on software');
     expect(assistant).not.toContain('acting as:');
-    for (const role of ['strategist', 'researcher', 'analyst', 'reviewer']) {
+    for (const role of ['strategist', 'researcher', 'analyst', 'paid-media', 'reviewer']) {
       expect(assistant).not.toContain(`# Role: ${role[0].toUpperCase()}${role.slice(1)}`);
     }
   });
 
   it('layers each role on top of the base without replacing it', () => {
-    for (const role of ['strategist', 'researcher', 'analyst', 'reviewer']) {
+    for (const role of ['strategist', 'researcher', 'analyst', 'paid-media', 'reviewer']) {
       const prompt = catalog.promptFor(role);
       expect(prompt, role).toContain('marketing, not on software');
       expect(prompt, role).toContain('acting as:');

@@ -87,7 +87,7 @@ el navegador y **no ejecuta ningún agente**.
 ## Qué hace
 
 - **Conversar y revisar, separados.** Un trabajo abre en su conversación, a ancho completo. «Revisar» trae los documentos al lado. Las dos vistas son los mismos paneles montados, así que un borrador a medio escribir sobrevive al cambio.
-- **Conversaciones por rol.** Cada trabajo tiene un equipo: el Asistente neutral más roles opcionales (Estrategia, Investigación, Análisis, Revisión). Cada miembro es una conversación propia con su runtime y su cuenta.
+- **Conversaciones por rol.** Cada trabajo tiene un equipo: el Asistente neutral más roles opcionales (Estrategia, Investigación, Análisis, Paid Media, Revisión). Cada miembro es una conversación propia con su runtime y su cuenta.
 - **Instrucciones de marketing por defecto.** Toda conversación, incluida la neutral, recibe el comportamiento de marketing del pack `marketing-core`: objetivo, audiencia, oferta, etapa del embudo, baseline y restricciones antes de recomendar; hecho contra hipótesis; marca aprobada contra propuesta; experimentos con guardrail y cadencia de revisión.
 - **Varios entregables por trabajo.** Encargo, estrategia, calendario, investigación y piezas, cada uno con su archivo Markdown, sus versiones y su exportación.
 - **La lista al costado, el documento a pantalla completa.** Buscar, filtrar y la cola de revisión viven en una columna angosta; el documento se queda con el alto entero. Arriba: Documentos, Embudo y Decisiones.
@@ -290,7 +290,7 @@ reference mockup). A member is a role opened inside the work: it has its own
 conversation, runtime and account, and a live status (working, idle, needs
 you, paused, finished). Roles ship with the discipline pack
 (`packs/marketing-core/roles/*.md`: Strategist, Researcher, Analyst,
-Reviewer) plus the neutral Asistente; each one is a small front matter (name,
+Paid Media, Reviewer) plus the neutral Asistente; each one is a small front matter (name,
 initial, summary) followed by the instructions. Adding a member uses the
 primary agent unless you pick another logged-in account or OpenCode.
 
