@@ -953,6 +953,7 @@ export class LatteService implements BackendApi {
       title: r.title,
       fileName: r.fileName,
       status: r.status,
+      funnelStages: r.funnelStages,
       baseFileName: r.baseDocumentId ? byId.get(r.baseDocumentId)?.fileName ?? null : null,
     }));
     this.deps.files.ensureWork(brand.id, work.id, work.brief);

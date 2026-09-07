@@ -1,7 +1,10 @@
-import type { Brand, Decision, Work } from '../../shared/contracts';
+import type { Brand, Decision, FunnelStage, Work } from '../../shared/contracts';
 import { WORK_FILES } from '../core/paths';
 
 export const MANAGED_MARKER = '<!-- latte:managed -->';
+
+/** The funnel, in the order a person moves through it. Mirrors FunnelStage. */
+const FUNNEL_STAGES: readonly FunnelStage[] = ['discovery', 'consideration', 'conversion', 'retention'];
 
 /** How much of the working document is echoed into the instructions. */
 const DOCUMENT_EXCERPT_CHARS = 6_000;
@@ -38,6 +41,8 @@ export interface InstructionDocument {
   fileName: string;
   status: string;
   baseFileName?: string | null;
+  /** Funnel stages this deliverable is filed under; empty means unclassified. */
+  funnelStages?: FunnelStage[];
 }
 
 export interface InstructionsInput {
@@ -72,9 +77,18 @@ export function renderInstructions(input: InstructionsInput): string {
     .map((d) => {
       const status = d.status === 'draft' ? d.kind : `${d.kind}, ${d.status}`;
       const derived = d.baseFileName ? `, derived from ./${d.baseFileName}` : '';
-      return `- \`./${d.fileName}\` — ${d.title} (${status})${derived}`;
+      const stages = d.funnelStages?.length ? d.funnelStages.join(', ') : 'unclassified';
+      return `- \`./${d.fileName}\` — ${d.title} (${status})${derived} — funnel: ${stages}`;
     })
     .join('\n');
+  // What the funnel is MISSING is the finding; the per-file list alone buries it.
+  const tracked = input.documents ?? [];
+  const coverageLines = tracked.length === 0 ? '' : [
+    'A deliverable can sit in several stages at once, or in none. A piece that mixes stages does none well.',
+    '',
+    ...FUNNEL_STAGES.map((stage) => `- \`${stage}\`: ${tracked.filter((d) => d.funnelStages?.includes(stage)).length}`),
+    `- \`unclassified\`: ${tracked.filter((d) => !d.funnelStages?.length).length}`,
+  ].join('\n');
   const decisionLines = decisions
     .map((d) => `- ${d.createdAt.slice(0, 10)} — ${d.text.trim().replace(/\s+/g, ' ')}`)
     .join('\n');
@@ -101,6 +115,7 @@ export function renderInstructions(input: InstructionsInput): string {
   parts.push(
     section('Brand context', brand.context, 'No brand context yet. Ask before assuming positioning, tone or audience.'),
     section('Tracked deliverables of this work', documentLines, `Only ./${WORK_FILES.brief} is tracked so far.`),
+    section('Funnel coverage of this work', coverageLines, 'Nothing is tracked yet, so the funnel is empty.'),
     section(`The brief (current state of ./${WORK_FILES.brief})`, excerpt, 'The brief is still empty. Ask the human what the deliverable should be.'),
     section('Decisions already taken (do not reopen)', decisionLines, 'No decisions recorded yet.'),
   );
@@ -120,6 +135,7 @@ export function renderInstructions(input: InstructionsInput): string {
     `- \`./${WORK_FILES.metaDir}/\` holds immutable snapshots. Never modify or delete anything in it.`,
     '- Stay inside this directory. Do not touch other brands, other works or global tool configuration.',
     '- When you take a decision that should stick, state it explicitly so the human can log it in Latte.',
+    `- The funnel stages are \`${FUNNEL_STAGES.join('`, `')}\`. You cannot set them yourself: Latte owns that classification and the human assigns it. So name the stage you would give every file you write, and say plainly which stages have nothing in them. An empty stage is a finding, not a detail.`,
   );
   if (memoryProject) {
     parts.push(

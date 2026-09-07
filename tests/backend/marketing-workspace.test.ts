@@ -86,3 +86,24 @@ it('exposes file-backed profiles with protected builtins and optimistic edits', 
     await expect(b.service.saveProfile({ ...input, id: 'assistant' }, null)).rejects.toThrow();
   } finally { b.cleanup(); }
 });
+
+it('shows the agent every stage and, above all, the ones with nothing in them', async () => {
+  const b = await makeBackend();
+  try {
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    const piece = await b.service.saveAsDocument(work.id, 'copy', 'Oferta primer pedido', '# Oferta');
+    await b.service.updateDocument(piece.id, { funnelStages: ['discovery', 'conversion'] });
+    // saveAsDocument is one of the paths that rewrites the managed file, so the
+    // second one renders the first with the stages it just got.
+    await b.service.saveAsDocument(work.id, 'note', 'Todavia sin etapa', '# Nota');
+    const claude = fs.readFileSync(path.join(b.dir, 'brands', brand.id, 'works', work.id, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('funnel: discovery, conversion');
+    expect(claude).toContain('funnel: unclassified');
+    expect(claude).toContain('- `discovery`: 1');
+    expect(claude).toContain('- `consideration`: 0');
+    expect(claude).toContain('- `retention`: 0');
+    expect(claude).toContain('- `unclassified`: 2');
+    expect(claude).toContain('An empty stage is a finding, not a detail.');
+  } finally { b.cleanup(); }
+});
