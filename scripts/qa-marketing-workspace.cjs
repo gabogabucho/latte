@@ -235,6 +235,11 @@ app.whenReady().then(async () => {
     const strip = await js(`(()=>{const r=document.querySelector('.team-tabs');const s=document.querySelector('.team-tab-strip');return {rows:Math.round(r.offsetHeight), scrolls:s.scrollWidth>s.clientWidth};})()`);
     assert(strip.rows < 60, 'The team is one row, not a stack');
     await shot('12-team-tabs');
+    // Sumar un rol tiene que seguir visible aunque las pestañas no entren.
+    const plus = await js(`(()=>{const p=document.querySelector('.team-tab-add');const row=document.querySelector('.team-tabs').getBoundingClientRect();const r=p.getBoundingClientRect();return {inStrip:Boolean(p.closest('.team-tab-strip')), width:Math.round(r.width), inside:r.left>=row.left-1&&r.right<=row.right+1};})()`);
+    assert.equal(plus.inStrip, false, 'The add button must not scroll away with the tabs');
+    assert(plus.width > 0, 'And it must be there at all');
+    assert.equal(plus.inside, true, 'And inside the row');
     // Switching members is one click.
     await clickWhere('.team-tab', `e=>e.querySelector('.team-tab-name').textContent.trim()==='Strategist'`, 'switch to Strategist');
     assert.equal(await js(`document.querySelector('.team-tab[aria-selected="true"] .team-tab-name').textContent.trim()`), 'Strategist');

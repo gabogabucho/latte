@@ -78,8 +78,8 @@ export function TeamPanel(props: TeamPanelProps) {
       <div className="team-tabs" role="tablist" aria-label="Miembros del equipo">
         <div className="team-tab-strip">
           {team.map(member => <MemberTab key={member.id} member={member} chat={chats[member.id] ?? null} selected={member.id === selectedId} busy={busy} onSelect={() => props.onSelect(member.id)} />)}
-          <button className="team-tab-add" aria-label="Sumar un rol al equipo" title="Sumar un rol al equipo" disabled={busy || !isDesktop} onClick={() => setAdding(true)}><UserPlus size={15} /></button>
         </div>
+        <button className="team-tab-add" aria-label="Sumar un rol al equipo" title="Sumar un rol al equipo" disabled={busy || !isDesktop} onClick={() => setAdding(true)}><UserPlus size={15} /></button>
         {selected && <div className="team-tab-actions">
           {selectedLive && <button className="icon-button" aria-label="Pausar conversación" title="Pausar: la conversación queda guardada y se puede reanudar" disabled={busy} onClick={() => void props.onPause(selected.id)}><Pause size={13} /></button>}
           {selectedStatus !== 'ended' && <button className="icon-button" aria-label="Marcar como finalizado" title="Finalizar: cierra la conversación y la marca como terminada" disabled={busy} onClick={() => void props.onFinish(selected.id)}><CircleCheck size={13} /></button>}
