@@ -26,11 +26,11 @@ async function waitFor(check: () => boolean, timeoutMs = 6_000): Promise<void> {
 }
 
 describe('Roles: pack loading and catalog', () => {
-  it('ships the four marketing roles with the neutral assistant first', () => {
+  it('ships the five marketing roles with the neutral assistant first', () => {
     const pack = loadInstructionPack(PACKS_DIR, 'marketing-core');
-    expect(pack?.roles.map((r) => r.id)).toEqual(['strategist', 'researcher', 'analyst', 'reviewer']);
+    expect(pack?.roles.map((r) => r.id)).toEqual(['strategist', 'researcher', 'analyst', 'paid-media', 'reviewer']);
     const catalog = new RoleCatalog(pack);
-    expect(catalog.list().map((r) => r.id)).toEqual(['assistant', 'strategist', 'researcher', 'analyst', 'reviewer']);
+    expect(catalog.list().map((r) => r.id)).toEqual(['assistant', 'strategist', 'researcher', 'analyst', 'paid-media', 'reviewer']);
     expect(catalog.list()[0]).toMatchObject({ builtin: true, name: 'Asistente' });
     expect(catalog.list()[1]).toMatchObject({ builtin: false, name: 'Strategist', initial: 'S' });
     // Every conversation carries the marketing behaviour, the neutral assistant included.
@@ -205,7 +205,7 @@ describe('Team through the service', () => {
 
   it('lists roles, adds members with the primary agent, sends the role as system prompt and tracks status', async () => {
     const roles = await b.service.listRoles();
-    expect(roles.map((r) => r.id)).toEqual(['assistant', 'strategist', 'researcher', 'analyst', 'reviewer']);
+    expect(roles.map((r) => r.id)).toEqual(['assistant', 'strategist', 'researcher', 'analyst', 'paid-media', 'reviewer']);
     const brand = await b.service.createBrand('Casa');
     const work = await b.service.createWork(brand.id, 'Trabajo');
     expect(await b.service.listTeam(work.id)).toEqual([]);

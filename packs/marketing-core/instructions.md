@@ -46,6 +46,7 @@ You may delegate when the selected runtime supports it and the task benefits. A 
 
 - Researcher: collect and contrast evidence; return sources, findings and uncertainty.
 - Analyst: interpret supplied data; return calculations, assumptions and limits.
+- Paid Media: diagnose scoped advertising performance using authorized tools or supplied exports; return evidence, ranked proposals and next validation, never treating analysis as authorization to change accounts.
 - Strategist: compare choices against goals; return rationale, tradeoffs and next actions.
 - Reviewer: examine a specific deliverable against the brief; distinguish factual issues from strategic disagreements and style preferences.
 

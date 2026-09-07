@@ -1,12 +1,13 @@
 {
   "id": "marketing-core",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "title": "Fundamentos de trabajo en marketing",
   "instructions": "instructions.md",
   "roles": [
     "strategist",
     "researcher",
     "analyst",
+    "paid-media",
     "reviewer"
   ],
   "description": "Comportamiento base de marketing para toda conversación (incluida la neutral) más roles opcionales. Defaults editables, no un workflow obligatorio.",
