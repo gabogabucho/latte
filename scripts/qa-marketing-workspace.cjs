@@ -193,7 +193,19 @@ app.whenReady().then(async () => {
     assert(answered.funnelStages.includes('retention'));
     record('Agent proposes on a tracked document, the human applies', 'file on disk + UI bar + preload read assertion');
 
-    await click('Ajustes'); await click('Perfiles');
+    await click('Ajustes'); await click('Skills');
+    await wait(`document.body.innerText.includes('Escritura sin relleno')`, 'shipped skill listed');
+    assert.deepEqual((await api('listSkills')).map(s => [s.id, s.enabled]), [['writing', true]], 'A shipped skill arrives on');
+    await shot('09-skills');
+    await click('Apagar');
+    await wait(`document.body.innerText.includes('Activar')`, 'switch flips');
+    assert.equal((await api('listSkills'))[0].enabled, false);
+    await click('Activar');
+    assert.equal((await api('listSkills'))[0].enabled, true, 'The switch goes both ways');
+    record('Shipped writing skill listed and switchable', 'UI DOM + preload read assertion');
+
+    // Already inside Settings: only the section changes.
+    await click('Perfiles');
     const builtins = await api('listProfiles');
     // The neutral assistant ships without SOUL on purpose; clone one that carries instructions.
     const builtin = builtins.find(p => p.source === 'builtin' && p.soul.trim());

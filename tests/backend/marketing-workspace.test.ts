@@ -213,3 +213,44 @@ it('dismissing a proposal leaves the stages the document already had', async () 
     expect(kept.proposedFunnelStages).toEqual([]);
   } finally { b.cleanup(); }
 });
+
+it('ships the writing skill on, and the switch takes it out of the instruction file', async () => {
+  const b = await makeBackend();
+  try {
+    const skills = await b.service.listSkills();
+    expect(skills.map(s => [s.id, s.enabled])).toEqual([['writing', true]]);
+
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    const claudeFile = path.join(b.dir, 'brands', brand.id, 'works', work.id, 'CLAUDE.md');
+    const withSkill = fs.readFileSync(claudeFile, 'utf8');
+    expect(withSkill).toContain('latte:skill writing');
+    expect(withSkill).toContain('Escritura sin relleno');
+    expect(withSkill).toContain('Prueba de portabilidad');
+    // Attribution travels with the text: the source is MIT and asks for it.
+    expect(withSkill).toContain('no-ai-slop');
+
+    const off = await b.service.setSkillEnabled('writing', false);
+    expect(off[0].enabled).toBe(false);
+    await b.service.saveAsDocument(work.id, 'note', 'Nota', '# Nota\n');
+    const without = fs.readFileSync(claudeFile, 'utf8');
+    expect(without).not.toContain('latte:skill writing');
+    // Turning a skill off never touches the rest of the context.
+    expect(without).toContain('Tracked deliverables of this work');
+
+    await expect(b.service.setSkillEnabled('no-existe', true)).rejects.toThrow(/no viene con Latte/);
+  } finally { b.cleanup(); }
+});
+
+it('keeps the skill out of the per-request base prompt, which has its own budget', async () => {
+  const b = await makeBackend();
+  try {
+    // The skill rides the instruction file, written once per conversation.
+    // base.md is charged on every message and stays under its own limit.
+    const base = fs.readFileSync(path.join(process.cwd(), 'packs', 'marketing-core', 'base.md'), 'utf8');
+    expect(base).not.toContain('Prueba de portabilidad');
+    expect(base.length).toBeLessThan(6_000);
+    const skill = fs.readFileSync(path.join(process.cwd(), 'packs', 'marketing-core', 'skills', 'writing.md'), 'utf8');
+    expect(skill.length).toBeGreaterThan(1_000);
+  } finally { b.cleanup(); }
+});

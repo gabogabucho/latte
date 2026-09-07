@@ -3,6 +3,7 @@ import type {
   AgentAccount,
   AppInfo,
   AgentRole,
+  AgentSkill,
   AgentProfile,
   ProfileInput,
   DocumentPatch,
@@ -55,7 +56,7 @@ import { RuntimeDetector } from '../runtime/detect';
 import { assertProvider } from '../runtime/providers';
 import { TerminalManager } from '../runtime/terminalManager';
 import { briefDocumentId, type DocumentRecord, type LatteRepository } from '../storage/repository';
-import { renderInstructions, type InstructionPack } from '../workspace/instructions';
+import { renderInstructions, type InstructionPack, type PackSkill } from '../workspace/instructions';
 import { checkFolder, kindFromFileName, readFunnelProposal, scanFolder, titleFromFileName } from '../workspace/linkFolder';
 import { renderDocumentTemplate } from '../workspace/templates';
 import { documentFileName, fingerprintOf, type DocumentOnDisk, type WorkspaceFiles } from '../workspace/workspace';
@@ -95,6 +96,8 @@ const FINGERPRINT = /^[a-f0-9]{16}$/;
 /** One messy client folder must not flood the renderer with thousands of names. */
 const FOLDER_ENTRY_LIMIT = 200;
 const FOLDER_TRUST_KEY = 'trust-folder:';
+/** Off is the exception, so only a disabled skill is written down. */
+const SKILL_OFF_KEY = 'skill-off:';
 const DOCUMENT_KINDS: DocumentKind[] = ['brief', 'strategy', 'calendar', 'research', 'copy', 'note'];
 const DOCUMENT_STATUSES: DocumentStatus[] = ['draft', 'review', 'approved'];
 
@@ -409,6 +412,27 @@ export class LatteService implements BackendApi {
    * tree, so hiding it from the person would leave them trusting a folder they
    * cannot inspect. Listing is read-only: nothing here is adopted or converted.
    */
+  /** Shipped skills and their switch. On unless the human turned one off. */
+  async listSkills(): Promise<AgentSkill[]> {
+    return (this.deps.pack?.skills ?? []).map((s) => ({ id: s.id, name: s.name, summary: s.summary, enabled: this.skillEnabled(s.id) }));
+  }
+
+  async setSkillEnabled(skillId: string, enabled: boolean): Promise<AgentSkill[]> {
+    const id = requireId(skillId, 'skillId');
+    if (typeof enabled !== 'boolean') throw new TypeError('Invalid skill switch');
+    if (!(this.deps.pack?.skills ?? []).some((s) => s.id === id)) throw new ValidationError('Esa skill no viene con Latte');
+    this.deps.repo.setMeta(SKILL_OFF_KEY + id, enabled ? '0' : '1');
+    return this.listSkills();
+  }
+
+  private skillEnabled(skillId: string): boolean {
+    return this.deps.repo.getMeta(SKILL_OFF_KEY + skillId) !== '1';
+  }
+
+  private enabledSkills(): PackSkill[] {
+    return (this.deps.pack?.skills ?? []).filter((s) => this.skillEnabled(s.id));
+  }
+
   async listFolderEntries(workId: string): Promise<FolderEntries> {
     const id = requireId(workId, 'workId');
     const work = this.deps.repo.getWork(id);
@@ -1047,6 +1071,6 @@ export class LatteService implements BackendApi {
       baseFileName: r.baseDocumentId ? byId.get(r.baseDocumentId)?.fileName ?? null : null,
     }));
     this.deps.files.ensureWork(brand.id, work.id, work.brief);
-    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, decisions, documents, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id) }));
+    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, decisions, documents, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills() }));
   }
 }

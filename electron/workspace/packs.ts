@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { InstructionPack, PackRole } from './instructions';
+import type { InstructionPack, PackRole, PackSkill } from './instructions';
 
 interface PackManifest {
   id?: unknown;
@@ -9,6 +9,7 @@ interface PackManifest {
   instructions?: unknown;
   base?: unknown;
   roles?: unknown;
+  skills?: unknown;
 }
 
 const PACK_BODY_LIMIT = 40_000;
@@ -37,6 +38,7 @@ export function loadInstructionPack(packsDir: string, id = 'marketing-core'): In
       version: typeof manifest.version === 'string' ? manifest.version : '0.0.0',
       body,
       roles: loadRoles(dir, manifest.roles),
+      skills: loadSkills(dir, manifest.skills),
     };
   } catch {
     return null;
@@ -66,6 +68,29 @@ function loadRoles(dir: string, declared: unknown): PackRole[] {
     }
   }
   return roles;
+}
+
+/**
+ * Skills live in packs/<id>/skills/<skillId>.md, with the same front matter
+ * shape as roles. A role is who works; a skill is how everyone writes, so a
+ * skill carries no initial and belongs to no single member.
+ */
+function loadSkills(dir: string, declared: unknown): PackSkill[] {
+  if (!Array.isArray(declared)) return [];
+  const skills: PackSkill[] = [];
+  const seen = new Set<string>();
+  for (const entry of declared) {
+    if (typeof entry !== 'string' || !ROLE_ID.test(entry) || seen.has(entry)) continue;
+    try {
+      const parsed = parseRole(entry, fs.readFileSync(path.join(dir, 'skills', `${entry}.md`), 'utf8').slice(0, PACK_BODY_LIMIT));
+      if (!parsed) continue;
+      skills.push({ id: parsed.id, name: parsed.name, summary: parsed.summary, body: parsed.instructions });
+      seen.add(entry);
+    } catch {
+      /* one broken skill never takes the pack down */
+    }
+  }
+  return skills;
 }
 
 /** A missing or malformed behaviour file degrades to empty, never to a broken pack. */

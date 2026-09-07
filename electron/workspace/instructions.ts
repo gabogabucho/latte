@@ -19,6 +19,14 @@ export interface PackRole {
   instructions: string;
 }
 
+/** A writing skill Latte ships. Applies to every conversation unless turned off. */
+export interface PackSkill {
+  id: string;
+  name: string;
+  summary: string;
+  body: string;
+}
+
 export interface InstructionPack {
   id: string;
   title: string;
@@ -32,6 +40,7 @@ export interface InstructionPack {
    */
   base: string;
   roles: PackRole[];
+  skills: PackSkill[];
 }
 
 /** One tracked deliverable, as the agent needs to see it. */
@@ -57,6 +66,8 @@ export interface InstructionsInput {
   pack?: InstructionPack | null;
   /** Engram project for this brand, stated explicitly (shared runtimes cannot rely on env). */
   memoryProject?: string | null;
+  /** Skills the human left on. They travel here, once per session, not per request. */
+  skills?: PackSkill[];
 }
 
 function section(title: string, body: string, empty: string): string {
@@ -122,6 +133,13 @@ export function renderInstructions(input: InstructionsInput): string {
 
   if (memory && memory.trim().length > 0) {
     parts.push(section('Memory from previous sessions', memory, ''));
+  }
+
+  // Skills ride the instruction file, not the per-request prompt: the base
+  // prompt is charged on every message and stays under its own budget.
+  for (const skill of input.skills ?? []) {
+    if (skill.body.trim().length === 0) continue;
+    parts.push(`<!-- latte:skill ${skill.id} -->`, section(skill.name, skill.body.trim(), ''));
   }
 
   parts.push(

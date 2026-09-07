@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { ArrowLeft, HardDrive, Info, Plug, Wrench } from 'lucide-react';
+import { ArrowLeft, HardDrive, Info, Plug, Sparkles, Wrench } from 'lucide-react';
 import type { AppInfo } from '../shared/contracts';
 import { api, isDesktop } from './browser-api';
 import { ProvidersView } from './ProvidersView';
 import { ProfilesView } from './ProfilesView';
+import { SkillsView } from './SkillsView';
 import { ToolsView } from './ToolsView';
 
-export type SettingsSection = 'agents' | 'profiles' | 'tools' | 'workspace';
+export type SettingsSection = 'agents' | 'profiles' | 'skills' | 'tools' | 'workspace';
 
 /**
  * Settings is its own screen, not a document view: no work breadcrumb, no
@@ -43,6 +44,7 @@ export function SettingsScreen({ onProfileDirtyChange, controls, section, onSect
     <nav className="settings-nav" aria-label="Secciones de ajustes">
       <button className={section === 'agents' ? 'selected' : ''} onClick={() => navigate('agents')}><Plug size={16} />Agentes y proveedores</button>
       <button className={section === 'profiles' ? 'selected' : ''} onClick={() => navigate('profiles')}><Info size={16} />Perfiles</button>
+      <button className={section === 'skills' ? 'selected' : ''} onClick={() => navigate('skills')}><Sparkles size={16} />Skills</button>
       <button className={section === 'tools' ? 'selected' : ''} onClick={() => navigate('tools')}><Wrench size={16} />Herramientas (MCP)</button>
       <button className={section === 'workspace' ? 'selected' : ''} onClick={() => navigate('workspace')}><HardDrive size={16} />Espacio local</button>
     </nav>
@@ -54,6 +56,7 @@ export function SettingsScreen({ onProfileDirtyChange, controls, section, onSect
         <ProvidersView onChanged={onChanged} onNotice={onNotice} onError={onError} />
       </section>}
       {section === 'profiles' && <ProfilesView onChanged={onChanged} onError={onError} onNotice={onNotice} onDirtyChange={setProfileDirty} />}
+      {section === 'skills' && <SkillsView onNotice={onNotice} onError={onError} />}
       {section === 'tools' && <ToolsView onNotice={onNotice} onError={onError} />}
       {section === 'workspace' && <WorkspaceSection onError={onError} />}
     </main>

@@ -99,6 +99,12 @@ export interface McpServerInput {
  * own files and its subfolders. Latte cannot adopt these, but the agent reads
  * them, so the person has to be able to see them too.
  */
+/**
+ * A skill Latte ships: how every agent writes, not who works. On by default,
+ * because quality is not an option each person has to discover and enable.
+ */
+export interface AgentSkill { id: string; name: string; summary: string; enabled: boolean }
+
 export interface FolderEntries { subfolders: string[]; otherFiles: string[]; truncated: boolean }
 
 export interface UntrackedFile { fileName: string; title: string; kind: DocumentKind; bytes: number; modifiedAt: string | null; /** Stages the agent proposed in the file; empty when it proposed none. */ funnelStages: FunnelStage[] }
@@ -228,6 +234,9 @@ export interface LatteAPI {
   listUntrackedFiles(workId: string): Promise<UntrackedFile[]>;
   /** The rest of the work folder: subfolders and files Latte does not track. */
   listFolderEntries(workId: string): Promise<FolderEntries>;
+  /** Skills shipped with Latte and whether each one is on. */
+  listSkills(): Promise<AgentSkill[]>;
+  setSkillEnabled(skillId: string, enabled: boolean): Promise<AgentSkill[]>;
   /** Takes the agent's funnel proposal as the document's stages. */
   applyFunnelProposal(documentId: string): Promise<WorkDocument>;
   /** Drops the proposal and leaves the stages as they were. */
