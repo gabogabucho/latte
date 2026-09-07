@@ -193,6 +193,26 @@ app.whenReady().then(async () => {
     assert(answered.funnelStages.includes('retention'));
     record('Agent proposes on a tracked document, the human applies', 'file on disk + UI bar + preload read assertion');
 
+    // A rail that leaks its labels is worse than no rail: measure it, do not eyeball it.
+    await click('Plegar el menú');
+    const rail = await js(`(()=>{const s=document.querySelector('.sidebar');const b=[...s.querySelectorAll('nav button')];return {width:Math.round(s.offsetWidth),overflow:s.scrollWidth-s.clientWidth,fonts:[...new Set(b.map(e=>getComputedStyle(e).fontSize))],wider:b.filter(e=>e.scrollWidth>e.clientWidth+1).length};})()`);
+    assert.equal(rail.width, 64, 'The rail is the rail');
+    assert.equal(rail.overflow, 0, 'Nothing spills out of the rail');
+    assert.deepEqual(rail.fonts, ['0px'], 'Labels are bare text nodes: only a zeroed font hides them');
+    assert.equal(rail.wider, 0, 'No button is wider than the rail');
+    await shot('10-rail');
+    // Collapsed AND in conversation mode: the rail must change one track, not the layout.
+    await click('Conversar');
+    const focus = await js(`(()=>{const s=document.querySelector('.app-shell');const cols=getComputedStyle(s).gridTemplateColumns.split(' ');return {cols:cols.length,first:Math.round(parseFloat(cols[0])),overflow:document.documentElement.scrollWidth-innerWidth};})()`);
+    assert.equal(focus.cols, 2, 'Conversar stays two columns while the rail is collapsed');
+    assert.equal(focus.first, 64, 'And the first one is the rail');
+    assert.equal(focus.overflow, 0, 'Nothing hangs off the window');
+    await shot('11-rail-conversar');
+    await click('Revisar');
+    await click('Desplegar el menú');
+    assert.equal(await js(`Math.round(document.querySelector('.sidebar').offsetWidth)`), 232, 'And it comes back');
+    record('The sidebar collapses to a rail without leaking labels', 'UI DOM measurement');
+
     await click('Ajustes'); await click('Skills');
     await wait(`document.body.innerText.includes('Escritura sin relleno')`, 'shipped skill listed');
     assert.deepEqual((await api('listSkills')).map(s => [s.id, s.enabled]), [['writing', true]], 'A shipped skill arrives on');
