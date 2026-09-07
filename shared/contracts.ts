@@ -92,6 +92,13 @@ export interface McpServerInput {
 }
 
 /** A Markdown file in the work folder that is not a tracked document yet. */
+/**
+ * Everything in the work folder that is NOT a tracked document: the client's
+ * own files and its subfolders. Latte cannot adopt these, but the agent reads
+ * them, so the person has to be able to see them too.
+ */
+export interface FolderEntries { subfolders: string[]; otherFiles: string[]; truncated: boolean }
+
 export interface UntrackedFile { fileName: string; title: string; kind: DocumentKind; bytes: number; modifiedAt: string | null; /** Stages the agent proposed in the file; empty when it proposed none. */ funnelStages: FunnelStage[] }
 
 /** Cheap poll answer used to notice external edits without a filesystem watcher. */
@@ -217,6 +224,8 @@ export interface LatteAPI {
    * so Latte offers to adopt them.
    */
   listUntrackedFiles(workId: string): Promise<UntrackedFile[]>;
+  /** The rest of the work folder: subfolders and files Latte does not track. */
+  listFolderEntries(workId: string): Promise<FolderEntries>;
   /** Whether this work may read and write inside its own folder without asking each time. */
   getFolderTrust(workId: string): Promise<boolean>;
   setFolderTrust(workId: string, trusted: boolean): Promise<boolean>;

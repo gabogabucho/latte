@@ -5,6 +5,7 @@ import { AlertTriangle, Check, Download, FilePlus, FileText, FolderOpen, History
 import type { DocumentContent, DocumentKind, FunnelStage, Revision, WorkDocument, Work } from '../shared/contracts';
 import { api } from './browser-api';
 import { DocumentExplorer } from './DocumentExplorer';
+import { FolderContents } from './FolderContents';
 import { DocumentMetadata, hasMetadataDrafts } from './DocumentMetadata';
 import { STAGE_LABEL } from './document-organizer';
 import { documentDrafts } from './document-drafts';
@@ -220,6 +221,7 @@ export function DocumentsView(props: DocumentsViewProps) {
       : null;
   return <div className="documents">
     <DocumentExplorer documents={documents} workId={work.id} selectedId={selected?.id??null} onSelect={id=>{if(!saving)props.onSelect(id);}} onCreate={props.onCreate} busy={props.busy || saving}/>
+    <FolderContents workId={work.id} untracked={props.untracked} onTrack={props.onTrack} busy={props.busy || saving}/>
     {selected && <DocumentMetadata key={selected.id} document={selected} onChanged={props.onDocumentsChanged} onError={props.onError} onDirtyChange={dirty=>props.onDirtyChange(dirty||Boolean(editing?.dirty)||hasMetadataDrafts())}/>}
     {selected && <div className="document-toolbar">
       <span><FileText size={16} />{selected.title}<small>{kindLabel} · {editing?.dirty ? 'Sin guardar' : selected.status === 'approved' ? 'Aprobado' : selected.status === 'review' ? 'En revisión' : 'Borrador'}</small></span>

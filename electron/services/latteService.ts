@@ -6,6 +6,7 @@ import type {
   AgentProfile,
   ProfileInput,
   DocumentPatch,
+  FolderEntries,
   FunnelStage,
   AgentRuntimeInfo,
   AgentSession,
@@ -91,6 +92,8 @@ export interface LatteServiceDeps {
 const PROVIDER_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const FINGERPRINT = /^[a-f0-9]{16}$/;
 /** Per-work grant, kept in `meta` so no schema change is needed to add it. */
+/** One messy client folder must not flood the renderer with thousands of names. */
+const FOLDER_ENTRY_LIMIT = 200;
 const FOLDER_TRUST_KEY = 'trust-folder:';
 const DOCUMENT_KINDS: DocumentKind[] = ['brief', 'strategy', 'calendar', 'research', 'copy', 'note'];
 const DOCUMENT_STATUSES: DocumentStatus[] = ['draft', 'review', 'approved'];
@@ -359,6 +362,28 @@ export class LatteService implements BackendApi {
       out.push({ fileName: name, title: titleFromFileName(name), kind: kindOf(kindFromFileName(name)), bytes: stat.bytes, modifiedAt: stat.modifiedAt, funnelStages: proposed });
     }
     return out;
+  }
+
+  /**
+   * The rest of the folder: subfolders and files that are not tracked Markdown.
+   *
+   * Latte cannot turn these into documents — the importer stays at the top
+   * level and on Markdown on purpose. But an agent opened here reads the whole
+   * tree, so hiding it from the person would leave them trusting a folder they
+   * cannot inspect. Listing is read-only: nothing here is adopted or converted.
+   */
+  async listFolderEntries(workId: string): Promise<FolderEntries> {
+    const id = requireId(workId, 'workId');
+    const work = this.deps.repo.getWork(id);
+    this.deps.files.ensureWork(work.brandId, work.id, work.brief);
+    const scan = scanFolder(this.deps.files.workDir(work.brandId, work.id));
+    const managed = new Set<string>([WORK_FILES.claude, WORK_FILES.agents, WORK_FILES.readme]);
+    const otherFiles = scan.otherFiles.filter((name) => !managed.has(name));
+    return {
+      subfolders: scan.subfolders.slice(0, FOLDER_ENTRY_LIMIT),
+      otherFiles: otherFiles.slice(0, FOLDER_ENTRY_LIMIT),
+      truncated: scan.subfolders.length > FOLDER_ENTRY_LIMIT || otherFiles.length > FOLDER_ENTRY_LIMIT,
+    };
   }
 
   /** Adopts an existing file: from here it has versions, export and conflict checks. */

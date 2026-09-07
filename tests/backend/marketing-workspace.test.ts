@@ -148,3 +148,25 @@ it('leaves a file alone when there is no usable proposal in it', async () => {
     }
   } finally { b.cleanup(); }
 });
+
+it('shows the rest of the folder without pretending Latte can track it', async () => {
+  const b = await makeBackend();
+  try {
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    const dir = path.join(b.dir, 'brands', brand.id, 'works', work.id);
+    fs.mkdirSync(path.join(dir, 'piezas-instagram'));
+    fs.mkdirSync(path.join(dir, 'node_modules'));
+    fs.writeFileSync(path.join(dir, 'propuesta-final.docx'), 'x');
+    fs.writeFileSync(path.join(dir, 'metricas.xlsx'), 'x');
+    fs.writeFileSync(path.join(dir, 'suelto.md'), '# Suelto\n');
+    const entries = await b.service.listFolderEntries(work.id);
+    expect(entries.subfolders).toEqual(['piezas-instagram']);
+    expect(entries.otherFiles).toEqual(['metricas.xlsx', 'propuesta-final.docx']);
+    expect(entries.truncated).toBe(false);
+    // Markdown is the adoptable list, and Latte's own managed files are not the client's material.
+    expect(entries.otherFiles).not.toContain('suelto.md');
+    for (const managed of ['CLAUDE.md', 'AGENTS.md', 'README.md']) expect(entries.otherFiles).not.toContain(managed);
+    expect((await b.service.listUntrackedFiles(work.id)).map(f => f.fileName)).toContain('suelto.md');
+  } finally { b.cleanup(); }
+});

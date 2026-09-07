@@ -145,6 +145,21 @@ app.whenReady().then(async () => {
     await clickTab('Embudo'); await shot('06-proposed-stage-adopted');
     record('Agent proposes a stage, the human adopts it', 'file on disk + UI adoption + preload read assertion', { fileName: 'retencion.md' });
 
+    // The folder the human cannot otherwise see: subfolders and the client's own files.
+    fs.mkdirSync(path.join(workDir, 'piezas-instagram'), { recursive: true });
+    fs.writeFileSync(path.join(workDir, 'propuesta-final.docx'), 'binario sintetico');
+    fs.writeFileSync(path.join(workDir, 'suelto.md'), '# Suelto\n');
+    await win.reload(); await click('Revisar');
+    await click('Plegar documentos');
+    assert.equal(await js(`Boolean(document.querySelector('[aria-label="Buscar documentos"]'))`), false, 'Collapsing must free the screen');
+    await click('Desplegar documentos');
+    await clickWhere('.folder-contents header button', `e=>e.textContent.includes('En la carpeta')`, 'open folder panel');
+    const listed = await js(`[...document.querySelectorAll('.folder-row > span')].map(e=>e.textContent.trim())`);
+    for (const name of ['piezas-instagram/', 'propuesta-final.docx', 'suelto.md']) assert(listed.some(t => t.startsWith(name)), `${name} must be visible to the human`);
+    for (const managed of ['CLAUDE.md', 'AGENTS.md']) assert(!listed.some(t => t.startsWith(managed)), `${managed} is Latte's, not the client's material`);
+    await shot('07-folder-contents');
+    record('The human sees the whole folder, not only what Latte tracks', 'UI DOM + real folder on disk', { listed });
+
     await click('Ajustes'); await click('Perfiles');
     const builtins = await api('listProfiles');
     // The neutral assistant ships without SOUL on purpose; clone one that carries instructions.

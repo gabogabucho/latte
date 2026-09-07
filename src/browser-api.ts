@@ -73,7 +73,7 @@ export const browserAPI: LatteAPI = {
   listDocumentRevisions: async documentId=>read().revisions.filter(r=>r.documentId===documentId).reverse(),
   exportDocument: async documentId=>{const c=await previewContent(documentId);const url=URL.createObjectURL(new Blob([c.content],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=c.document.fileName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return a.download;},
   keepDraftAsVersion: async(documentId,content)=>mutate(s=>revision(s,documentId,content)),
-  listUntrackedFiles: async()=>[],trackFile:unavailable,
+  listUntrackedFiles: async()=>[],listFolderEntries:async()=>({subfolders:[],otherFiles:[],truncated:false}),trackFile:unavailable,
   saveAsDocument:async(workId,kind,title,content)=>{const c=await browserAPI.createDocument(workId,kind,title);await browserAPI.saveDocument(c.document.id,content,c.fingerprint);return c.document;},
   getFolderTrust:async()=>false,setFolderTrust:unavailable,
   acknowledgeBase:async documentId=>mutate(s=>{const d=contentFrom(s,documentId).document;if(d.baseDocumentId)d.baseFingerprint=contentFrom(s,d.baseDocumentId).fingerprint;return d;}),
