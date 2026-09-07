@@ -13,7 +13,7 @@ interface Untracked { fileName: string; title: string; funnelStages?: FunnelStag
  * review queue and what the folder holds. The document keeps the full height
  * of the screen, which is the only reason any of this exists.
  */
-export function DocumentList({ documents, workId, selectedId, states, failed, checking, onRefresh, onSelect, onCreate, onUseFolder, folder, untracked, onTrack, suggestion, busy }: {
+export function DocumentList({ documents, workId, selectedId, states, failed, checking, onRefresh, onSelect, onCreate, onUseFolder, folder, untracked, onTrack, suggestion, onImported, busy }: {
   documents: WorkDocument[];
   workId: string;
   selectedId: string | null;
@@ -29,6 +29,7 @@ export function DocumentList({ documents, workId, selectedId, states, failed, ch
   onTrack: (fileName: string) => Promise<void>;
   /** The usual next document, offered once. Help, never a required sequence. */
   suggestion: { label: string; hint: string } | null;
+  onImported: (fileNames: string[]) => void;
   busy: boolean;
 }) {
   const [query, setQuery] = useState('');
@@ -81,7 +82,7 @@ export function DocumentList({ documents, workId, selectedId, states, failed, ch
       {visible.length === 0 && <p className="stage-empty">{onlyReview ? 'Nada para revisar.' : 'Ningún documento coincide.'}</p>}
     </div>
 
-    <FolderContents workId={workId} untracked={untracked} onTrack={onTrack} busy={busy} />
+    <FolderContents workId={workId} untracked={untracked} onTrack={onTrack} onImported={onImported} busy={busy} />
 
     {suggestion && <div className="doc-suggestion">
       <span><strong>{suggestion.label}</strong> {suggestion.hint}</span>

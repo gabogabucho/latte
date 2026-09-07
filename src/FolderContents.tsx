@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, File, FilePlus, Folder, RefreshCw } from 'lucide-react';
+import { ChevronDown, File, FilePlus, FilePlus2, Folder, FolderOpen, RefreshCw } from 'lucide-react';
 import type { FolderEntries, FunnelStage } from '../shared/contracts';
 import { api, isDesktop } from './browser-api';
 import { STAGE_LABEL } from './document-organizer';
@@ -16,10 +16,11 @@ interface Untracked { fileName: string; title: string; funnelStages?: FunnelStag
  * because Latte tracks Markdown at the top level and says so instead of
  * pretending the rest is not there.
  */
-export function FolderContents({ workId, untracked, onTrack, busy }: {
+export function FolderContents({ workId, untracked, onTrack, onImported, busy }: {
   workId: string;
   untracked: Untracked[];
   onTrack: (fileName: string) => Promise<void>;
+  onImported: (fileNames: string[]) => void;
   busy: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -51,6 +52,8 @@ export function FolderContents({ workId, untracked, onTrack, busy }: {
         <ChevronDown size={15} className={open ? 'rotated' : ''} />
         En la carpeta, sin seguir <small>{loading && !entries ? '…' : total}</small>
       </button>
+      <button className="icon-button" aria-label="Traer archivos a este trabajo" title="Traer archivos: los copia a la carpeta del trabajo" disabled={busy} onClick={() => void api.importFiles(workId).then(landed => { if (landed.length) { setRefresh(n => n + 1); onImported(landed); } }).catch(e => setError(e instanceof Error ? e.message : String(e)))}><FilePlus2 size={13} /></button>
+      <button className="icon-button" aria-label="Abrir la carpeta del trabajo" title="Abrir la carpeta en el explorador" onClick={() => void api.revealWorkFolder(workId).catch(e => setError(e instanceof Error ? e.message : String(e)))}><FolderOpen size={13} /></button>
       {open && <button className="icon-button" aria-label="Actualizar contenido de la carpeta" disabled={loading} onClick={() => setRefresh(n => n + 1)}><RefreshCw size={12} /></button>}
     </header>
     {open && <div className="folder-body">
@@ -77,6 +80,7 @@ export function FolderContents({ workId, untracked, onTrack, busy }: {
       </div>}
 
       {entries?.truncated && <p className="footnote">La carpeta tiene más de lo que entra en esta lista; se muestran los primeros.</p>}
+      <p className="footnote">Podés soltar archivos en la carpeta desde el explorador, o traerlos con el botón de arriba: se copian acá y el original queda donde estaba.</p>
       {total > 0 && <p className="footnote">Latte sigue el Markdown del nivel raíz. Lo demás lo ve tu agente, pero no gana versiones ni exportación hasta que sea un documento.</p>}
     </div>}
   </section>;

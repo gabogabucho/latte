@@ -137,6 +137,23 @@ export function readFunnelProposal(content: string): FunnelProposal {
   return { stages, body: content.slice(match[0].length) };
 }
 
+/**
+ * A file name Latte is willing to create when importing the client's material.
+ *
+ * The picker hands back absolute paths from anywhere on the disk, so only the
+ * base name survives, stripped of control characters, of anything Windows
+ * forbids, and of leading dots. A name that collides with a reserved device
+ * gets a prefix instead of being refused.
+ */
+export function importFileName(source: string): string {
+  const base = path.basename(source)
+    .replace(/[\x00-\x1f<>:"/\\|?*]/g, '-')
+    .replace(/^\.+/, '')
+    .trim();
+  const clean = base.slice(0, 120) || 'archivo';
+  return /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i.test(clean) ? `_${clean}` : clean;
+}
+
 /** A readable title from a file name, for the document list. */
 export function titleFromFileName(name: string): string {
   const base = name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();

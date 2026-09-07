@@ -232,7 +232,7 @@ export function DocumentsView(props: DocumentsViewProps) {
   return <div className={'documents' + (funnel ? ' funnel-mode' : '')}>
     {funnel
       ? <FunnelView documents={documents} selectedId={selected?.id ?? null} states={states} checking={checking} onRefresh={refreshStates} onSelect={id => { if (!saving) { props.onSelect(id); props.onView('brief'); } }} busy={props.busy} />
-      : <><DocumentList documents={documents} workId={work.id} selectedId={selected?.id ?? null} states={states} failed={failed} checking={checking} onRefresh={refreshStates} onSelect={id => { if (!saving) props.onSelect(id); }} onCreate={props.onCreate} onUseFolder={props.onUseFolder} folder={linked} untracked={props.untracked} onTrack={props.onTrack} busy={props.busy || saving} suggestion={suggestion} />
+      : <><DocumentList documents={documents} workId={work.id} selectedId={selected?.id ?? null} states={states} failed={failed} checking={checking} onRefresh={refreshStates} onSelect={id => { if (!saving) props.onSelect(id); }} onCreate={props.onCreate} onUseFolder={props.onUseFolder} folder={linked} untracked={props.untracked} onTrack={props.onTrack} busy={props.busy || saving} suggestion={suggestion} onImported={names => { void props.onDocumentsChanged(); props.onNotice(names.length === 1 ? `${names[0]} está en la carpeta del trabajo.` : `${names.length} archivos están en la carpeta del trabajo.`); }} />
     <div className="doc-pane">
     {selected && <div className="document-toolbar">
       <span><FileText size={16} />{selected.title}<small>{kindLabel} · {editing?.dirty ? 'Sin guardar' : selected.status === 'approved' ? 'Aprobado' : selected.status === 'review' ? 'En revisión' : 'Borrador'}</small></span>

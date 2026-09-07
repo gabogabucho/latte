@@ -41,6 +41,7 @@ import type {
   Work,
   WorkDocument,
 } from '../../shared/contracts';
+import nodeFs from 'node:fs';
 import nodePath from 'node:path';
 import { writeFileAtomic } from '../core/atomicFile';
 import { UnavailableError, ValidationError } from '../core/errors';
@@ -57,7 +58,7 @@ import { assertProvider } from '../runtime/providers';
 import { TerminalManager } from '../runtime/terminalManager';
 import { briefDocumentId, type DocumentRecord, type LatteRepository } from '../storage/repository';
 import { renderInstructions, type InstructionPack, type PackSkill } from '../workspace/instructions';
-import { checkFolder, kindFromFileName, readFunnelProposal, scanFolder, titleFromFileName } from '../workspace/linkFolder';
+import { checkFolder, contains, importFileName, kindFromFileName, readFunnelProposal, scanFolder, titleFromFileName } from '../workspace/linkFolder';
 import { renderDocumentTemplate } from '../workspace/templates';
 import { documentFileName, fingerprintOf, type DocumentOnDisk, type WorkspaceFiles } from '../workspace/workspace';
 import { LIMITS, requireId, requireInt, requireLabel, requireRequestId, requireText } from './validation';
@@ -81,6 +82,10 @@ export interface LatteServiceDeps {
   chooseExportPath: (suggestedFileName: string) => Promise<string | null>;
   /** Opens a native folder picker; returns the chosen folder or null on cancel. */
   chooseFolder?: (title: string) => Promise<string | null>;
+  /** Opens a native multi-select file picker; returns the chosen absolute paths. */
+  chooseFiles?: (title: string) => Promise<string[]>;
+  /** Shows a folder in the system file manager. */
+  revealPath?: (target: string) => Promise<void>;
   /** Discipline pack prepended to every generated instruction file. */
   pack?: InstructionPack | null;
   /** Opens an http(s) URL in the system browser (OAuth logins). */
@@ -95,6 +100,20 @@ const FINGERPRINT = /^[a-f0-9]{16}$/;
 /** Per-work grant, kept in `meta` so no schema change is needed to add it. */
 /** One messy client folder must not flood the renderer with thousands of names. */
 const FOLDER_ENTRY_LIMIT = 200;
+/** One drag must not import a disk: bounded in count and in size per file. */
+const IMPORT_LIMIT = 50;
+const IMPORT_MAX_BYTES = 64 * 1024 * 1024;
+
+function fsStatSafe(target: string): import('node:fs').Stats | null {
+  try { return nodeFs.statSync(target); } catch { return null; }
+}
+function fsExistsSafe(target: string): boolean {
+  try { return nodeFs.existsSync(target); } catch { return true; }
+}
+function fsCopySafe(source: string, target: string): void {
+  nodeFs.copyFileSync(source, target, nodeFs.constants.COPYFILE_EXCL);
+}
+
 const FOLDER_TRUST_KEY = 'trust-folder:';
 /** Off is the exception, so only a disabled skill is written down. */
 const SKILL_OFF_KEY = 'skill-off:';
@@ -412,6 +431,51 @@ export class LatteService implements BackendApi {
    * tree, so hiding it from the person would leave them trusting a folder they
    * cannot inspect. Listing is read-only: nothing here is adopted or converted.
    */
+  /** Opens the work's folder in the file manager, so you can drop things in yourself. */
+  async revealWorkFolder(workId: string): Promise<string> {
+    const id = requireId(workId, 'workId');
+    const work = this.deps.repo.getWork(id);
+    if (!this.deps.revealPath) throw new UnavailableError('Abrir la carpeta requiere la aplicación de escritorio');
+    this.deps.files.ensureWork(work.brandId, work.id, work.brief);
+    const directory = this.deps.files.workDir(work.brandId, work.id);
+    await this.deps.revealPath(directory);
+    return directory;
+  }
+
+  /**
+   * Copies the client's own material into the work folder.
+   *
+   * A copy, never a move: what you pick stays where it was. The name is
+   * sanitised and never overwrites — a second `propuesta.docx` lands as
+   * `propuesta-2.docx`, because losing the first one silently would be worse
+   * than an odd name. Markdown that arrives here is offered for adoption like
+   * anything else in the folder; the rest is listed and read by your agent.
+   */
+  async importFiles(workId: string): Promise<string[]> {
+    const id = requireId(workId, 'workId');
+    const work = this.deps.repo.getWork(id);
+    if (!this.deps.chooseFiles) throw new UnavailableError('Traer archivos requiere la aplicación de escritorio');
+    const chosen = await this.deps.chooseFiles('Elegí los archivos que querés traer a este trabajo');
+    if (chosen.length === 0) return [];
+    this.deps.files.ensureWork(work.brandId, work.id, work.brief);
+    const directory = this.deps.files.workDir(work.brandId, work.id);
+    const landed: string[] = [];
+    for (const source of chosen.slice(0, IMPORT_LIMIT)) {
+      const stat = nodePath.isAbsolute(source) ? fsStatSafe(source) : null;
+      if (!stat || !stat.isFile() || stat.size > IMPORT_MAX_BYTES) continue;
+      const name = importFileName(source);
+      let target = nodePath.join(directory, name);
+      const base = name.replace(/\.[^.]+$/, '');
+      const extension = name.slice(base.length);
+      for (let n = 2; fsExistsSafe(target) && n <= 99; n++) target = nodePath.join(directory, `${base}-${n}${extension}`);
+      if (fsExistsSafe(target)) continue;
+      if (!contains(directory, target)) continue;
+      fsCopySafe(source, target);
+      landed.push(nodePath.basename(target));
+    }
+    return landed;
+  }
+
   /** Shipped skills and their switch. On unless the human turned one off. */
   async listSkills(): Promise<AgentSkill[]> {
     return (this.deps.pack?.skills ?? []).map((s) => ({ id: s.id, name: s.name, summary: s.summary, enabled: this.skillEnabled(s.id) }));

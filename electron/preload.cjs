@@ -27,6 +27,8 @@ const METHODS = [
   'exportDocument',
   'listUntrackedFiles',
   'listFolderEntries',
+  'revealWorkFolder',
+  'importFiles',
   'listSkills',
   'setSkillEnabled',
   'applyFunnelProposal',

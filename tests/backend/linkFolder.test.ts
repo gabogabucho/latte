@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { checkFolder, kindFromFileName, scanFolder, titleFromFileName } from '../../electron/workspace/linkFolder';
+import { checkFolder, kindFromFileName, scanFolder, titleFromFileName, importFileName } from '../../electron/workspace/linkFolder';
 import { makeBackend, makeTempDir, removeDir, type TestBackend } from './helpers';
 
 /** A folder like the one a person already has for a client. */
@@ -116,4 +116,19 @@ describe('Using an existing folder as the work', () => {
     expect(kindFromFileName('CALENDARIO abril.md')).toBe('calendar');
     expect(kindFromFileName('cosas.md')).toBe('note');
   });
+});
+
+it('accepts a file name from anywhere on the disk without letting it out of the folder', () => {
+  expect(importFileName('C:/clientes/La Mereta/propuesta final.docx')).toBe('propuesta final.docx');
+  expect(importFileName('/home/x/notas.md')).toBe('notas.md');
+  // Only the base name survives: a picker hands back absolute paths.
+  expect(importFileName('../../.././etc/passwd')).toBe('passwd');
+  expect(importFileName('..')).toBe('archivo');
+  // Windows forbids these, and a reserved device gets a prefix instead of a refusal.
+  expect(importFileName('a<b>c:d"e|f?g*h.txt')).toBe('a-b-c-d-e-f-g-h.txt');
+  expect(importFileName('CON.txt')).toBe('_CON.txt');
+  expect(importFileName('nul')).toBe('_nul');
+  expect(importFileName('.oculto.md')).toBe('oculto.md');
+  expect(importFileName(`x${String.fromCharCode(0)}y.md`)).toBe('x-y.md');
+  expect(importFileName('a'.repeat(400) + '.md').length).toBeLessThanOrEqual(120);
 });

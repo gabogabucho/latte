@@ -44,6 +44,8 @@ async function start(): Promise<void> {
     emitChat: emitChatEvent,
     chooseExportPath,
     chooseFolder,
+    chooseFiles,
+    revealPath: async (target) => { await shell.openPath(target); },
     openExternal: async (url) => { if (isExternalHttp(url)) await shell.openExternal(url); },
     log: (line) => console.log(line.trimEnd()),
   });
@@ -280,6 +282,13 @@ async function chooseExportPath(suggestedFileName: string): Promise<string | nul
     : await dialog.showSaveDialog(options);
   if (result.canceled || !result.filePath) return null;
   return result.filePath;
+}
+
+/** File picker for bringing the client's own material into a work folder. */
+async function chooseFiles(title: string): Promise<string[]> {
+  const options = { title, properties: ['openFile' as const, 'multiSelections' as const, 'dontAddToRecent' as const], buttonLabel: 'Traer al trabajo' };
+  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+  return result.canceled ? [] : result.filePaths;
 }
 
 /** Folder picker for pointing a work at an existing folder. */

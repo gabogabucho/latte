@@ -31,6 +31,10 @@ export interface BackendOptions {
   chooseExportPath: (suggestedFileName: string) => Promise<string | null>;
   /** Opens a native folder picker (desktop only). */
   chooseFolder?: (title: string) => Promise<string | null>;
+  /** Opens a multi-select file dialog; returns the chosen absolute paths. */
+  chooseFiles?: (title: string) => Promise<string[]>;
+  /** Shows a folder in the system file manager. */
+  revealPath?: (target: string) => Promise<void>;
   seedDemo?: boolean;
   driver?: DriverPreference;
   runner?: CommandRunner;
@@ -146,6 +150,8 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
     engineReason: reason,
     chooseExportPath: options.chooseExportPath,
     chooseFolder: options.chooseFolder,
+    chooseFiles: options.chooseFiles,
+    revealPath: options.revealPath,
     openExternal: options.openExternal,
   });
 

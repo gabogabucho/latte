@@ -234,6 +234,10 @@ export interface LatteAPI {
   listUntrackedFiles(workId: string): Promise<UntrackedFile[]>;
   /** The rest of the work folder: subfolders and files Latte does not track. */
   listFolderEntries(workId: string): Promise<FolderEntries>;
+  /** Opens this work's folder in the system file manager. */
+  revealWorkFolder(workId: string): Promise<string>;
+  /** Copies chosen files into this work's folder. Returns what landed there. */
+  importFiles(workId: string): Promise<string[]>;
   /** Skills shipped with Latte and whether each one is on. */
   listSkills(): Promise<AgentSkill[]>;
   setSkillEnabled(skillId: string, enabled: boolean): Promise<AgentSkill[]>;
