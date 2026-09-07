@@ -74,6 +74,7 @@ const METHODS = [
   'openTeamMember',
   'pauseTeamMember',
   'finishTeamMember',
+  'restartTeamMember',
   'removeTeamMember',
 ];
 

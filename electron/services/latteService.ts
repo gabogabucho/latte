@@ -647,6 +647,11 @@ export class LatteService implements BackendApi {
     this.deps.hub.finishMember(requireId(memberId, 'memberId'));
   }
 
+  /** Starts this member's conversation over. The member, its role and its runtime stay. */
+  async restartTeamMember(memberId: string): Promise<TeamMember> {
+    return this.deps.hub.restartMember(requireId(memberId, 'memberId'));
+  }
+
   async removeTeamMember(memberId: string): Promise<void> {
     this.deps.hub.removeMember(requireId(memberId, 'memberId'));
   }

@@ -102,7 +102,7 @@ export const browserAPI: LatteAPI = {
   listRoles: async()=> (await browserAPI.listProfiles()).map(({id,name,initial,summary,builtin})=>({id,name,initial,summary,builtin})),
   listProfiles:async()=>[...builtinProfiles,...normalized().profiles],
   saveProfile:async(input,expectedFingerprint)=>mutate(s=>{validateProfile(input);if(shippedRoles.some(r=>r.id===input.id))throw new Error('Los perfiles incluidos son de solo lectura');const existing=s.profiles.find(p=>p.id===input.id);if(expectedFingerprint===null?Boolean(existing):!existing||existing.fingerprint!==expectedFingerprint)throw new Error('El perfil cambió o ya existe. Tu borrador sigue intacto; recargá antes de reintentar.');const p:AgentProfile={...input,builtin:false,source:'custom',directory:null,fingerprint:id()};s.profiles=s.profiles.filter(p=>p.id!==input.id);s.profiles.push(p);return p;}),
-  listTeam: async () => [], addTeamMember: unavailable, openTeamMember: unavailable, pauseTeamMember: unavailable, finishTeamMember: unavailable, removeTeamMember: unavailable,
+  listTeam: async () => [], addTeamMember: unavailable, openTeamMember: unavailable, pauseTeamMember: unavailable, finishTeamMember: unavailable, restartTeamMember: unavailable, removeTeamMember: unavailable,
 };
 export const api = window.latte ?? browserAPI;
 export const isDesktop = Boolean(window.latte);

@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { AlertTriangle, Check, Download, FilePlus, FileText, FolderOpen, History, Layers, LoaderCircle, Plus, RefreshCw, Save, X } from 'lucide-react';
+import { AlertTriangle, Check, Download, FileText, History, Layers, LoaderCircle, Plus, RefreshCw, Save, SlidersHorizontal, X } from 'lucide-react';
 import type { DocumentContent, DocumentKind, FunnelStage, Revision, WorkDocument, Work } from '../shared/contracts';
 import { api } from './browser-api';
-import { DocumentExplorer } from './DocumentExplorer';
-import { FolderContents } from './FolderContents';
+import { DocumentList } from './DocumentList';
+import { FunnelView } from './FunnelView';
+import { useDocumentStates } from './document-states';
 import { DocumentMetadata, hasMetadataDrafts } from './DocumentMetadata';
-import { STAGE_LABEL } from './document-organizer';
 import { documentDrafts } from './document-drafts';
 
 const KIND_LABEL: Record<DocumentKind, string> = { brief: 'Encargo', strategy: 'Estrategia', calendar: 'Calendario', research: 'Investigación', copy: 'Piezas', note: 'Nota' };
@@ -42,6 +42,10 @@ export interface DocumentsViewProps {
   onError: (text: string) => void;
   onCreate: () => void;
   onUseFolder: () => void;
+  /** Which workspace tab is showing: the document split, or the funnel. */
+  funnel: boolean;
+  /** Opening a document from the funnel takes you to the document. */
+  onView: (view: 'brief' | 'funnel') => void;
   /** The empty screen needs a way in: create the first brand, or a work for the one there is. */
   hasBrand: boolean;
   onStart: () => void;
@@ -79,7 +83,11 @@ export function DocumentsView(props: DocumentsViewProps) {
   const [showVersions, setShowVersions] = useState(false);
   const [pickedRevision, setPicked] = useState<Revision | null>(null);
   const [saving, setSaving] = useState(false);
+  // Metadata is a per-document detour, not a permanent strip above the text.
+  const [organizing, setOrganizing] = useState(false);
   const loadToken = useRef(0);
+  const funnel = props.funnel;
+  const { states, failed, checking, refresh: refreshStates } = useDocumentStates(work?.id ?? '', documents, Boolean(work));
 
   const load = async (documentId: string) => {
     const token = ++loadToken.current;
@@ -115,6 +123,7 @@ export function DocumentsView(props: DocumentsViewProps) {
     setModeState('read');
     void load(selected.id);
   }, [selected?.id]);
+  useEffect(() => { setOrganizing(false); }, [selected?.id]);
   useEffect(() => { props.onDirtyChange(Boolean(editing?.dirty) || hasMetadataDrafts()); }, [editing?.dirty]);
 
   // Bounded polling instead of a filesystem watcher: one cheap fingerprint read
@@ -219,20 +228,24 @@ export function DocumentsView(props: DocumentsViewProps) {
     : !documents.some(d => d.kind === 'calendar')
       ? { label: 'Un paso habitual:', hint: 'un calendario derivado de la estrategia, con fecha, canal, mensaje y CTA.' }
       : null;
-  return <div className="documents">
-    <DocumentExplorer documents={documents} workId={work.id} selectedId={selected?.id??null} onSelect={id=>{if(!saving)props.onSelect(id);}} onCreate={props.onCreate} busy={props.busy || saving}/>
-    <FolderContents workId={work.id} untracked={props.untracked} onTrack={props.onTrack} busy={props.busy || saving}/>
-    {selected && <DocumentMetadata key={selected.id} document={selected} onChanged={props.onDocumentsChanged} onError={props.onError} onDirtyChange={dirty=>props.onDirtyChange(dirty||Boolean(editing?.dirty)||hasMetadataDrafts())}/>}
+  return <div className={'documents' + (funnel ? ' funnel-mode' : '')}>
+    {funnel
+      ? <FunnelView documents={documents} selectedId={selected?.id ?? null} states={states} checking={checking} onRefresh={refreshStates} onSelect={id => { if (!saving) { props.onSelect(id); props.onView('brief'); } }} busy={props.busy} />
+      : <><DocumentList documents={documents} workId={work.id} selectedId={selected?.id ?? null} states={states} failed={failed} checking={checking} onRefresh={refreshStates} onSelect={id => { if (!saving) props.onSelect(id); }} onCreate={props.onCreate} onUseFolder={props.onUseFolder} folder={linked} untracked={props.untracked} onTrack={props.onTrack} busy={props.busy || saving} suggestion={suggestion} />
+    <div className="doc-pane">
     {selected && <div className="document-toolbar">
       <span><FileText size={16} />{selected.title}<small>{kindLabel} · {editing?.dirty ? 'Sin guardar' : selected.status === 'approved' ? 'Aprobado' : selected.status === 'review' ? 'En revisión' : 'Borrador'}</small></span>
       <div className="doc-actions">
         <button className="primary" disabled={!editing?.dirty || saving || props.busy} onClick={() => void save()}>{saving ? <LoaderCircle className="spin" size={14} /> : <Save size={14} />}Guardar</button>
         <button disabled={props.busy || saving} onClick={() => setMode(mode === 'edit' ? 'read' : 'edit')}>{mode === 'edit' ? 'Leer' : 'Editar'}</button>
+        <button aria-expanded={organizing} onClick={() => setOrganizing(o => !o)} disabled={props.busy}><SlidersHorizontal size={14} />Organizar</button>
         <button disabled={props.busy || saving} onClick={() => void snapshot()}><Layers size={14} />Conservar versión</button>
         <button disabled={props.busy} onClick={() => void openVersions()}><History size={14} />Versiones</button>
         <button className="icon-button" title="Exportar este documento" disabled={props.busy} onClick={() => void api.exportDocument(selected.id).then(p => p && props.onNotice('Documento exportado')).catch(e => props.onError(displayError(e)))}><Download size={15} /></button>
       </div>
     </div>}
+
+    {selected && organizing && <DocumentMetadata key={selected.id} document={selected} onChanged={props.onDocumentsChanged} onError={props.onError} onDirtyChange={dirty=>props.onDirtyChange(dirty||Boolean(editing?.dirty)||hasMetadataDrafts())}/>}
 
     {conflict && <div className="doc-conflict" role="alert">
       <div className="doc-conflict-head"><AlertTriangle size={16} />Este documento cambió fuera del editor</div>
@@ -264,28 +277,14 @@ export function DocumentsView(props: DocumentsViewProps) {
       <button onClick={() => void api.acknowledgeBase(selected.id).then(async () => { setBaseOutdated(false); await props.onDocumentsChanged(); props.onNotice('Referencia actualizada a la versión actual de la base.'); }).catch(e => props.onError(displayError(e)))}>Ya lo revisé</button>
     </div>}
 
-    {linked && <div className="doc-folder" title={linked}><FolderOpen size={13} /><span>Este trabajo usa tu carpeta: <code>{linked}</code></span></div>}
-    {!linked && <div className="doc-folder subtle-folder"><FolderOpen size={13} /><span>Este trabajo guarda sus documentos dentro de Latte.</span><button onClick={props.onUseFolder} disabled={props.busy}>Usar una carpeta mía</button></div>}
-    {props.untracked.length > 0 && <div className="doc-banner untracked" role="status">
-      <FilePlus size={14} />
-      <span>{props.untracked.length === 1
-        ? <>Hay un archivo en la carpeta que Latte no sigue: <strong>{props.untracked[0].fileName}</strong>. Si lo agregás, gana versiones y exportación.</>
-        : <>Hay {props.untracked.length} archivos en la carpeta que Latte no sigue. Si los agregás, ganan versiones y exportación.</>}</span>
-      {/* The stage the agent proposed, shown before adopting: the human decides, not the file. */}
-      {props.untracked.slice(0, 3).map(f => <button key={f.fileName} disabled={props.busy} onClick={() => void props.onTrack(f.fileName)}>Agregar {f.fileName}{f.funnelStages?.length ? ' · ' + f.funnelStages.map(s => STAGE_LABEL[s]).join(' + ') : ''}</button>)}
-    </div>}
-
-    {suggestion && <div className="doc-suggestion">
-      <span><strong>{suggestion.label}</strong> {suggestion.hint}</span>
-      <button onClick={props.onCreate}><Plus size={13} />Crear</button>
-    </div>}
-
     <div className="document-scroll">
       <div className="document-kicker">{props.brandName} / {work.title}{selected ? ` / ${kindLabel}` : ''}</div>
       {loading && !editing && <p className="footnote"><LoaderCircle className="spin" size={13} /> Abriendo el documento…</p>}
       {editing && mode === 'edit' && <textarea className="markdown-editor" aria-label="Editar documento en Markdown" value={editing.content} spellCheck={false} onChange={e => setEditing({ ...editing, content: e.target.value, dirty: true })} />}
       {editing && mode === 'read' && <article className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{editing.content || '*Este documento está vacío. Tocá Editar para empezar.*'}</ReactMarkdown></article>}
     </div>
+
+    </div></>}
 
     {showVersions && <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowVersions(false); }}>
       <section role="dialog" aria-modal="true" aria-labelledby="versions-title" className="modal wide">

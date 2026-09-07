@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, CircleCheck, FolderCheck, FolderLock, LoaderCircle, MessageSquare, Pause, Play, Plug, Plus, Trash2, UserPlus, X } from 'lucide-react';
+import { Check, CircleCheck, FolderCheck, FolderLock, LoaderCircle, MessageSquare, MessageSquarePlus, Pause, Play, Plug, Plus, Trash2, UserPlus, X } from 'lucide-react';
 import type { AgentRole, ChatRuntime, ChatSession, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
 import { chatStore } from './browser-api';
 import { ChatPane } from './ChatPane';
@@ -28,6 +28,7 @@ export interface TeamPanelProps {
   onOpen: (memberId: string) => Promise<void>;
   onPause: (memberId: string) => Promise<void>;
   onFinish: (memberId: string) => Promise<void>;
+  onRestart: (memberId: string) => Promise<void>;
   onRemove: (memberId: string) => Promise<void>;
   onProviders: () => void;
   onRecheck: () => void;
@@ -71,13 +72,13 @@ export function TeamPanel(props: TeamPanelProps) {
       <button aria-expanded={managing} aria-controls="team-management" onClick={() => setManaging(v => !v)}>Equipo ({team.length})</button>
     </div>}
     {work && team.length > 0 && <div id="team-management" className="team-roster" hidden={!managing} role="group" aria-label="Administrar equipo">
-      {team.map(member => <MemberRow key={member.id} member={member} chat={chats[member.id] ?? null} selected={member.id === selectedId} busy={busy} onSelect={() => props.onSelect(member.id)} onPause={() => props.onPause(member.id)} onFinish={() => props.onFinish(member.id)} onRemove={() => props.onRemove(member.id)} />)}
+      {team.map(member => <MemberRow key={member.id} member={member} chat={chats[member.id] ?? null} selected={member.id === selectedId} busy={busy} onSelect={() => props.onSelect(member.id)} onPause={() => props.onPause(member.id)} onFinish={() => props.onFinish(member.id)} onRestart={() => props.onRestart(member.id)} onRemove={() => props.onRemove(member.id)} />)}
       {!adding && <button className="team-add" disabled={busy || !isDesktop} onClick={() => setAdding(true)}><UserPlus size={15} />Sumar un rol al equipo</button>}
       {(props.primaryRuntime === 'claude' || team.some(m => m.runtime === 'claude')) && <FolderTrust trusted={props.trustedFolder} busy={busy} onChange={props.onTrustFolder} />}
     </div>}
     {showPicker && <RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} busy={busy} isDesktop={isDesktop} canCancel={team.length > 0} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} />}
     {!work && <div className="agent-idle"><div className="agent-symbol"><MessageSquare size={27} /></div><h3>Un equipo listo<br />para trabajar.</h3><p className="footnote">Elegí o creá un trabajo para armar su equipo.</p></div>}
-    {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} onSaveAsDocument={props.onSaveAsDocument} untracked={props.untracked} onAdoptFile={props.onAdoptFile} /> : <ResumeCard member={selected} busy={busy} onOpen={() => props.onOpen(selected.id)} onRemove={() => props.onRemove(selected.id)} />)}
+    {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} onSaveAsDocument={props.onSaveAsDocument} untracked={props.untracked} onAdoptFile={props.onAdoptFile} /> : <ResumeCard member={selected} busy={busy} onOpen={() => props.onOpen(selected.id)} onRestart={() => props.onRestart(selected.id)} onRemove={() => props.onRemove(selected.id)} />)}
     {!showPicker && !selected && team.length > 0 && <p className="chat-empty">Elegí un miembro del equipo para ver su conversación.</p>}
   </div>;
 }
@@ -108,7 +109,7 @@ function FolderTrust({ trusted, busy, onChange }: { trusted: boolean; busy: bool
   </details>;
 }
 
-function MemberRow({ member, chat, selected, busy, onSelect, onPause, onFinish, onRemove }: { member: TeamMember; chat: ChatSession | null; selected: boolean; busy: boolean; onSelect: () => void; onPause: () => Promise<void>; onFinish: () => Promise<void>; onRemove: () => Promise<void> }) {
+function MemberRow({ member, chat, selected, busy, onSelect, onPause, onFinish, onRestart, onRemove }: { member: TeamMember; chat: ChatSession | null; selected: boolean; busy: boolean; onSelect: () => void; onPause: () => Promise<void>; onFinish: () => Promise<void>; onRestart: () => Promise<void>; onRemove: () => Promise<void> }) {
   const state = useChatState(chatStore, chat ? chat.id : null);
   const live = Boolean(chat) && !state.closed;
   const status: TeamMemberStatus = live ? (state.status === 'idle' ? 'idle' : 'working') : member.status === 'ended' ? 'ended' : 'paused';
@@ -122,6 +123,7 @@ function MemberRow({ member, chat, selected, busy, onSelect, onPause, onFinish, 
     {selected && <div className="team-member-actions">
       {live && <button className="icon-button" aria-label="Pausar conversación" title="Pausar: la conversación queda guardada y se puede reanudar" disabled={busy} onClick={() => void onPause()}><Pause size={13} /></button>}
       {status !== 'ended' && <button className="icon-button" aria-label="Marcar como finalizado" title="Finalizar: cierra la conversación y la marca como terminada" disabled={busy} onClick={() => void onFinish()}><CircleCheck size={13} /></button>}
+      <button className="icon-button" aria-label="Conversación nueva" title="Conversación nueva: descarta esta conversación y empieza otra con el mismo rol" disabled={busy} onClick={() => { if (window.confirm(`¿Empezar una conversación nueva con ${member.roleName}? La actual se descarta; ${member.roleName} sigue en el equipo y los documentos no se tocan.`)) void onRestart(); }}><MessageSquarePlus size={13} /></button>
       <button className="icon-button" aria-label="Quitar del equipo" title="Quitar del equipo" disabled={busy} onClick={() => { if (window.confirm(`¿Quitar a ${member.roleName} del equipo? Su conversación deja de estar disponible desde Latte.`)) void onRemove(); }}><Trash2 size={13} /></button>
     </div>}
   </div>;
@@ -137,7 +139,7 @@ function statusLabel(status: TeamMemberStatus, attention: boolean) {
   }
 }
 
-function ResumeCard({ member, busy, onOpen, onRemove }: { member: TeamMember; busy: boolean; onOpen: () => Promise<void>; onRemove: () => Promise<void> }) {
+function ResumeCard({ member, busy, onOpen, onRestart, onRemove }: { member: TeamMember; busy: boolean; onOpen: () => Promise<void>; onRestart: () => Promise<void>; onRemove: () => Promise<void> }) {
   const [opening, setOpening] = useState(false);
   const open = async () => { setOpening(true); try { await onOpen(); } finally { setOpening(false); } };
   return <div className="agent-idle team-resume">
@@ -145,6 +147,7 @@ function ResumeCard({ member, busy, onOpen, onRemove }: { member: TeamMember; bu
     <h3>{member.roleName}<br /><small>{member.label}</small></h3>
     <p>{member.status === 'ended' ? 'Este miembro terminó su trabajo. Podés reabrir la conversación donde quedó.' : 'La conversación está en pausa. Al reanudarla, el agente vuelve a leer el contexto actual del trabajo.'}</p>
     <button className="primary" disabled={busy || opening} onClick={() => void open()}>{opening ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}{opening ? 'Abriendo…' : member.status === 'ended' ? 'Reabrir conversación' : 'Reanudar conversación'}</button>
+    <button className="subtle" disabled={busy || opening} onClick={() => { if (window.confirm(`¿Empezar una conversación nueva con ${member.roleName}? La actual se descarta; ${member.roleName} sigue en el equipo y los documentos no se tocan.`)) void onRestart(); }}><MessageSquarePlus size={13} />Conversación nueva</button>
     <button className="subtle" disabled={busy || opening} onClick={() => { if (window.confirm(`¿Quitar a ${member.roleName} del equipo?`)) void onRemove(); }}><Trash2 size={13} />Quitar del equipo</button>
   </div>;
 }

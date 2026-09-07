@@ -50,12 +50,22 @@ app.whenReady().then(async () => {
       await wait(expression, description); await pause(200);
     };
     const clickDocument = title => clickWhere('[data-document-id]', `e=>e.getAttribute('aria-label')===${JSON.stringify('Abrir documento: ' + title)}`, `open document ${title}`);
-    const clickTab = label => clickWhere('[role="tab"]', `e=>e.textContent.trim().startsWith(${JSON.stringify(label)})`, `tab ${label}`);
+    const clickTab = label => clickWhere('.tabs button', `e=>e.textContent.trim().startsWith(${JSON.stringify(label)})`, `tab ${label}`);
     const clickProfile = name => clickWhere('.profile-list button', `e=>e.querySelector('strong')?.textContent.trim()===${JSON.stringify(name)}`, `profile ${name}`);
     // Metadata lives in a collapsed <details>; open it instead of toggling blind.
     const openMetadata = async () => {
+      if (!(await js(`Boolean(document.querySelector('.document-metadata'))`))) await click('Organizar');
       await wait(`Boolean(document.querySelector('.document-metadata'))`, 'metadata panel');
       await js(`document.querySelector('.document-metadata').open=true`); await pause(150);
+    };
+    // Adopting lives in the folder panel now: one place that lists what the folder holds.
+    const openFolderPanel = async () => {
+      if (await js(`Boolean(document.querySelector('.folder-body'))`)) return;
+      await clickWhere('.folder-contents header button', `e=>e.textContent.includes('En la carpeta')`, 'open folder panel');
+    };
+    const adopt = async fileName => {
+      await openFolderPanel();
+      await clickWhere('.folder-row button', `e=>e.closest('.folder-row').querySelector('span').textContent.trim().startsWith(${JSON.stringify(fileName)})`, `adopt ${fileName}`);
     };
     const fill = async (selector, value) => {
       await wait(`Boolean(document.querySelector(${JSON.stringify(selector)}))`, `field ${selector}`);
@@ -94,6 +104,7 @@ app.whenReady().then(async () => {
       summary: '#profile-summary', soul: '#profile-soul', skills: '#profile-skills',
     };
     for (let i = 0; i < ids.length; i++) {
+      await clickTab('Documentos');
       await fill(selectors.search, titles[i]);
       await clickDocument(titles[i]);
       await openMetadata();
@@ -112,6 +123,7 @@ app.whenReady().then(async () => {
     evidence.horizontalOverflow = await js('document.documentElement.scrollWidth > innerWidth');
     win.setSize(1440, 1000);
 
+    await clickTab('Documentos');
     await fill(selectors.search, 'variante de audiencia nueva'); await clickDocument(titles[0]);
     await click('Editar'); await fill('.markdown-editor', '# BORRADOR QA SIN GUARDAR');
     await fill(selectors.search, ''); await clickDocument(titles[1]); await clickDocument(titles[0]);
@@ -122,10 +134,10 @@ app.whenReady().then(async () => {
 
     const base = await api('readDocument', strategy.document.id);
     await api('saveDocument', strategy.document.id, '# Oferta sintética\n10% de descuento.', base.fingerprint);
-    await clickTab('Revisión');
+    await clickWhere('.doc-list-review', 'e=>true', 'review filter');
     await wait(`[${ids.map(id => JSON.stringify(id)).join(',')}].every(id=>[...document.querySelectorAll('[data-document-id]')].some(e=>e.dataset.documentId===id))`, 'all outdated documents in review queue');
     await shot('03-review-queue');
-    await clickDocument(titles[2]); await openMetadata(); await fill(selectors.status, 'review'); await click('Guardar organización');
+    await clickWhere('.doc-list-review', 'e=>true', 'review filter off'); await clickDocument(titles[2]); await openMetadata(); await fill(selectors.status, 'review'); await click('Guardar organización');
     await click('Ya lo revisé');
     assert.equal((await api('readDocument', ids[2])).document.status, 'review');
     assert.equal((await api('readDocument', ids[2])).baseOutdated, false);
@@ -137,12 +149,17 @@ app.whenReady().then(async () => {
     fs.writeFileSync(left, '---\nfunnel: retention\n---\n# Segundo pedido\nSIMULACIÓN. No publicar.\n');
     await win.reload();
     await click('Revisar');
-    await click('Agregar retencion.md · Retención');
+    await openFolderPanel();
+    const proposal = await js(`[...document.querySelectorAll('.folder-row')].find(e=>e.querySelector('span').textContent.trim().startsWith('retencion.md'))?.querySelector('em')?.textContent.trim()`);
+    assert.equal(proposal, 'Retención', 'The proposed stage is shown before adopting, so the human decides');
+    await adopt('retencion.md');
     const adopted = (await api('listDocuments', work.id)).find(d => d.fileName === 'retencion.md');
     assert.deepEqual(adopted.funnelStages, ['retention'], 'The proposed stage must arrive with the document');
     assert.equal(fs.readFileSync(left, 'utf8'), '# Segundo pedido\nSIMULACIÓN. No publicar.\n', 'The block is a message to Latte, not part of the piece');
     assert.equal((await api('readDocument', adopted.id)).fingerprint, (await api('documentState', adopted.id)).fingerprint);
     await clickTab('Embudo'); await shot('06-proposed-stage-adopted');
+    assert.equal(await js(`document.querySelectorAll('.funnel-gap').length`), await js(`[...document.querySelectorAll('.funnel-block h3 small')].filter(e=>e.textContent.trim()==='0').length + document.querySelectorAll('.funnel-gap').length`), 'An empty stage costs one line, never a block');
+    await clickTab('Documentos');
     record('Agent proposes a stage, the human adopts it', 'file on disk + UI adoption + preload read assertion', { fileName: 'retencion.md' });
 
     // The folder the human cannot otherwise see: subfolders and the client's own files.
@@ -150,10 +167,8 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(workDir, 'propuesta-final.docx'), 'binario sintetico');
     fs.writeFileSync(path.join(workDir, 'suelto.md'), '# Suelto\n');
     await win.reload(); await click('Revisar');
-    await click('Plegar documentos');
-    assert.equal(await js(`Boolean(document.querySelector('[aria-label="Buscar documentos"]'))`), false, 'Collapsing must free the screen');
-    await click('Desplegar documentos');
-    await clickWhere('.folder-contents header button', `e=>e.textContent.includes('En la carpeta')`, 'open folder panel');
+    assert.equal(await js(`getComputedStyle(document.querySelector('.documents')).gridTemplateColumns.split(' ').length`), 2, 'The list sits beside the document, never on top of it');
+    await openFolderPanel();
     const listed = await js(`[...document.querySelectorAll('.folder-row > span')].map(e=>e.textContent.trim())`);
     for (const name of ['piezas-instagram/', 'propuesta-final.docx', 'suelto.md']) assert(listed.some(t => t.startsWith(name)), `${name} must be visible to the human`);
     for (const managed of ['CLAUDE.md', 'AGENTS.md']) assert(!listed.some(t => t.startsWith(managed)), `${managed} is Latte's, not the client's material`);

@@ -273,6 +273,8 @@ export interface LatteAPI {
   pauseTeamMember(memberId: string): Promise<void>;
   /** Closes the conversation and marks the member as finished. */
   finishTeamMember(memberId: string): Promise<void>;
+  /** Drops this member's conversation and starts a new one with the same role. */
+  restartTeamMember(memberId: string): Promise<TeamMember>;
   removeTeamMember(memberId: string): Promise<void>;
   listChatMessages(chatId: string): Promise<ChatMessage[]>;
   sendChat(chatId: string, text: string): Promise<void>;

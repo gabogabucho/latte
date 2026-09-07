@@ -276,3 +276,24 @@ describe('Team through the service', () => {
     await expect(b.service.listTeam('wrk_missing')).rejects.toThrow(/Work/);
   });
 });
+
+it('starts a member conversation over without touching the member or its role', async () => {
+  const b = await makeBackend();
+  try {
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    // Inserted directly: restarting must not need a runtime to be installed.
+    const now = '2026-01-01T00:00:00.000Z';
+    b.repo.insertMember({ id: 'mem_restart', workId: work.id, roleId: 'strategist', roleName: 'Strategist', initial: 'S', runtime: 'codex', model: null, accountId: SYSTEM_ACCOUNT_ID, sessionId: 'thr_previous', done: true, createdAt: now, updatedAt: now });
+    expect(b.repo.getMember('mem_restart')).toMatchObject({ sessionId: 'thr_previous', done: true });
+
+    const after = await b.service.restartTeamMember('mem_restart');
+    expect([after.id, after.roleId, after.runtime, after.accountId]).toEqual(['mem_restart', 'strategist', 'codex', SYSTEM_ACCOUNT_ID]);
+    // No resume id left, so the next message opens a new conversation instead of continuing the old one.
+    expect(b.repo.getMember('mem_restart')).toMatchObject({ sessionId: '', done: false });
+    // One seat, not two: the whole point is not needing a second member with the same role.
+    expect((await b.service.listTeam(work.id)).filter(m => m.roleId === 'strategist')).toHaveLength(1);
+    // The conversation is what restarts; the work keeps its documents.
+    expect((await b.service.listDocuments(work.id)).length).toBeGreaterThan(0);
+  } finally { b.cleanup(); }
+});

@@ -282,6 +282,27 @@ export class AgentHub {
     this.deps.repo.setMemberDone(memberId, true, this.clock());
   }
 
+  /**
+   * Starts the member's conversation over without losing the member.
+   *
+   * Adding a second member with the same role to get a clean slate was the
+   * only way before, and it made no sense: the role is who works here, not one
+   * particular thread. This drops the transcript and the runtime session id, so
+   * the next message opens a new conversation instead of resuming the old one.
+   * Role, runtime and account stay exactly as they were.
+   */
+  restartMember(memberId: string): TeamMember {
+    const record = this.deps.repo.getMember(memberId);
+    this.stop(memberId);
+    this.deps.repo.setMemberSession(memberId, '', this.clock());
+    if (record.done) this.deps.repo.setMemberDone(memberId, false, this.clock());
+    this.deps.transcripts?.forget(memberId);
+    if (this.deps.promptDir && /^[a-z][a-z0-9_-]{2,63}$/.test(memberId)) {
+      try { fsRmSync(pathJoin(this.deps.promptDir, memberId + '.md'), { force: true }); } catch { /* best effort */ }
+    }
+    return this.describe(this.deps.repo.getMember(memberId));
+  }
+
   removeMember(memberId: string): void {
     this.deps.repo.getMember(memberId);
     this.stop(memberId);
