@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { AlertTriangle, Check, Download, FileText, History, Layers, LoaderCircle, Plus, RefreshCw, Save, SlidersHorizontal, X } from 'lucide-react';
 import type { DocumentContent, DocumentKind, FunnelStage, Revision, WorkDocument, Work } from '../shared/contracts';
 import { api } from './browser-api';
+import { STAGE_LABEL } from './document-organizer';
 import { DocumentList } from './DocumentList';
 import { FunnelView } from './FunnelView';
 import { useDocumentStates } from './document-states';
@@ -246,6 +247,13 @@ export function DocumentsView(props: DocumentsViewProps) {
     </div>}
 
     {selected && organizing && <DocumentMetadata key={selected.id} document={selected} onChanged={props.onDocumentsChanged} onError={props.onError} onDirtyChange={dirty=>props.onDirtyChange(dirty||Boolean(editing?.dirty)||hasMetadataDrafts())}/>}
+
+    {selected && selected.proposedFunnelStages.length > 0 && <div className="doc-banner proposal" role="status">
+      <SlidersHorizontal size={14} />
+      <span>El agente propone para este documento: <strong>{selected.proposedFunnelStages.map(s => STAGE_LABEL[s]).join(' + ')}</strong>.</span>
+      <button className="primary" disabled={props.busy} onClick={() => void api.applyFunnelProposal(selected.id).then(props.onDocumentsChanged).then(() => props.onNotice('Etapas aplicadas.')).catch(e => props.onError(displayError(e)))}>Aplicar</button>
+      <button disabled={props.busy} onClick={() => void api.dismissFunnelProposal(selected.id).then(props.onDocumentsChanged).catch(e => props.onError(displayError(e)))}>Descartar</button>
+    </div>}
 
     {conflict && <div className="doc-conflict" role="alert">
       <div className="doc-conflict-head"><AlertTriangle size={16} />Este documento cambió fuera del editor</div>

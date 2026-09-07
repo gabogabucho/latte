@@ -175,6 +175,24 @@ app.whenReady().then(async () => {
     await shot('07-folder-contents');
     record('The human sees the whole folder, not only what Latte tracks', 'UI DOM + real folder on disk', { listed });
 
+    // Asked to organise the funnel, an agent can only write files. This is that file.
+    const tracked = (await api('listDocuments', work.id)).find(d => d.id === ids[3]);
+    const trackedFile = path.join(workDir, tracked.fileName);
+    const original = fs.readFileSync(trackedFile, 'utf8');
+    fs.writeFileSync(trackedFile, ['---', 'funnel: retention', '---', ''].join('\n') + original);
+    await win.reload(); await click('Revisar');
+    await clickDocument(titles[3]);
+    await wait(`document.body.innerText.includes('El agente propone')`, 'pending proposal surfaced');
+    assert.equal(fs.readFileSync(trackedFile, 'utf8'), original, 'The block never reaches the editor or a version');
+    assert.deepEqual((await api('listDocuments', work.id)).find(d => d.id === ids[3]).funnelStages, ['retention'], 'Pending must not change the stages on its own');
+    await shot('08-funnel-proposal-pending');
+    await click('Aplicar');
+    await wait(`!document.body.innerText.includes('El agente propone')`, 'proposal answered');
+    const answered = (await api('listDocuments', work.id)).find(d => d.id === ids[3]);
+    assert.deepEqual(answered.proposedFunnelStages, [], 'Applying clears the proposal');
+    assert(answered.funnelStages.includes('retention'));
+    record('Agent proposes on a tracked document, the human applies', 'file on disk + UI bar + preload read assertion');
+
     await click('Ajustes'); await click('Perfiles');
     const builtins = await api('listProfiles');
     // The neutral assistant ships without SOUL on purpose; clone one that carries instructions.

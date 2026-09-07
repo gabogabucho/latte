@@ -15,7 +15,7 @@ function read(): Store {
 function change<T>(fn: (store: Store) => T): T { const s = read(); const result = fn(s); localStorage.setItem(KEY, JSON.stringify(s)); return result; }
 /** The web preview tracks a single brief document per work; the real model lives on the desktop. */
 const previewDocId = (workId: string) => 'doc-' + workId;
-const previewDocument = (w: Work): WorkDocument => ({ id: previewDocId(w.id), workId: w.id, kind: 'brief', title: w.title, fileName: 'brief.md', status: 'draft', funnelStages: [], baseDocumentId: null, baseRevisionId: null, baseFingerprint: null, createdAt: w.updatedAt, updatedAt: w.updatedAt });
+const previewDocument = (w: Work): WorkDocument => ({ id: previewDocId(w.id), workId: w.id, kind: 'brief', title: w.title, fileName: 'brief.md', status: 'draft', funnelStages: [], proposedFunnelStages: [], baseDocumentId: null, baseRevisionId: null, baseFingerprint: null, createdAt: w.updatedAt, updatedAt: w.updatedAt });
 function normalized(): Store & {documents:WorkDocument[];contents:Record<string,string>;profiles:AgentProfile[]} {
  const s=read();s.documents ??=[];s.contents ??={};s.profiles ??=[];
  for(const w of s.works)if(!s.documents.some(d=>d.id===previewDocId(w.id))){s.documents.push(previewDocument(w));s.contents[previewDocId(w.id)]=w.brief;}
@@ -59,7 +59,7 @@ export const browserAPI: LatteAPI = {
     if(!s.works.some(w=>w.id===workId))throw new Error('Trabajo no encontrado');
     const base=baseDocumentId?contentFrom(s,baseDocumentId):null;
     if(base&&base.document.workId!==workId)throw new Error('La base pertenece a otro trabajo');
-    const documentId=id();const d:WorkDocument={id:documentId,workId,kind,title,fileName:kind+'-'+documentId+'.md',status:'draft',funnelStages:[],baseDocumentId:baseDocumentId??null,baseRevisionId:null,baseFingerprint:base?.fingerprint??null,createdAt:now(),updatedAt:now()};
+    const documentId=id();const d:WorkDocument={id:documentId,workId,kind,title,fileName:kind+'-'+documentId+'.md',status:'draft',funnelStages:[],proposedFunnelStages:[],baseDocumentId:baseDocumentId??null,baseRevisionId:null,baseFingerprint:base?.fingerprint??null,createdAt:now(),updatedAt:now()};
     s.documents.push(d);s.contents[d.id]='# '+title+'\n';return contentFrom(s,d.id);
   }),
   saveDocument: async(documentId,content,baseFingerprint):Promise<SaveOutcome>=>mutate(s=>{const disk=contentFrom(s,documentId);if(baseFingerprint!==null&&baseFingerprint!==disk.fingerprint)return {status:'conflict',document:disk.document,disk,keptRevision:revision(s,documentId,disk.content)};s.contents[documentId]=content;const work=s.works.find(w=>w.id===disk.document.workId)!;if(disk.document.kind==='brief')work.brief=content;work.updatedAt=now();disk.document.updatedAt=now();return {status:'saved',document:disk.document,fingerprint:fingerprint(content),work};}),
@@ -73,7 +73,7 @@ export const browserAPI: LatteAPI = {
   listDocumentRevisions: async documentId=>read().revisions.filter(r=>r.documentId===documentId).reverse(),
   exportDocument: async documentId=>{const c=await previewContent(documentId);const url=URL.createObjectURL(new Blob([c.content],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=c.document.fileName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return a.download;},
   keepDraftAsVersion: async(documentId,content)=>mutate(s=>revision(s,documentId,content)),
-  listUntrackedFiles: async()=>[],listFolderEntries:async()=>({subfolders:[],otherFiles:[],truncated:false}),trackFile:unavailable,
+  listUntrackedFiles: async()=>[],listFolderEntries:async()=>({subfolders:[],otherFiles:[],truncated:false}),applyFunnelProposal:unavailable,dismissFunnelProposal:unavailable,trackFile:unavailable,
   saveAsDocument:async(workId,kind,title,content)=>{const c=await browserAPI.createDocument(workId,kind,title);await browserAPI.saveDocument(c.document.id,content,c.fingerprint);return c.document;},
   getFolderTrust:async()=>false,setFolderTrust:unavailable,
   acknowledgeBase:async documentId=>mutate(s=>{const d=contentFrom(s,documentId).document;if(d.baseDocumentId)d.baseFingerprint=contentFrom(s,d.baseDocumentId).fingerprint;return d;}),

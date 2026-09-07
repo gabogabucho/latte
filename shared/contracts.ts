@@ -32,6 +32,8 @@ export interface WorkDocument {
   fileName: string;
   status: DocumentStatus;
   funnelStages: FunnelStage[];
+  /** What the agent proposed and you have not answered yet; empty when there is nothing pending. */
+  proposedFunnelStages: FunnelStage[];
   /** Document this one was derived from (a calendar built on a strategy). */
   baseDocumentId: string | null;
   /** Exact version of the base document used, so a later change is visible as "needs review". */
@@ -226,6 +228,10 @@ export interface LatteAPI {
   listUntrackedFiles(workId: string): Promise<UntrackedFile[]>;
   /** The rest of the work folder: subfolders and files Latte does not track. */
   listFolderEntries(workId: string): Promise<FolderEntries>;
+  /** Takes the agent's funnel proposal as the document's stages. */
+  applyFunnelProposal(documentId: string): Promise<WorkDocument>;
+  /** Drops the proposal and leaves the stages as they were. */
+  dismissFunnelProposal(documentId: string): Promise<WorkDocument>;
   /** Whether this work may read and write inside its own folder without asking each time. */
   getFolderTrust(workId: string): Promise<boolean>;
   setFolderTrust(workId: string, trusted: boolean): Promise<boolean>;

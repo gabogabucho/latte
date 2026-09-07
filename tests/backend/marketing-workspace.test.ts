@@ -170,3 +170,46 @@ it('shows the rest of the folder without pretending Latte can track it', async (
     expect((await b.service.listUntrackedFiles(work.id)).map(f => f.fileName)).toContain('suelto.md');
   } finally { b.cleanup(); }
 });
+
+it('keeps a proposal on an already tracked document pending until the human answers', async () => {
+  const b = await makeBackend();
+  try {
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    const doc = await b.service.saveAsDocument(work.id, 'copy', 'Oferta primer pedido', '# Oferta\nPrimer pedido.\n');
+    const file = path.join(b.dir, 'brands', brand.id, 'works', work.id, doc.fileName);
+    // What an agent asked to organise the funnel actually does: it can only write files.
+    fs.writeFileSync(file, '---\nfunnel: conversion, retention\n---\n# Oferta\nPrimer pedido.\n');
+
+    const listed = (await b.service.listDocuments(work.id)).find(d => d.id === doc.id)!;
+    expect(listed.proposedFunnelStages).toEqual(['conversion', 'retention']);
+    // Pending is not applied: reading never classifies anything by itself.
+    expect(listed.funnelStages).toEqual([]);
+    // The block never reaches the editor, a version or an export.
+    expect(fs.readFileSync(file, 'utf8')).toBe('# Oferta\nPrimer pedido.\n');
+    expect((await b.service.readDocument(doc.id)).content).toBe('# Oferta\nPrimer pedido.\n');
+    // And the stripped file is what Latte knows, so it does not read as an external edit.
+    expect((await b.service.documentState(doc.id)).fingerprint).toBe((await b.service.readDocument(doc.id)).fingerprint);
+
+    const applied = await b.service.applyFunnelProposal(doc.id);
+    expect(applied.funnelStages).toEqual(['conversion', 'retention']);
+    expect(applied.proposedFunnelStages).toEqual([]);
+    await expect(b.service.applyFunnelProposal(doc.id)).rejects.toThrow(/propuesta pendiente/);
+  } finally { b.cleanup(); }
+});
+
+it('dismissing a proposal leaves the stages the document already had', async () => {
+  const b = await makeBackend();
+  try {
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    const doc = await b.service.saveAsDocument(work.id, 'copy', 'Oferta', '# Oferta\n');
+    await b.service.updateDocument(doc.id, { funnelStages: ['discovery'] });
+    fs.writeFileSync(path.join(b.dir, 'brands', brand.id, 'works', work.id, doc.fileName), '---\nfunnel: retention\n---\n# Oferta\n');
+    expect((await b.service.listDocuments(work.id)).find(d => d.id === doc.id)!.proposedFunnelStages).toEqual(['retention']);
+
+    const kept = await b.service.dismissFunnelProposal(doc.id);
+    expect(kept.funnelStages).toEqual(['discovery']);
+    expect(kept.proposedFunnelStages).toEqual([]);
+  } finally { b.cleanup(); }
+});

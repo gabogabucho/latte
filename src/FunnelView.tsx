@@ -27,6 +27,7 @@ export function FunnelView({ documents, selectedId, states, checking, onRefresh,
     <span>
       <strong>{d.title}</strong>
       <small>{STATUS_LABEL[d.status]} · {d.fileName}</small>
+      {d.proposedFunnelStages.length > 0 && <em className="proposed">Propuesta: {d.proposedFunnelStages.map(s => STAGE_LABEL[s]).join(' + ')}</em>}
       {reviewReasons(d, states[d.id]?.baseOutdated ?? false).map(reason => <em key={reason}>{reason}</em>)}
     </span>
   </button>;

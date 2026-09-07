@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS documents (
   file_name      TEXT NOT NULL,
   status         TEXT NOT NULL DEFAULT 'draft',
   funnel_stages  TEXT NOT NULL DEFAULT '[]',
+  -- What the agent proposed and the human has not answered yet. Never applied on its own.
+  proposed_stages TEXT NOT NULL DEFAULT '[]',
   base_doc_id    TEXT,
   base_rev_id    TEXT,
   base_print     TEXT,

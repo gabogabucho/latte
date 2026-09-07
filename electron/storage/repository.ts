@@ -8,7 +8,7 @@ interface BrandRow extends SqlRow { id: string; name: string; context: string; c
 interface WorkRow extends SqlRow { id: string; brand_id: string; title: string; brief: string; dir: string | null; updated_at: string }
 interface RevisionRow extends SqlRow { id: string; work_id: string; document_id: string | null; source: string; content: string; created_at: string }
 interface DecisionRow extends SqlRow { id: string; work_id: string; text: string; created_at: string }
-interface DocumentRow extends SqlRow { id: string; work_id: string; kind: string; title: string; file_name: string; status: string; funnel_stages: string; base_doc_id: string | null; base_rev_id: string | null; base_print: string | null; last_print: string | null; created_at: string; updated_at: string }
+interface DocumentRow extends SqlRow { id: string; work_id: string; kind: string; title: string; file_name: string; status: string; funnel_stages: string; proposed_stages: string; base_doc_id: string | null; base_rev_id: string | null; base_print: string | null; last_print: string | null; created_at: string; updated_at: string }
 interface MemberRow extends SqlRow { id: string; work_id: string; role_id: string; role_name: string; initial: string; runtime: string; model: string | null; account_id: string | null; session_id: string; done: number; created_at: string; updated_at: string }
 
 /** Persisted part of a tracked document. Titles and status are UI-facing; the file name is Latte-generated. */
@@ -20,6 +20,8 @@ export interface DocumentRecord {
   fileName: string;
   status: string;
   funnelStages: FunnelStage[];
+  /** Stages the agent proposed and the human has not answered yet. Never applied on its own. */
+  proposedFunnelStages: FunnelStage[];
   baseDocumentId: string | null;
   baseRevisionId: string | null;
   baseFingerprint: string | null;
@@ -67,6 +69,7 @@ const toDocument = (r: DocumentRow): DocumentRecord => ({
   fileName: r.file_name,
   status: r.status,
   funnelStages: parseStages(r.funnel_stages),
+  proposedFunnelStages: parseStages(r.proposed_stages),
   baseDocumentId: r.base_doc_id,
   baseRevisionId: r.base_rev_id,
   baseFingerprint: r.base_print,
@@ -115,6 +118,7 @@ export class LatteRepository {
     this.db.exec(SCHEMA_SQL);
     const documentColumns = this.db.all<{ name: string }>("SELECT name FROM pragma_table_info('documents')").map(c => c.name);
     if (!documentColumns.includes('funnel_stages')) this.db.run("ALTER TABLE documents ADD COLUMN funnel_stages TEXT NOT NULL DEFAULT '[]'");
+    if (documentColumns.length > 0 && !documentColumns.includes('proposed_stages')) this.db.run("ALTER TABLE documents ADD COLUMN proposed_stages TEXT NOT NULL DEFAULT '[]'");
     // v3 -> v4: revisions gain document_id + source. ADD COLUMN is not
     // idempotent, so it is gated on pragma_table_info; existing rows keep
     // document_id NULL ("the work's brief document") because the immutability
@@ -270,7 +274,7 @@ export class LatteRepository {
     return this.getDocument(briefDocumentId(workId));
   }
 
-  insertDocument(doc: Omit<DocumentRecord, 'funnelStages'> & { funnelStages?: FunnelStage[] }): DocumentRecord {
+  insertDocument(doc: Omit<DocumentRecord, 'funnelStages' | 'proposedFunnelStages'> & { funnelStages?: FunnelStage[] }): DocumentRecord {
     this.db.run(
       'INSERT INTO documents(id, work_id, kind, title, file_name, status, base_doc_id, base_rev_id, base_print, last_print, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [doc.id, doc.workId, doc.kind, doc.title, doc.fileName, doc.status, doc.baseDocumentId, doc.baseRevisionId, doc.baseFingerprint, doc.lastFingerprint, doc.createdAt, doc.updatedAt],
@@ -278,14 +282,15 @@ export class LatteRepository {
     return this.updateDocument(doc.id, { funnelStages: doc.funnelStages ?? [], updatedAt: doc.updatedAt });
   }
 
-  updateDocument(id: string, patch: { title?: string; status?: string; funnelStages?: FunnelStage[]; baseDocumentId?: string | null; baseRevisionId?: string | null; baseFingerprint?: string | null; lastFingerprint?: string | null; updatedAt: string }): DocumentRecord {
+  updateDocument(id: string, patch: { title?: string; status?: string; funnelStages?: FunnelStage[]; proposedFunnelStages?: FunnelStage[]; baseDocumentId?: string | null; baseRevisionId?: string | null; baseFingerprint?: string | null; lastFingerprint?: string | null; updatedAt: string }): DocumentRecord {
     const current = this.getDocument(id);
     this.db.run(
-      'UPDATE documents SET title = ?, status = ?, funnel_stages = ?, base_doc_id = ?, base_rev_id = ?, base_print = ?, last_print = ?, updated_at = ? WHERE id = ?',
+      'UPDATE documents SET title = ?, status = ?, funnel_stages = ?, proposed_stages = ?, base_doc_id = ?, base_rev_id = ?, base_print = ?, last_print = ?, updated_at = ? WHERE id = ?',
       [
         patch.title ?? current.title,
         patch.status ?? current.status,
         JSON.stringify([...new Set(patch.funnelStages ?? current.funnelStages)]),
+        JSON.stringify([...new Set(patch.proposedFunnelStages ?? current.proposedFunnelStages)]),
         patch.baseDocumentId === undefined ? current.baseDocumentId : patch.baseDocumentId,
         patch.baseRevisionId === undefined ? current.baseRevisionId : patch.baseRevisionId,
         patch.baseFingerprint === undefined ? current.baseFingerprint : patch.baseFingerprint,

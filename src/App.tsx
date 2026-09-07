@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUpRight, Bookmark, Check, ChevronDown, Circle, Copy, FileText, Folder, LoaderCircle, MessageSquare, Minus, Plus, Save, Settings2, Square, TerminalSquare, X } from 'lucide-react';
+import { ArrowUpRight, Bookmark, Check, ChevronDown, Circle, Copy, FileText, Folder, LoaderCircle, MessageSquare, Minus, PanelLeftClose, PanelLeftOpen, Plus, Save, Settings2, Square, TerminalSquare, X } from 'lucide-react';
 import type { Brand, Work, Decision, RuntimeStatus, AgentSession, Provider, ChatSession, ChatRuntimeStatus, PrimaryAgent, AgentRuntimeInfo, AgentRole, TeamMember, TeamMemberOptions, WorkDocument, DocumentKind, UntrackedFile } from '../shared/contracts';
 import { api, chatStore, isDesktop } from './browser-api';
 import { DocumentsView, NewDocumentDialog } from './DocumentsView';
@@ -41,6 +41,9 @@ export function App() {
   const [works, setWorks] = useState<Work[]>([]), [work, setWork] = useState<Work | null>(null);
   const [context, setContext] = useState('');
   const [view, setView] = useState<View>('brief');
+  // Collapsed to a rail: every label hides, every icon and its tooltip stay.
+  const [railed, setRailed] = useState(() => { try { return localStorage.getItem('latte:rail') === '1'; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem('latte:rail', railed ? '1' : '0'); } catch { /* private window */ } }, [railed]);
   // Documents of the current work: the editor lives in DocumentsView, App only tracks which one is open.
   const [documents, setDocuments] = useState<WorkDocument[]>([]), [selectedDoc, setSelectedDoc] = useState<Record<string, string>>({});
   const [documentDirty, setDocumentDirty] = useState(false);
@@ -307,16 +310,17 @@ export function App() {
   const sessionWork = works.find(w => w.id === session?.workId);
   const activeTerminals = Object.values(sessions).filter(s => !endedSessions.has(s.id)).length, activeChats = liveChatIds.size;
   if (settings) return <SettingsScreen onProfileDirtyChange={setProfileDirty} controls={isDesktop ? <WindowControls /> : null} section={settings} onSection={setSettings} onClose={() => { setSettings(null); setError(''); setNotice(''); }} onChanged={() => { void refreshChatStatus(); void api.listRoles().then(setRoles).catch(e=>setError(displayError(e))); }} onNotice={setNotice} onError={setError} notice={notice} error={error} onDismiss={() => { setError(''); setNotice(''); }} />;
-  return <div className={'app-shell' + (focusChat ? ' conversation-focus' : '') + (dragging ? ' dragging' : '')} style={{ ['--agent-width' as string]: `${agentWidth}px` }}>
+  return <div className={'app-shell' + (railed ? ' railed' : '') + (focusChat ? ' conversation-focus' : '') + (dragging ? ' dragging' : '')} style={{ ['--agent-width' as string]: `${agentWidth}px` }}>
     <aside className="sidebar">
       <div className="wordmark"><span className="logo-mark" aria-hidden="true" />Latte<span className="alpha">ALPHA</span></div>
+      <button className="rail-toggle" aria-expanded={!railed} aria-label={railed ? 'Desplegar el menú' : 'Plegar el menú'} title={railed ? 'Desplegar el menú' : 'Plegar el menú'} onClick={() => setRailed(v => !v)}>{railed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button>
       <div className="brand-picker"><select aria-label="Marca activa" value={brand?.id ?? ''} onChange={e => { const b = brands.find(b => b.id === e.target.value); if (b) selectBrand(b); }}>{!brands.length && <option value="">Tu primera marca</option>}{brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select><ChevronDown size={15} /></div>
       <button className="subtle sidebar-add" disabled={transitioning} onClick={() => { setName(''); setModal('brand'); }}><Plus size={14} /> Agregar marca</button>
       <div className="nav-label">MARCA</div>
-      <nav><button disabled={!brand} className={view === 'context' ? 'nav-active' : ''} onClick={() => setView('context')}><FileText size={18} />Contexto</button><button disabled={!brand} className={view === 'memory' ? 'nav-active' : ''} onClick={openMemory}><Bookmark size={18} />Memoria</button></nav>
+      <nav><button disabled={!brand} title="Contexto" className={view === 'context' ? 'nav-active' : ''} onClick={() => setView('context')}><FileText size={18} />Contexto</button><button disabled={!brand} title="Memoria" className={view === 'memory' ? 'nav-active' : ''} onClick={openMemory}><Bookmark size={18} />Memoria</button></nav>
       <div className="sidebar-rule" /><div className="nav-label">TRABAJOS <span>{works.length.toString().padStart(2, '0')}</span></div>
-      <nav className="work-nav">{works.map(w => <button key={w.id} className={work?.id === w.id && (view === 'brief' || view === 'decisions') ? 'work-active' : ''} onClick={() => selectWork(w)}><Folder size={17} /><span>{w.title}</span>{(workHasLiveChat(w.id) || sessions[w.id]) && <i className={sessions[w.id] && endedSessions.has(sessions[w.id].id) && !workHasLiveChat(w.id) ? 'ended-dot' : 'live-dot'} />}</button>)}{!works.length && <p className="sidebar-hint">Un espacio para cada idea que querés llevar adelante.</p>}</nav>
-      <div className="sidebar-bottom"><button disabled={!brand || transitioning} onClick={() => { setName(''); setModal('work'); }}><Plus size={20} />Nuevo trabajo</button><div className="sidebar-rule" /><nav><button onClick={() => setSettings('agents')}><Settings2 size={17} />Ajustes</button></nav><div className="profile"><span className="avatar">G</span><div>Tu estudio<small>Local · Sin cuenta de Latte</small></div></div></div>
+      <nav className="work-nav">{works.map(w => <button key={w.id} title={w.title} className={work?.id === w.id && (view === 'brief' || view === 'decisions') ? 'work-active' : ''} onClick={() => selectWork(w)}><Folder size={17} /><span>{w.title}</span>{(workHasLiveChat(w.id) || sessions[w.id]) && <i className={sessions[w.id] && endedSessions.has(sessions[w.id].id) && !workHasLiveChat(w.id) ? 'ended-dot' : 'live-dot'} />}</button>)}{!works.length && <p className="sidebar-hint">Un espacio para cada idea que querés llevar adelante.</p>}</nav>
+      <div className="sidebar-bottom"><button disabled={!brand || transitioning} title="Nuevo trabajo" onClick={() => { setName(''); setModal('work'); }}><Plus size={20} />Nuevo trabajo</button><div className="sidebar-rule" /><nav><button onClick={() => setSettings('agents')} title="Ajustes"><Settings2 size={17} />Ajustes</button></nav><div className="profile"><span className="avatar">G</span><div>Tu estudio<small>Local · Sin cuenta de Latte</small></div></div></div>
     </aside>
     <header className="topbar"><div className="breadcrumb">{brand?.name ?? 'Bienvenido a Latte'}<span>/</span><strong>{work?.title ?? 'Tu espacio de marketing'}</strong></div>{work && <div className="workspace-modes" role="group" aria-label="Vista del trabajo"><button aria-pressed={focusChat} onClick={() => { setLayout('conversation'); setView('brief'); setAgentMode('chat'); }}><MessageSquare size={15} />Conversar</button><button aria-pressed={!focusChat} onClick={() => { setLayout('review'); setView('brief'); }}><FileText size={15} />Revisar</button></div>}<span className="local-badge"><i />{isDesktop ? 'Local' : 'Vista previa web'}</span>{isDesktop && <WindowControls />}</header>
     <main className="workspace" aria-hidden={focusChat} inert={focusChat}>

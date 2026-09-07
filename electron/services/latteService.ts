@@ -219,7 +219,43 @@ export class LatteService implements BackendApi {
     const id = requireId(workId, 'workId');
     const work = this.deps.repo.getWork(id);
     this.deps.files.ensureWork(work.brandId, work.id, work.brief);
-    return this.deps.repo.listDocuments(id).map((record) => this.describeDocument(record));
+    return this.deps.repo.listDocuments(id).map((record) => this.describeDocument(this.collectFunnelProposal(work.brandId, record)));
+  }
+
+  /**
+   * Picks up a funnel block the agent left on a document Latte already tracks.
+   *
+   * The block leaves the file the moment it is seen, so it never reaches the
+   * editor, a saved version or an export: it was a message to Latte, not part
+   * of the deliverable. What it said is kept as a PENDING proposal until the
+   * human applies or dismisses it. Reading never classifies anything by itself.
+   */
+  private collectFunnelProposal(brandId: string, record: DocumentRecord): DocumentRecord {
+    let disk: DocumentOnDisk;
+    try { disk = this.deps.files.readDocument(brandId, record.workId, record.fileName); } catch { return record; }
+    const proposal = readFunnelProposal(disk.content);
+    if (proposal.stages.length === 0) return record;
+    this.deps.files.writeDocument(brandId, record.workId, proposal.body, record.fileName);
+    const clean = this.deps.files.readDocument(brandId, record.workId, record.fileName);
+    return this.deps.repo.updateDocument(record.id, {
+      proposedFunnelStages: proposal.stages,
+      // The stripped file is what Latte now knows, so this does not read as an external edit.
+      lastFingerprint: clean.fingerprint,
+      updatedAt: this.clock(),
+    });
+  }
+
+  /** Takes the agent's proposal as the document's stages. The human decides, always. */
+  async applyFunnelProposal(documentId: string): Promise<WorkDocument> {
+    const record = this.deps.repo.getDocument(requireId(documentId, 'documentId'));
+    if (record.proposedFunnelStages.length === 0) throw new ValidationError('Ese documento no tiene una propuesta pendiente');
+    return this.describeDocument(this.deps.repo.updateDocument(record.id, { funnelStages: record.proposedFunnelStages, proposedFunnelStages: [], updatedAt: this.clock() }));
+  }
+
+  /** Drops the proposal without touching the stages the document already had. */
+  async dismissFunnelProposal(documentId: string): Promise<WorkDocument> {
+    const record = this.deps.repo.getDocument(requireId(documentId, 'documentId'));
+    return this.describeDocument(this.deps.repo.updateDocument(record.id, { proposedFunnelStages: [], updatedAt: this.clock() }));
   }
 
   async readDocument(documentId: string): Promise<DocumentContent> {
@@ -257,6 +293,7 @@ export class LatteService implements BackendApi {
       fileName,
       status: 'draft',
       funnelStages: [],
+      proposedFunnelStages: [],
       baseDocumentId: base ? base.id : null,
       baseRevisionId: pinned ? pinned.revisionId : null,
       baseFingerprint: pinned ? pinned.fingerprint : null,
@@ -406,6 +443,7 @@ export class LatteService implements BackendApi {
       fileName: candidate.fileName,
       status: 'draft',
       funnelStages,
+      proposedFunnelStages: [],
       baseDocumentId: null,
       baseRevisionId: null,
       baseFingerprint: null,
@@ -441,6 +479,7 @@ export class LatteService implements BackendApi {
       fileName,
       status: 'draft',
       funnelStages: [],
+      proposedFunnelStages: [],
       baseDocumentId: null,
       baseRevisionId: null,
       baseFingerprint: null,
@@ -507,6 +546,7 @@ export class LatteService implements BackendApi {
         fileName: name,
         status: 'draft',
         funnelStages: proposed,
+        proposedFunnelStages: [],
         baseDocumentId: null,
         baseRevisionId: null,
         baseFingerprint: null,
@@ -916,6 +956,7 @@ export class LatteService implements BackendApi {
       fileName: record.fileName,
       status: (DOCUMENT_STATUSES as string[]).includes(record.status) ? (record.status as DocumentStatus) : 'draft',
       funnelStages: record.funnelStages,
+      proposedFunnelStages: record.proposedFunnelStages,
       baseDocumentId: record.baseDocumentId,
       baseRevisionId: record.baseRevisionId,
       baseFingerprint: record.baseFingerprint,

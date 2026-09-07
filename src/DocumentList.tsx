@@ -73,6 +73,7 @@ export function DocumentList({ documents, workId, selectedId, states, failed, ch
         <span>
           <strong>{d.title}</strong>
           <small>{STATUS_LABEL[d.status]} · {d.fileName}</small>
+          {d.proposedFunnelStages.length > 0 && <em className="proposed">Propuesta: {d.proposedFunnelStages.map(s => STAGE_LABEL[s]).join(' + ')}</em>}
           {needsReview(d).map(reason => <em key={reason}>{reason}</em>)}
           {failed.includes(d.id) && <em>No se pudo verificar la base</em>}
         </span>

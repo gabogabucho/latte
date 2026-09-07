@@ -27,6 +27,8 @@ const METHODS = [
   'exportDocument',
   'listUntrackedFiles',
   'listFolderEntries',
+  'applyFunnelProposal',
+  'dismissFunnelProposal',
   'getFolderTrust',
   'setFolderTrust',
   'trackFile',
