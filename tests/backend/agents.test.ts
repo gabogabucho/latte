@@ -124,6 +124,21 @@ describe('ClaudeChatAdapter against a fake Claude Code', () => {
     await expect(adapter.send(session.id, 'x'.repeat(10))).resolves.toBeUndefined();
   });
 
+  it('does not print the answer twice when the model reasons before writing', async () => {
+    // The real CLI numbers streamed blocks by their place in the turn, while the
+    // final `assistant` message numbers them inside its own array. With a
+    // thinking block first, the text streams at index 1 and arrives at index 0.
+    adapter = fakeClaudeAdapter(events);
+    const { session } = await adapter.start({ workId: 'wrk_1', directory: dir, title: 'Marca · Uno', label: 'Claude', accountId: SYSTEM_ACCOUNT_ID });
+    await adapter.send(session.id, 'razonar y contestar');
+    await waitFor(() => events.some((e) => e.type === 'status' && e.status === 'idle'));
+
+    const parts = adapter.listMessages(session.id).flatMap((m) => m.parts);
+    expect(parts.filter((p) => p.type === 'text' && p.text.includes('actividad real'))).toHaveLength(1);
+    expect(parts.filter((p) => p.type === 'reasoning')).toHaveLength(1);
+  });
+
+
   it('only grants the folder when the human asked for it, and only for the folder', async () => {
     // Measured against a real Claude Code before wiring this: these patterns
     // stop the prompt for a write inside the folder and keep asking for one

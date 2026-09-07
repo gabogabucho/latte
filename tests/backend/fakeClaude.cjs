@@ -28,6 +28,18 @@ function reply(text, extraBlocks) {
   return id;
 }
 
+function replyThinkingThenText(text) {
+  const id = `msg_${++counter}`;
+  out({ type: 'stream_event', event: { type: 'message_start', message: { id, role: 'assistant' } }, session_id: sessionId });
+  out({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }, session_id: sessionId });
+  out({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'pensando' } }, session_id: sessionId });
+  out({ type: 'stream_event', event: { type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }, session_id: sessionId });
+  out({ type: 'stream_event', event: { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text } }, session_id: sessionId });
+  // Solo el texto, en el indice 0 de su propio array.
+  out({ type: 'assistant', message: { id, role: 'assistant', model, content: [{ type: 'text', text }] }, session_id: sessionId });
+  return id;
+}
+
 function finish(resultText, isError) {
   out({ type: 'result', subtype: isError ? 'error_during_execution' : 'success', is_error: Boolean(isError), result: resultText, session_id: sessionId, total_cost_usd: 0.01 });
 }
@@ -44,6 +56,11 @@ rl.on('line', (line) => {
       out({ type: 'system', subtype: 'init', session_id: sessionId, model, permissionMode: 'default', tools: ['Write'], cwd: process.cwd() });
     }
     out({ type: 'system', subtype: 'status', status: 'requesting', session_id: sessionId });
+    if (/razonar/i.test(text)) {
+      replyThinkingThenText('Encontre actividad real en la cuenta.');
+      finish('ok');
+      return;
+    }
     if (/write/i.test(text)) {
       const toolId = `toolu_${++counter}`;
       const input = { file_path: 'brief.md', content: 'hello' };

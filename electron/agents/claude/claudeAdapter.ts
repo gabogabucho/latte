@@ -372,7 +372,7 @@ export class ClaudeChatAdapter implements RuntimeAdapter {
         content.forEach((block, index) => {
           if (!isRecord(block)) return;
           const part = this.partFromBlock(message.id as string, index, block);
-          if (part) this.upsertPart(live, message.id as string, part);
+          if (part) this.settlePart(live, message.id as string, part);
         });
         return;
       }
@@ -516,6 +516,29 @@ export class ClaudeChatAdapter implements RuntimeAdapter {
     live.messages.set(messageId, updated);
     const emitted = parts[index === -1 ? parts.length - 1 : index];
     this.deps.emit({ chatId: live.chatId, type: 'part', messageId, part: emitted });
+  }
+
+  /**
+   * Settles a block from the final `assistant` message onto what streamed.
+   *
+   * The two channels number blocks independently: the stream numbers them by
+   * their place in the turn, the final message by their place in its own
+   * `content` array. A thinking block first is enough to shift them, and then
+   * the same answer arrives under a second id and is printed twice. So a text
+   * or reasoning block first looks for the streamed part it finishes — same
+   * kind, and what streamed is a prefix of what arrived — and completes that
+   * one. Tool blocks keep their own tool id and never need this.
+   */
+  private settlePart(live: LiveChat, messageId: string, part: ChatPart): void {
+    const message = live.messages.get(messageId);
+    if (message && (part.type === 'text' || part.type === 'reasoning')) {
+      const streamed = message.parts.find((p) => p.type === part.type && p.id !== part.id && part.text.startsWith(p.text));
+      if (streamed) {
+        this.applyDelta(live, messageId, streamed.id, part.type, part.text.slice((streamed as { text: string }).text.length));
+        return;
+      }
+    }
+    this.upsertPart(live, messageId, part);
   }
 
   private applyDelta(live: LiveChat, messageId: string, partId: string, kind: 'text' | 'reasoning', delta: string): void {
