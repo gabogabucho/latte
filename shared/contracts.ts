@@ -21,6 +21,8 @@ export interface Revision { id: string; workId: string; documentId: string; sour
 /** `brief` is the default document of every work. The rest are optional. */
 export type DocumentKind = 'brief' | 'strategy' | 'calendar' | 'research' | 'copy' | 'note';
 export type DocumentStatus = 'draft' | 'review' | 'approved';
+export type FunnelStage = 'discovery' | 'consideration' | 'conversion' | 'retention';
+export interface DocumentPatch { title?: string; status?: DocumentStatus; funnelStages?: FunnelStage[] }
 export interface WorkDocument {
   id: string;
   workId: string;
@@ -29,6 +31,7 @@ export interface WorkDocument {
   /** Latte-generated file name inside the work directory (e.g. `strategy.md`). */
   fileName: string;
   status: DocumentStatus;
+  funnelStages: FunnelStage[];
   /** Document this one was derived from (a calendar built on a strategy). */
   baseDocumentId: string | null;
   /** Exact version of the base document used, so a later change is visible as "needs review". */
@@ -129,6 +132,8 @@ export interface ChatSession { id: string; workId: string; provider: ChatRuntime
 
 /** A preset personality a team member opens with. Shipped by the discipline pack; `assistant` is the neutral default. */
 export interface AgentRole { id: string; name: string; initial: string; summary: string; builtin: boolean }
+export interface AgentProfile extends AgentRole { soul: string; skills: string; source: 'builtin' | 'custom'; directory: string | null; fingerprint: string; /** Invalid disk entries are visible but must not be edited or cloned. */ error?: string }
+export interface ProfileInput { id: string; name: string; initial: string; summary: string; soul: string; skills: string }
 /** working = answering now · idle = open and waiting · paused = closed, resumable · ended = finished by the user (can be reopened). */
 export type TeamMemberStatus = 'working' | 'idle' | 'paused' | 'ended';
 /** A role opened inside a work: its own conversation, runtime, account and status. Persisted and resumable. */
@@ -200,7 +205,7 @@ export interface LatteAPI {
   documentState(documentId: string): Promise<DocumentState>;
   createDocument(workId: string, kind: DocumentKind, title: string, baseDocumentId?: string | null): Promise<DocumentContent>;
   saveDocument(documentId: string, content: string, baseFingerprint: string | null): Promise<SaveOutcome>;
-  updateDocument(documentId: string, patch: { title?: string; status?: DocumentStatus }): Promise<WorkDocument>;
+  updateDocument(documentId: string, patch: DocumentPatch): Promise<WorkDocument>;
   snapshotDocument(documentId: string): Promise<Revision>;
   /** Keeps an editor draft as an immutable version without writing the file: used to resolve a conflict without losing the human's text. */
   keepDraftAsVersion(documentId: string, content: string): Promise<Revision>;
@@ -248,6 +253,8 @@ export interface LatteAPI {
   startChat(workId: string, model?: string | null, runtime?: ChatRuntime | null, accountId?: string | null): Promise<ChatSession>;
   // Team (roles per work)
   listRoles(): Promise<AgentRole[]>;
+  listProfiles(): Promise<AgentProfile[]>;
+  saveProfile(input: ProfileInput, expectedFingerprint: string | null): Promise<AgentProfile>;
   listTeam(workId: string): Promise<TeamMember[]>;
   /** Creates a member for the role (primary agent unless overridden) and opens its conversation. */
   addTeamMember(workId: string, roleId: string, options?: TeamMemberOptions | null): Promise<ChatSession>;

@@ -3,9 +3,10 @@ import { ArrowLeft, HardDrive, Info, Plug, Wrench } from 'lucide-react';
 import type { AppInfo } from '../shared/contracts';
 import { api, isDesktop } from './browser-api';
 import { ProvidersView } from './ProvidersView';
+import { ProfilesView } from './ProfilesView';
 import { ToolsView } from './ToolsView';
 
-export type SettingsSection = 'agents' | 'tools' | 'workspace';
+export type SettingsSection = 'agents' | 'profiles' | 'tools' | 'workspace';
 
 /**
  * Settings is its own screen, not a document view: no work breadcrumb, no
@@ -13,9 +14,10 @@ export type SettingsSection = 'agents' | 'tools' | 'workspace';
  * Opening or closing it never writes anything; the workspace state stays in
  * App and comes back untouched.
  */
-export function SettingsScreen({ controls, section, onSection, onClose, onChanged, onNotice, onError, notice, error, onDismiss }: {
+export function SettingsScreen({ onProfileDirtyChange, controls, section, onSection, onClose, onChanged, onNotice, onError, notice, error, onDismiss }: {
   /** Window controls: Settings is a full screen, so it needs them too. */
   controls: ReactNode;
+  onProfileDirtyChange: (dirty:boolean)=>void;
   section: SettingsSection;
   onSection: (section: SettingsSection) => void;
   onClose: () => void;
@@ -26,17 +28,23 @@ export function SettingsScreen({ controls, section, onSection, onClose, onChange
   error: string;
   onDismiss: () => void;
 }) {
+  const [profileDirty,setProfileDirty]=useState(false);
+  const canLeave=()=>!profileDirty||window.confirm('Hay cambios sin guardar en el perfil. ¿Descartarlos?');
+  const navigate=(next:SettingsSection)=>{if(next===section)return;if(canLeave()){setProfileDirty(false);onSection(next);}};
+  useEffect(()=>{onProfileDirtyChange(profileDirty);},[profileDirty]);
+  useEffect(()=>()=>onProfileDirtyChange(false),[]);
   return <div className="settings-shell">
     <header className="settings-topbar">
-      <button className="settings-back" onClick={onClose}><ArrowLeft size={16} />Volver al trabajo</button>
+      <button className="settings-back" onClick={()=>{if(canLeave())onClose();}}><ArrowLeft size={16} />Volver al trabajo</button>
       <h1>Ajustes de Latte</h1>
       <span className="settings-scope">Configuración de la aplicación</span>
       {controls}
     </header>
     <nav className="settings-nav" aria-label="Secciones de ajustes">
-      <button className={section === 'agents' ? 'selected' : ''} onClick={() => onSection('agents')}><Plug size={16} />Agentes y proveedores</button>
-      <button className={section === 'tools' ? 'selected' : ''} onClick={() => onSection('tools')}><Wrench size={16} />Herramientas (MCP)</button>
-      <button className={section === 'workspace' ? 'selected' : ''} onClick={() => onSection('workspace')}><HardDrive size={16} />Espacio local</button>
+      <button className={section === 'agents' ? 'selected' : ''} onClick={() => navigate('agents')}><Plug size={16} />Agentes y proveedores</button>
+      <button className={section === 'profiles' ? 'selected' : ''} onClick={() => navigate('profiles')}><Info size={16} />Perfiles</button>
+      <button className={section === 'tools' ? 'selected' : ''} onClick={() => navigate('tools')}><Wrench size={16} />Herramientas (MCP)</button>
+      <button className={section === 'workspace' ? 'selected' : ''} onClick={() => navigate('workspace')}><HardDrive size={16} />Espacio local</button>
     </nav>
     <main className="settings-main">
       {(error || notice) && <div role={error ? 'alert' : 'status'} className={'message ' + (error ? 'error' : '')}><span>{error || notice}</span><button aria-label="Cerrar aviso" onClick={onDismiss}>×</button></div>}
@@ -45,6 +53,7 @@ export function SettingsScreen({ controls, section, onSection, onClose, onChange
         <p className="settings-lead">Quién hace el trabajo cuando abrís una conversación. Latte no guarda claves ni tokens: cada runtime usa su propio almacén de credenciales.</p>
         <ProvidersView onChanged={onChanged} onNotice={onNotice} onError={onError} />
       </section>}
+      {section === 'profiles' && <ProfilesView onChanged={onChanged} onError={onError} onNotice={onNotice} onDirtyChange={setProfileDirty} />}
       {section === 'tools' && <ToolsView onNotice={onNotice} onError={onError} />}
       {section === 'workspace' && <WorkspaceSection onError={onError} />}
     </main>

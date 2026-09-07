@@ -1,3 +1,4 @@
+import type { AgentProfile, ProfileInput } from '../../shared/contracts';
 import type {
   AccountLoginStart,
   AgentAccount,
@@ -208,6 +209,9 @@ export class AgentHub {
   }
 
   // Team ----------------------------------------------------------------------
+
+  listProfiles(): AgentProfile[] { return this.deps.roles.listProfiles(); }
+  saveProfile(input: ProfileInput, expectedFingerprint: string | null): AgentProfile { return this.deps.roles.saveProfile(input, expectedFingerprint); }
 
   listRoles(): AgentRole[] {
     return this.deps.roles.list();

@@ -4,6 +4,8 @@ import remarkGfm from 'remark-gfm';
 import { AlertTriangle, Check, Download, FilePlus, FileText, FolderOpen, History, Layers, LoaderCircle, Plus, RefreshCw, Save, X } from 'lucide-react';
 import type { DocumentContent, DocumentKind, Revision, WorkDocument, Work } from '../shared/contracts';
 import { api } from './browser-api';
+import { DocumentExplorer } from './DocumentExplorer';
+import { DocumentMetadata, hasMetadataDrafts } from './DocumentMetadata';
 import { documentDrafts } from './document-drafts';
 
 const KIND_LABEL: Record<DocumentKind, string> = { brief: 'Encargo', strategy: 'Estrategia', calendar: 'Calendario', research: 'Investigación', copy: 'Piezas', note: 'Nota' };
@@ -97,19 +99,21 @@ export function DocumentsView(props: DocumentsViewProps) {
 
   // Opening a document restores a pending draft instead of re-reading over it.
   useEffect(() => {
-    if (!selected) { setEditingState(null); return; }
+    ++loadToken.current; setExternal(null); setConflict(null); setEditingState(null);
+    if (!selected) return;
     setShowVersions(false);
     const pending = documentDrafts.get(selected.id);
     if (pending) {
       setEditingState({ content: pending.content, fingerprint: pending.fingerprint, dirty: pending.dirty });
       setModeState(pending.mode);
-      void api.documentState(selected.id).then(state => setBaseOutdated(state.baseOutdated)).catch(() => undefined);
+      const token=loadToken.current;
+      void api.documentState(selected.id).then(state => {if(token===loadToken.current)setBaseOutdated(state.baseOutdated);}).catch(e => {if(token===loadToken.current)props.onError(displayError(e));});
       return;
     }
     setModeState('read');
     void load(selected.id);
   }, [selected?.id]);
-  useEffect(() => { props.onDirtyChange(Boolean(editing?.dirty)); }, [editing?.dirty]);
+  useEffect(() => { props.onDirtyChange(Boolean(editing?.dirty) || hasMetadataDrafts()); }, [editing?.dirty]);
 
   // Bounded polling instead of a filesystem watcher: one cheap fingerprint read
   // for the open document, only while the window is focused. Survives atomic
@@ -214,16 +218,8 @@ export function DocumentsView(props: DocumentsViewProps) {
       ? { label: 'Un paso habitual:', hint: 'un calendario derivado de la estrategia, con fecha, canal, mensaje y CTA.' }
       : null;
   return <div className="documents">
-    <div className="doc-tabs">
-      <div className="doc-tab-list" role="tablist" aria-label="Documentos del trabajo">
-      {documents.map(doc => <button key={doc.id} role="tab" aria-selected={doc.id === selected?.id} className={doc.id === selected?.id ? 'selected' : ''} onClick={() => props.onSelect(doc.id)}>
-        <span className="doc-kind">{KIND_LABEL[doc.kind]}</span>{doc.title.toLowerCase() === KIND_LABEL[doc.kind].toLowerCase() ? null : <span className="doc-tab-title">{doc.title}</span>}
-        {props.editors[doc.fileName] && <i className="doc-editing" data-role={props.editors[doc.fileName].roleId} title={props.editors[doc.fileName].roleName + ' está escribiendo en este documento'} />}
-      </button>)}
-      </div>
-      <button className="doc-add" onClick={props.onCreate} disabled={props.busy}><Plus size={14} />Documento</button>
-    </div>
-
+    <DocumentExplorer documents={documents} workId={work.id} selectedId={selected?.id??null} onSelect={id=>{if(!saving)props.onSelect(id);}} onCreate={props.onCreate} busy={props.busy || saving}/>
+    {selected && <DocumentMetadata key={selected.id} document={selected} onChanged={props.onDocumentsChanged} onError={props.onError} onDirtyChange={dirty=>props.onDirtyChange(dirty||Boolean(editing?.dirty)||hasMetadataDrafts())}/>}
     {selected && <div className="document-toolbar">
       <span><FileText size={16} />{selected.title}<small>{kindLabel} · {editing?.dirty ? 'Sin guardar' : selected.status === 'approved' ? 'Aprobado' : selected.status === 'review' ? 'En revisión' : 'Borrador'}</small></span>
       <div className="doc-actions">

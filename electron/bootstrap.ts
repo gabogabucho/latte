@@ -5,6 +5,7 @@ import { ClaudeChatAdapter } from './agents/claude/claudeAdapter';
 import { CodexChatAdapter } from './agents/codex/codexAdapter';
 import { AgentHub } from './agents/hub';
 import { McpCatalog } from './agents/mcp';
+import { ProfileStore } from './agents/profiles';
 import { RoleCatalog } from './agents/roles';
 import { TranscriptStore } from './agents/transcripts';
 import { LattePaths } from './core/paths';
@@ -122,7 +123,7 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   });
   const packsDir = options.packsDir ?? path.resolve(__dirname, '..', 'packs');
   const pack = loadInstructionPack(packsDir, 'marketing-core');
-  const roles = new RoleCatalog(pack);
+  const roles = new RoleCatalog(pack, new ProfileStore(path.join(paths.root, 'agents')));
   const hub: AgentHub = new AgentHub({ opencode: chat, claude, codex, accounts, repo, detector, terminal, runner, roles, transcripts, promptDir: path.join(paths.root, 'prompts'), env });
 
   const mcp = new McpCatalog({ runner, detector, accountEnv: (runtime, accountId) => accounts.envFor(runtime, accountId), env });

@@ -66,6 +66,8 @@ const METHODS = [
   'startAccountLogin',
   'logoutAccount',
   'listRoles',
+  'listProfiles',
+  'saveProfile',
   'listTeam',
   'addTeamMember',
   'openTeamMember',

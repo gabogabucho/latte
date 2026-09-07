@@ -3,6 +3,9 @@ import type {
   AgentAccount,
   AppInfo,
   AgentRole,
+  AgentProfile,
+  ProfileInput,
+  DocumentPatch,
   AgentRuntimeInfo,
   AgentSession,
   Brand,
@@ -186,6 +189,7 @@ export class LatteService implements BackendApi {
       title: cleanTitle,
       fileName: WORK_FILES.brief,
       status: 'draft',
+      funnelStages: [],
       baseDocumentId: null,
       baseRevisionId: null,
       baseFingerprint: null,
@@ -248,6 +252,7 @@ export class LatteService implements BackendApi {
       title: cleanTitle,
       fileName,
       status: 'draft',
+      funnelStages: [],
       baseDocumentId: base ? base.id : null,
       baseRevisionId: pinned ? pinned.revisionId : null,
       baseFingerprint: pinned ? pinned.fingerprint : null,
@@ -289,13 +294,14 @@ export class LatteService implements BackendApi {
     return { status: 'saved', document: this.describeDocument(updated), fingerprint: target, work: workRow };
   }
 
-  async updateDocument(documentId: string, patch: { title?: string; status?: DocumentStatus }): Promise<WorkDocument> {
+  async updateDocument(documentId: string, patch: DocumentPatch): Promise<WorkDocument> {
     const id = requireId(documentId, 'documentId');
     if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) throw new TypeError('Invalid patch');
     const title = patch.title === undefined ? undefined : requireLabel(patch.title, 'Document title', LIMITS.title);
     if (patch.status !== undefined && !DOCUMENT_STATUSES.includes(patch.status)) throw new TypeError('Unknown document status');
+    if (patch.funnelStages !== undefined && (!Array.isArray(patch.funnelStages) || patch.funnelStages.length > 4 || patch.funnelStages.some(s => !['discovery', 'consideration', 'conversion', 'retention'].includes(s)))) throw new TypeError('Invalid funnel stages');
     this.deps.repo.getDocument(id);
-    return this.describeDocument(this.deps.repo.updateDocument(id, { title, status: patch.status, updatedAt: this.clock() }));
+    return this.describeDocument(this.deps.repo.updateDocument(id, { title, status: patch.status, funnelStages: patch.funnelStages, updatedAt: this.clock() }));
   }
 
   async listDocumentRevisions(documentId: string): Promise<Revision[]> {
@@ -368,6 +374,7 @@ export class LatteService implements BackendApi {
       title: candidate.title,
       fileName: candidate.fileName,
       status: 'draft',
+      funnelStages: [],
       baseDocumentId: null,
       baseRevisionId: null,
       baseFingerprint: null,
@@ -402,6 +409,7 @@ export class LatteService implements BackendApi {
       title: cleanTitle,
       fileName,
       status: 'draft',
+      funnelStages: [],
       baseDocumentId: null,
       baseRevisionId: null,
       baseFingerprint: null,
@@ -466,6 +474,7 @@ export class LatteService implements BackendApi {
         title: titleFromFileName(name),
         fileName: name,
         status: 'draft',
+      funnelStages: [],
         baseDocumentId: null,
         baseRevisionId: null,
         baseFingerprint: null,
@@ -572,6 +581,10 @@ export class LatteService implements BackendApi {
   }
 
   // Team (roles per work) ---------------------------------------------------------
+
+  async listProfiles(): Promise<AgentProfile[]> { return this.deps.hub.listProfiles(); }
+
+  async saveProfile(input: ProfileInput, expectedFingerprint: string | null): Promise<AgentProfile> { return this.deps.hub.saveProfile(input, expectedFingerprint); }
 
   async listRoles(): Promise<AgentRole[]> {
     return this.deps.hub.listRoles();
@@ -853,6 +866,7 @@ export class LatteService implements BackendApi {
       title: record.title,
       fileName: record.fileName,
       status: (DOCUMENT_STATUSES as string[]).includes(record.status) ? (record.status as DocumentStatus) : 'draft',
+      funnelStages: record.funnelStages,
       baseDocumentId: record.baseDocumentId,
       baseRevisionId: record.baseRevisionId,
       baseFingerprint: record.baseFingerprint,

@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS documents (
   title          TEXT NOT NULL,
   file_name      TEXT NOT NULL,
   status         TEXT NOT NULL DEFAULT 'draft',
+  funnel_stages  TEXT NOT NULL DEFAULT '[]',
   base_doc_id    TEXT,
   base_rev_id    TEXT,
   base_print     TEXT,
@@ -94,4 +95,4 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `;
 
-export const SCHEMA_VERSION = '5';
+export const SCHEMA_VERSION = '6';

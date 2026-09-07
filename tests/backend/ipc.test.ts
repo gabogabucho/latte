@@ -18,6 +18,9 @@ describe('IPC surface', () => {
   it('preload exposes exactly the methods the main process registers', () => {
     expect(preloadMethods()).toEqual([...API_METHODS]);
     expect(Object.keys(API_ARITY).sort()).toEqual([...API_METHODS].sort());
+    expect(API_METHODS).toContain('listProfiles');
+    expect(API_METHODS).toContain('saveProfile');
+    expect(API_ARITY.saveProfile).toBe(2);
   });
 
   it('preload never exposes a generic invoke or Node globals', () => {

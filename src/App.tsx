@@ -5,6 +5,7 @@ import { ArrowUpRight, Bookmark, Check, ChevronDown, Circle, Copy, FileText, Fol
 import type { Brand, Work, Decision, RuntimeStatus, AgentSession, Provider, ChatSession, ChatRuntimeStatus, PrimaryAgent, AgentRuntimeInfo, AgentRole, TeamMember, TeamMemberOptions, WorkDocument, DocumentKind, UntrackedFile } from '../shared/contracts';
 import { api, chatStore, isDesktop } from './browser-api';
 import { DocumentsView, NewDocumentDialog } from './DocumentsView';
+import { hasMetadataDrafts } from './DocumentMetadata';
 import { documentDrafts } from './document-drafts';
 import { useActiveEdits } from './chat-store';
 import { SettingsScreen, type SettingsSection } from './SettingsScreen';
@@ -43,6 +44,7 @@ export function App() {
   // Documents of the current work: the editor lives in DocumentsView, App only tracks which one is open.
   const [documents, setDocuments] = useState<WorkDocument[]>([]), [selectedDoc, setSelectedDoc] = useState<Record<string, string>>({});
   const [documentDirty, setDocumentDirty] = useState(false);
+  const [profileDirty,setProfileDirty]=useState(false);
   const [untracked, setUntracked] = useState<UntrackedFile[]>([]);
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [modal, setModal] = useState<Modal>(null), [name, setName] = useState('');
@@ -82,7 +84,7 @@ export function App() {
   const [endedSessions, setEndedSessions] = useState<Set<string>>(new Set());
   const sessionEnded = Boolean(session && endedSessions.has(session.id));
   const generation = useRef(0), memoryGeneration = useRef(0);
-  const dirty = documentDirty || documentDrafts.hasUnsaved(), contextDirty = Boolean(brand && context !== brand.context);
+  const dirty = profileDirty || documentDirty || documentDrafts.hasUnsaved() || hasMetadataDrafts(), contextDirty = Boolean(brand && context !== brand.context);
   const selectedDocId = work ? selectedDoc[work.id] ?? null : null;
   // Who is writing to which file right now, straight from each runtime's own
   // tool reports. A write that did not come through a tool is never attributed.
@@ -303,7 +305,7 @@ export function App() {
   const workHasLiveChat = (workId: string) => Object.values(chats).some(c => c.workId === workId);
   const sessionWork = works.find(w => w.id === session?.workId);
   const activeTerminals = Object.values(sessions).filter(s => !endedSessions.has(s.id)).length, activeChats = liveChatIds.size;
-  if (settings) return <SettingsScreen controls={isDesktop ? <WindowControls /> : null} section={settings} onSection={setSettings} onClose={() => { setSettings(null); setError(''); setNotice(''); }} onChanged={() => void refreshChatStatus()} onNotice={setNotice} onError={setError} notice={notice} error={error} onDismiss={() => { setError(''); setNotice(''); }} />;
+  if (settings) return <SettingsScreen onProfileDirtyChange={setProfileDirty} controls={isDesktop ? <WindowControls /> : null} section={settings} onSection={setSettings} onClose={() => { setSettings(null); setError(''); setNotice(''); }} onChanged={() => { void refreshChatStatus(); void api.listRoles().then(setRoles).catch(e=>setError(displayError(e))); }} onNotice={setNotice} onError={setError} notice={notice} error={error} onDismiss={() => { setError(''); setNotice(''); }} />;
   return <div className={'app-shell' + (focusChat ? ' conversation-focus' : '') + (dragging ? ' dragging' : '')} style={{ ['--agent-width' as string]: `${agentWidth}px` }}>
     <aside className="sidebar">
       <div className="wordmark"><span className="logo-mark" aria-hidden="true" />Latte<span className="alpha">ALPHA</span></div>

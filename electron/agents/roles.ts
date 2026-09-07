@@ -1,4 +1,5 @@
-import type { AgentRole } from '../../shared/contracts';
+import { ProfileStore, profileFingerprint } from './profiles';
+import type { AgentRole, AgentProfile, ProfileInput } from '../../shared/contracts';
 import type { InstructionPack, PackRole } from '../workspace/instructions';
 
 export const ASSISTANT_ROLE_ID = 'assistant';
@@ -22,7 +23,7 @@ export class RoleCatalog {
   private readonly roles: PackRole[];
   private readonly base: string;
 
-  constructor(pack: InstructionPack | null) {
+  constructor(pack: InstructionPack | null, private readonly profiles?: ProfileStore) {
     const fromPack = (pack?.roles ?? []).filter((r) => r.id !== ASSISTANT_ROLE_ID);
     this.roles = [ASSISTANT, ...fromPack];
     this.base = (pack?.base ?? '').trim();
@@ -33,11 +34,26 @@ export class RoleCatalog {
   }
 
   list(): AgentRole[] {
-    return this.roles.map((r) => ({ id: r.id, name: r.name, initial: r.initial, summary: r.summary, builtin: r.id === ASSISTANT_ROLE_ID }));
+    let custom: AgentProfile[] = [];
+    try { custom = this.profiles?.list(false) ?? []; } catch { /* Settings reports unsafe/corrupt storage; builtins remain usable. */ }
+    return [...this.roles, ...custom.filter(p => !this.roles.some(r => r.id === p.id))].map((r) => ({ id: r.id, name: r.name, initial: r.initial, summary: r.summary, builtin: r.id === ASSISTANT_ROLE_ID }));
+  }
+
+  listProfiles(): AgentProfile[] {
+    return [...this.roles.map(r => ({ id: r.id, name: r.name, initial: r.initial, summary: r.summary, builtin: r.id === ASSISTANT_ROLE_ID, source: 'builtin' as const, directory: null, soul: r.instructions, skills: '', fingerprint: profileFingerprint([r.id, r.instructions]) })), ...(this.profiles?.listReported() ?? []).filter(p => !this.roles.some(r => r.id === p.id))];
+  }
+
+  saveProfile(input: ProfileInput, expectedFingerprint: string | null): AgentProfile {
+    if (!this.profiles) throw new TypeError('Profile store is unavailable');
+    return this.profiles.save(input, expectedFingerprint, this.roles.map(r => r.id));
   }
 
   get(id: string): PackRole | null {
-    return this.roles.find((r) => r.id === id) ?? null;
+    const builtin = this.roles.find(r => r.id === id);
+    if (builtin) return builtin;
+    if (!this.profiles || !this.profiles.has(id)) return null;
+    const custom = this.profiles.read(id);
+    return { id: custom.id, name: custom.name, initial: custom.initial, summary: custom.summary, instructions: [custom.soul, custom.skills].filter(Boolean).join('\n\n---\n\n') };
   }
 
   /**
@@ -50,6 +66,7 @@ export class RoleCatalog {
    */
   promptFor(id: string): string {
     const role = this.get(id);
+    if (!role && this.profiles) throw new TypeError(`Profile unavailable: ${id}`);
     const parts: string[] = [];
     if (this.base) parts.push(this.base);
     if (role && role.instructions) {
