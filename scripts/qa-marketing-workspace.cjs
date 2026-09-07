@@ -200,6 +200,11 @@ app.whenReady().then(async () => {
     assert.equal(rail.overflow, 0, 'Nothing spills out of the rail');
     assert.deepEqual(rail.fonts, ['0px'], 'Labels are bare text nodes: only a zeroed font hides them');
     assert.equal(rail.wider, 0, 'No button is wider than the rail');
+    // Expanded, the toggle must not sit on top of the wordmark.
+    await click('Desplegar el menú');
+    const clash = await js(`(()=>{const w=document.querySelector('.logo-mark').getBoundingClientRect();const t=document.querySelector('.rail-toggle').getBoundingClientRect();return !(t.left>=w.right||t.right<=w.left||t.top>=w.bottom||t.bottom<=w.top);})()`);
+    assert.equal(clash, false, 'The toggle does not overlap the logo');
+    await click('Plegar el menú');
     await shot('10-rail');
     // Collapsed AND in conversation mode: the rail must change one track, not the layout.
     await click('Conversar');
@@ -212,6 +217,29 @@ app.whenReady().then(async () => {
     await click('Desplegar el menú');
     assert.equal(await js(`Math.round(document.querySelector('.sidebar').offsetWidth)`), 232, 'And it comes back');
     record('The sidebar collapses to a rail without leaking labels', 'UI DOM measurement');
+
+    // The team is a row of tabs, not a list that eats the conversation.
+    await click('Conversar');
+    for (const roleName of ['Strategist', 'Researcher']) {
+      const before = (await api('listTeam', work.id)).length;
+      if (before > 0) await click('Sumar un rol al equipo');
+      await clickWhere('.role-card', `e=>e.querySelector('strong')?.textContent.trim()===${JSON.stringify(roleName)}`, `role ${roleName}`);
+      await click('Abrir conversación');
+      await wait(`document.querySelectorAll('.team-tab').length === ${before + 1}`, `tab for ${roleName}`);
+    }
+    const tabs = await js(`[...document.querySelectorAll('.team-tab')].map(e=>({name:e.querySelector('.team-tab-name').textContent.trim(),selected:e.getAttribute('aria-selected'),dot:getComputedStyle(e.querySelector('.team-tab-dot')).backgroundColor}))`);
+    assert.deepEqual(tabs.map(t => t.name), ['Strategist', 'Researcher'], 'One tab per member, in order');
+    assert.equal(tabs.filter(t => t.selected === 'true').length, 1, 'Exactly one tab is active');
+    assert.equal(new Set(tabs.map(t => t.dot)).size >= 1, true, 'Each tab carries its own state dot');
+    // The row must stay one row: that was the whole point.
+    const strip = await js(`(()=>{const r=document.querySelector('.team-tabs');const s=document.querySelector('.team-tab-strip');return {rows:Math.round(r.offsetHeight), scrolls:s.scrollWidth>s.clientWidth};})()`);
+    assert(strip.rows < 60, 'The team is one row, not a stack');
+    await shot('12-team-tabs');
+    // Switching members is one click.
+    await clickWhere('.team-tab', `e=>e.querySelector('.team-tab-name').textContent.trim()==='Strategist'`, 'switch to Strategist');
+    assert.equal(await js(`document.querySelector('.team-tab[aria-selected="true"] .team-tab-name').textContent.trim()`), 'Strategist');
+    record('The team is a row of tabs and adding is a dialog', 'UI DOM measurement + preload read assertion');
+    await click('Revisar');
 
     await click('Ajustes'); await click('Skills');
     await wait(`document.body.innerText.includes('Escritura sin relleno')`, 'shipped skill listed');
