@@ -29,6 +29,8 @@ const METHODS = [
   'listFolderEntries',
   'revealWorkFolder',
   'importFiles',
+  'listHandoffs',
+  'dismissHandoff',
   'listSkills',
   'setSkillEnabled',
   'applyFunnelProposal',

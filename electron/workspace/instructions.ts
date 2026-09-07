@@ -68,6 +68,10 @@ export interface InstructionsInput {
   memoryProject?: string | null;
   /** Skills the human left on. They travel here, once per session, not per request. */
   skills?: PackSkill[];
+  /** Who is already open on this work: an agent that cannot see its team cannot ask for one. */
+  team?: { roleId: string; roleName: string; status: string }[];
+  /** Roles that exist and could still be called in. */
+  available?: { id: string; name: string; summary: string }[];
 }
 
 function section(title: string, body: string, empty: string): string {
@@ -100,6 +104,12 @@ export function renderInstructions(input: InstructionsInput): string {
     ...FUNNEL_STAGES.map((stage) => `- \`${stage}\`: ${tracked.filter((d) => d.funnelStages?.includes(stage)).length}`),
     `- \`unclassified\`: ${tracked.filter((d) => !d.funnelStages?.length).length}`,
   ].join('\n');
+  const team = input.team ?? [];
+  const teamLines = team.map((m) => `- **${m.roleName}** (\`${m.roleId}\`) — ${m.status}`).join('\n');
+  const availableLines = (input.available ?? [])
+    .filter((r) => !team.some((m) => m.roleId === r.id))
+    .map((r) => `- \`${r.id}\` — ${r.name}: ${r.summary}`)
+    .join('\n');
   const decisionLines = decisions
     .map((d) => `- ${d.createdAt.slice(0, 10)} — ${d.text.trim().replace(/\s+/g, ' ')}`)
     .join('\n');
@@ -129,6 +139,8 @@ export function renderInstructions(input: InstructionsInput): string {
     section('Funnel coverage of this work', coverageLines, 'Nothing is tracked yet, so the funnel is empty.'),
     section(`The brief (current state of ./${WORK_FILES.brief})`, excerpt, 'The brief is still empty. Ask the human what the deliverable should be.'),
     section('Decisions already taken (do not reopen)', decisionLines, 'No decisions recorded yet.'),
+    section('The team on this work', teamLines, 'You are the only one open on this work.'),
+    section('Roles that could be called in', availableLines, 'Every shipped role is already open here.'),
   );
 
   if (memory && memory.trim().length > 0) {
@@ -155,6 +167,8 @@ export function renderInstructions(input: InstructionsInput): string {
     '- When you take a decision that should stick, state it explicitly so the human can log it in Latte.',
     `- The funnel stages are \`${FUNNEL_STAGES.join('`, `')}\`. You do not assign them; the human does, when they adopt the file. What you can do is propose one: begin a Markdown file you create with a front matter block — a line \`---\`, then \`funnel: ${FUNNEL_STAGES[2]}, ${FUNNEL_STAGES[3]}\`, then a line \`---\`. Latte reads it when the human adopts the file and takes it out of the deliverable. Name only the stages the piece really serves.`,
     '- Say plainly which stages have nothing in them. An empty stage is a finding, not a detail.',
+    '- You share this folder with the team, but not their conversations: you cannot read what they said and you cannot write to them. What you can do is ask for one of them, and the human decides.',
+    '- To ask for a role, write a Markdown file at the top level whose front matter is a line `---`, then `para: <role id>`, then a line `---`, and put the request in the body: what you need from them, and what you already checked so they do not redo it. Latte offers it to the human, who opens that conversation with your request loaded. Ask only when the other role would genuinely do it better; doing the work yourself is usually the right answer.',
   );
   if (memoryProject) {
     parts.push(

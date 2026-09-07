@@ -103,6 +103,9 @@ export interface McpServerInput {
  * A skill Latte ships: how every agent writes, not who works. On by default,
  * because quality is not an option each person has to discover and enable.
  */
+/** A role one agent asked for, waiting on the human who decides. */
+export interface HandoffRequest { fileName: string; roleId: string; roleName: string; known: boolean; request: string }
+
 export interface AgentSkill { id: string; name: string; summary: string; enabled: boolean }
 
 export interface FolderEntries { subfolders: string[]; otherFiles: string[]; truncated: boolean }
@@ -238,6 +241,9 @@ export interface LatteAPI {
   revealWorkFolder(workId: string): Promise<string>;
   /** Copies chosen files into this work's folder. Returns what landed there. */
   importFiles(workId: string): Promise<string[]>;
+  /** Roles one agent asked for on this work, still waiting on you. */
+  listHandoffs(workId: string): Promise<HandoffRequest[]>;
+  dismissHandoff(workId: string, fileName: string): Promise<void>;
   /** Skills shipped with Latte and whether each one is on. */
   listSkills(): Promise<AgentSkill[]>;
   setSkillEnabled(skillId: string, enabled: boolean): Promise<AgentSkill[]>;

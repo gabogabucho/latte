@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, CircleCheck, FolderCheck, FolderLock, LoaderCircle, MessageSquare, MessageSquarePlus, Pause, Play, Plug, Plus, Trash2, UserPlus, X } from 'lucide-react';
-import type { AgentRole, ChatRuntime, ChatSession, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
+import type { AgentRole, ChatRuntime, ChatSession, HandoffRequest, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
 import { chatStore } from './browser-api';
 import { ChatPane } from './ChatPane';
 import { useChatState } from './chat-store';
@@ -29,6 +29,10 @@ export interface TeamPanelProps {
   onPause: (memberId: string) => Promise<void>;
   onFinish: (memberId: string) => Promise<void>;
   onRestart: (memberId: string) => Promise<void>;
+  /** Roles one agent asked for; the human decides whether any conversation opens. */
+  handoffs: HandoffRequest[];
+  onAcceptHandoff: (handoff: HandoffRequest) => Promise<void>;
+  onDismissHandoff: (handoff: HandoffRequest) => Promise<void>;
   onRemove: (memberId: string) => Promise<void>;
   onProviders: () => void;
   onRecheck: () => void;
@@ -64,6 +68,12 @@ export function TeamPanel(props: TeamPanelProps) {
   const showPicker = adding || firstTeam;
 
   return <div className="team">
+    {work && props.handoffs.map(handoff => <div key={handoff.fileName} className="doc-banner handoff" role="status">
+      <UserPlus size={14} />
+      <span>Un agente pide que <strong>{handoff.roleName}</strong> vea esto: <em>{handoff.request.split(/\r?\n/)[0].slice(0, 140)}</em>{handoff.known ? '' : ' — ese rol no existe en Latte.'}</span>
+      {handoff.known && <button className="primary" disabled={busy} onClick={() => void props.onAcceptHandoff(handoff)}>Abrir con el pedido</button>}
+      <button disabled={busy} onClick={() => void props.onDismissHandoff(handoff)}>Descartar</button>
+    </div>)}
     {work && team.length > 0 && <>
       <div className="team-tabs" role="tablist" aria-label="Miembros del equipo">
         <div className="team-tab-strip">

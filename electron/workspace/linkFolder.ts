@@ -137,6 +137,31 @@ export function readFunnelProposal(content: string): FunnelProposal {
   return { stages, body: content.slice(match[0].length) };
 }
 
+/** A role one agent asked for, and what it wants from them. */
+export interface Handoff {
+  roleId: string;
+  request: string;
+}
+
+/**
+ * One agent asking for another.
+ *
+ * Agents share the folder, never each other's conversations, and none of them
+ * can call Latte. So the ask travels the same way a funnel proposal does: a
+ * file with front matter. It is a request, never an action — Latte shows it and
+ * the human decides whether that conversation opens at all.
+ */
+export function readHandoff(content: string): Handoff | null {
+  const match = FRONT_MATTER.exec(content);
+  if (!match) return null;
+  const line = match[1].split(/\r?\n/).find((l) => /^para[ \t]*:/i.test(l));
+  if (!line) return null;
+  const roleId = line.slice(line.indexOf(':') + 1).trim().toLowerCase().replace(/^["']+|["']+$/g, '');
+  if (!/^[a-z][a-z0-9-]{0,40}$/.test(roleId)) return null;
+  const request = content.slice(match[0].length).trim();
+  return request ? { roleId, request: request.slice(0, 4000) } : null;
+}
+
 /**
  * A file name Latte is willing to create when importing the client's material.
  *

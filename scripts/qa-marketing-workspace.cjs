@@ -241,6 +241,25 @@ app.whenReady().then(async () => {
     record('The team is a row of tabs and adding is a dialog', 'UI DOM measurement + preload read assertion');
     await click('Revisar');
 
+    // One agent asking for another: it can only write a file, and you decide.
+    fs.writeFileSync(path.join(workDir, 'para-paid.md'), ['---', 'para: paid-media', '---', 'Revisar el presupuesto de octubre contra el objetivo de 40 pruebas.', ''].join('\n'));
+    await win.reload(); await click('Conversar');
+    await wait(`document.body.innerText.includes('Un agente pide que')`, 'handoff surfaced');
+    assert.equal((await api('listTeam', work.id)).some(m => m.roleId === 'paid-media'), false, 'Asking must not open anything on its own');
+    await shot('13-handoff');
+    const legible = await js(`(()=>{const b=[...document.querySelectorAll('.doc-banner button.primary')].map(e=>{const s=getComputedStyle(e);return {bg:s.backgroundColor,fg:s.color};});return b;})()`);
+    assert(legible.length > 0, 'The banner offers a primary action');
+    for (const b of legible) assert.notEqual(b.bg, b.fg, 'A primary action in a banner must not be its own colour');
+    assert(legible.every(b => b.bg.startsWith('rgb(183')), 'It keeps the accent background: .doc-banner button would otherwise win on specificity');
+    await click('Abrir con el pedido');
+    await wait(`document.querySelector('[aria-label="Mensaje al agente"]')?.value?.includes('presupuesto de octubre')`, 'request loaded in the composer');
+    const opened = (await api('listTeam', work.id)).find(m => m.roleId === 'paid-media');
+    assert(opened, 'Accepting opens that role');
+    assert.equal((await api('listHandoffs', work.id)).length, 0, 'The ask is consumed once answered');
+    assert.equal(fs.existsSync(path.join(workDir, 'para-paid.md')), false, 'The file was a message to Latte, not a deliverable');
+    record('One agent asks for another, the human opens it with the request loaded', 'file on disk + UI DOM + preload read assertion');
+    await click('Revisar');
+
     await click('Ajustes'); await click('Skills');
     await wait(`document.body.innerText.includes('Escritura sin relleno')`, 'shipped skill listed');
     assert.deepEqual((await api('listSkills')).map(s => [s.id, s.enabled]), [['writing', true]], 'A shipped skill arrives on');

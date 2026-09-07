@@ -4,6 +4,7 @@ import type {
   AppInfo,
   AgentRole,
   AgentSkill,
+  HandoffRequest,
   AgentProfile,
   ProfileInput,
   DocumentPatch,
@@ -58,7 +59,7 @@ import { assertProvider } from '../runtime/providers';
 import { TerminalManager } from '../runtime/terminalManager';
 import { briefDocumentId, type DocumentRecord, type LatteRepository } from '../storage/repository';
 import { renderInstructions, type InstructionPack, type PackSkill } from '../workspace/instructions';
-import { checkFolder, contains, importFileName, kindFromFileName, readFunnelProposal, scanFolder, titleFromFileName } from '../workspace/linkFolder';
+import { checkFolder, contains, importFileName, kindFromFileName, readFunnelProposal, readHandoff, scanFolder, titleFromFileName } from '../workspace/linkFolder';
 import { renderDocumentTemplate } from '../workspace/templates';
 import { documentFileName, fingerprintOf, type DocumentOnDisk, type WorkspaceFiles } from '../workspace/workspace';
 import { LIMITS, requireId, requireInt, requireLabel, requireRequestId, requireText } from './validation';
@@ -474,6 +475,42 @@ export class LatteService implements BackendApi {
       landed.push(nodePath.basename(target));
     }
     return landed;
+  }
+
+  /**
+   * Roles one agent asked for, still waiting on you.
+   *
+   * Reading never opens anything: a handoff is a request, and the conversation
+   * it asks for costs money and attention, so a human decides. The file stays
+   * on disk until you accept or dismiss it.
+   */
+  async listHandoffs(workId: string): Promise<HandoffRequest[]> {
+    const id = requireId(workId, 'workId');
+    const work = this.deps.repo.getWork(id);
+    this.deps.files.ensureWork(work.brandId, work.id, work.brief);
+    const roles = this.deps.hub.listRoles();
+    const tracked = new Set(this.deps.repo.usedFileNames(work.id));
+    const out: HandoffRequest[] = [];
+    for (const name of scanFolder(this.deps.files.workDir(work.brandId, work.id)).markdown) {
+      if (tracked.has(name)) continue;
+      const handoff = readHandoff(this.deps.files.readDocument(work.brandId, work.id, name).content);
+      if (!handoff) continue;
+      const role = roles.find((r) => r.id === handoff.roleId);
+      // A role Latte does not have is a typo, not an instruction: say so instead of guessing.
+      out.push({ fileName: name, roleId: handoff.roleId, roleName: role?.name ?? handoff.roleId, known: Boolean(role), request: handoff.request });
+    }
+    return out;
+  }
+
+  /** Drops the ask. The file was a message to Latte, not a deliverable. */
+  async dismissHandoff(workId: string, fileName: string): Promise<void> {
+    const id = requireId(workId, 'workId');
+    const work = this.deps.repo.getWork(id);
+    const pending = await this.listHandoffs(id);
+    if (!pending.some((h) => h.fileName === fileName)) throw new ValidationError('Ese pedido ya no está en la carpeta');
+    const target = nodePath.join(this.deps.files.workDir(work.brandId, work.id), fileName);
+    if (!contains(this.deps.files.workDir(work.brandId, work.id), target)) throw new ValidationError('Ruta inválida');
+    try { nodeFs.rmSync(target, { force: true }); } catch { /* it may already be gone */ }
   }
 
   /** Shipped skills and their switch. On unless the human turned one off. */
@@ -1135,6 +1172,6 @@ export class LatteService implements BackendApi {
       baseFileName: r.baseDocumentId ? byId.get(r.baseDocumentId)?.fileName ?? null : null,
     }));
     this.deps.files.ensureWork(brand.id, work.id, work.brief);
-    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, decisions, documents, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills() }));
+    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, decisions, documents, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills(), team: this.deps.hub.listTeam(work.id).map((m) => ({ roleId: m.roleId, roleName: m.roleName, status: m.status })), available: this.deps.hub.listRoles().map((r) => ({ id: r.id, name: r.name, summary: r.summary })) }));
   }
 }

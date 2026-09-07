@@ -254,3 +254,43 @@ it('keeps the skill out of the per-request base prompt, which has its own budget
     expect(skill.length).toBeGreaterThan(1_000);
   } finally { b.cleanup(); }
 });
+
+it('an agent can ask for a role, and asking never opens anything', async () => {
+  const b = await makeBackend();
+  try {
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    const dir = path.join(b.dir, 'brands', brand.id, 'works', work.id);
+    // The only channel an agent has: it writes a file.
+    fs.writeFileSync(path.join(dir, 'para-paid.md'), '---\npara: paid-media\n---\nRevisar el presupuesto de octubre contra el objetivo de 40 pruebas.\n');
+    fs.writeFileSync(path.join(dir, 'para-nadie.md'), '---\npara: no-existe\n---\nAlgo.\n');
+
+    const pending = await b.service.listHandoffs(work.id);
+    expect(pending.map(h => [h.roleId, h.known])).toEqual([['no-existe', false], ['paid-media', true]]);
+    expect(pending.find(h => h.roleId === 'paid-media')!.request).toMatch(/presupuesto de octubre/);
+    expect(pending.find(h => h.roleId === 'paid-media')!.roleName).toBe('Paid Media');
+    // Reading is reading: no member was opened and the files are still there.
+    expect(await b.service.listTeam(work.id)).toEqual([]);
+    expect(fs.existsSync(path.join(dir, 'para-paid.md'))).toBe(true);
+
+    await b.service.dismissHandoff(work.id, 'para-paid.md');
+    expect(fs.existsSync(path.join(dir, 'para-paid.md'))).toBe(false);
+    expect((await b.service.listHandoffs(work.id)).map(h => h.roleId)).toEqual(['no-existe']);
+    await expect(b.service.dismissHandoff(work.id, 'para-paid.md')).rejects.toThrow(/ya no está/);
+  } finally { b.cleanup(); }
+});
+
+it('tells each agent who is on the team and who could be called in', async () => {
+  const b = await makeBackend();
+  try {
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    const claude = fs.readFileSync(path.join(b.dir, 'brands', brand.id, 'works', work.id, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('The team on this work');
+    expect(claude).toContain('Roles that could be called in');
+    // An agent that cannot see the roster cannot ask for anyone.
+    expect(claude).toContain('`paid-media`');
+    expect(claude).toContain('para: <role id>');
+    expect(claude).toContain('you cannot read what they said');
+  } finally { b.cleanup(); }
+});
