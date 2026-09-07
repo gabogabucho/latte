@@ -107,3 +107,44 @@ it('shows the agent every stage and, above all, the ones with nothing in them', 
     expect(claude).toContain('An empty stage is a finding, not a detail.');
   } finally { b.cleanup(); }
 });
+
+it('adopts the stage the agent proposed and takes the block out of the deliverable', async () => {
+  const b = await makeBackend();
+  try {
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    const dir = path.join(b.dir, 'brands', brand.id, 'works', work.id);
+    fs.writeFileSync(path.join(dir, 'oferta.md'), '---\nfunnel: Conversion, retention, conversion\n---\n# Oferta\nPrimer pedido.\n');
+    const proposed = (await b.service.listUntrackedFiles(work.id)).find(f => f.fileName === 'oferta.md');
+    // Listing only reads the proposal: the file is untouched until the human adopts.
+    expect(proposed?.funnelStages).toEqual(['conversion', 'retention']);
+    expect(fs.readFileSync(path.join(dir, 'oferta.md'), 'utf8')).toContain('funnel:');
+
+    const adopted = await b.service.trackFile(work.id, 'oferta.md');
+    expect(adopted.funnelStages).toEqual(['conversion', 'retention']);
+    const content = await b.service.readDocument(adopted.id);
+    expect(content.content).toBe('# Oferta\nPrimer pedido.\n');
+    expect(fs.readFileSync(path.join(dir, 'oferta.md'), 'utf8')).toBe('# Oferta\nPrimer pedido.\n');
+    // The tracked fingerprint is the stripped file, so it does not read as an external edit.
+    expect((await b.service.documentState(adopted.id)).fingerprint).toBe(content.fingerprint);
+  } finally { b.cleanup(); }
+});
+
+it('leaves a file alone when there is no usable proposal in it', async () => {
+  const b = await makeBackend();
+  try {
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    const dir = path.join(b.dir, 'brands', brand.id, 'works', work.id);
+    // A client file that merely opens with a rule, and a block with no stage we know.
+    const rule = '---\n\nNotas del cliente\n\n---\n\nTexto.\n';
+    const unknown = '---\nfunnel: awareness\nautor: alguien\n---\n# Pieza\n';
+    fs.writeFileSync(path.join(dir, 'notas.md'), rule);
+    fs.writeFileSync(path.join(dir, 'pieza.md'), unknown);
+    for (const [name, original] of [['notas.md', rule], ['pieza.md', unknown]] as const) {
+      const doc = await b.service.trackFile(work.id, name);
+      expect(doc.funnelStages).toEqual([]);
+      expect(fs.readFileSync(path.join(dir, name), 'utf8')).toBe(original);
+    }
+  } finally { b.cleanup(); }
+});

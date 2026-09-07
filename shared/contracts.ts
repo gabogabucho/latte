@@ -92,7 +92,7 @@ export interface McpServerInput {
 }
 
 /** A Markdown file in the work folder that is not a tracked document yet. */
-export interface UntrackedFile { fileName: string; title: string; kind: DocumentKind; bytes: number; modifiedAt: string | null }
+export interface UntrackedFile { fileName: string; title: string; kind: DocumentKind; bytes: number; modifiedAt: string | null; /** Stages the agent proposed in the file; empty when it proposed none. */ funnelStages: FunnelStage[] }
 
 /** Cheap poll answer used to notice external edits without a filesystem watcher. */
 export interface DocumentState { documentId: string; fingerprint: string; modifiedAt: string | null; baseOutdated: boolean }

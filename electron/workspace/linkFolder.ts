@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { FunnelStage } from '../../shared/contracts';
 
 /**
  * Using a folder you already work in, instead of copying it.
@@ -94,6 +95,46 @@ export function scanFolder(directory: string): FolderScan {
     else otherFiles.push(name);
   }
   return { markdown, otherFiles, subfolders, alreadyLatte };
+}
+
+const FUNNEL_STAGES: readonly FunnelStage[] = ['discovery', 'consideration', 'conversion', 'retention'];
+/** A leading `---` block, bounded so a file that merely opens with a rule costs nothing. */
+const FRONT_MATTER = /^---[ \t]*\r?\n([\s\S]{0,2000}?)\r?\n---[ \t]*(?:\r?\n|$)/;
+
+/** What an agent proposed for a file it left behind, and the file without that block. */
+export interface FunnelProposal {
+  stages: FunnelStage[];
+  /** The content to store: the block is stripped only when it was actually read. */
+  body: string;
+}
+
+/**
+ * The one thing an agent may say about a deliverable it leaves in the folder:
+ * which funnel stages it belongs to. It travels as front matter because an
+ * agent cannot call Latte — it can only write files.
+ *
+ * It is a proposal, never a decision: it is read when the human adopts the
+ * file, and removed from the deliverable once read, because a message to Latte
+ * is not part of the piece. Anything unrecognised leaves the file untouched.
+ */
+export function readFunnelProposal(content: string): FunnelProposal {
+  const match = FRONT_MATTER.exec(content);
+  if (!match) return { stages: [], body: content };
+  const lines = match[1].split(/\r?\n/);
+  const index = lines.findIndex((line) => /^funnel[ \t]*:/i.test(line));
+  if (index < 0) return { stages: [], body: content };
+  // Both `funnel: a, b` and a YAML list underneath it: agents write either.
+  const values = [lines[index].slice(lines[index].indexOf(':') + 1)];
+  for (let i = index + 1; i < lines.length && /^[ \t]*-[ \t]+\S/.test(lines[i]); i++) {
+    values.push(lines[i].replace(/^[ \t]*-[ \t]+/, ''));
+  }
+  const stages: FunnelStage[] = [];
+  for (const value of values.join(',').split(',')) {
+    const stage = value.trim().toLowerCase().replace(/^["'[\]]+|["'[\]]+$/g, '') as FunnelStage;
+    if (FUNNEL_STAGES.includes(stage) && !stages.includes(stage)) stages.push(stage);
+  }
+  if (stages.length === 0) return { stages: [], body: content };
+  return { stages, body: content.slice(match[0].length) };
 }
 
 /** A readable title from a file name, for the document list. */

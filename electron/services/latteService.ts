@@ -6,6 +6,7 @@ import type {
   AgentProfile,
   ProfileInput,
   DocumentPatch,
+  FunnelStage,
   AgentRuntimeInfo,
   AgentSession,
   Brand,
@@ -54,7 +55,7 @@ import { assertProvider } from '../runtime/providers';
 import { TerminalManager } from '../runtime/terminalManager';
 import { briefDocumentId, type DocumentRecord, type LatteRepository } from '../storage/repository';
 import { renderInstructions, type InstructionPack } from '../workspace/instructions';
-import { checkFolder, kindFromFileName, scanFolder, titleFromFileName } from '../workspace/linkFolder';
+import { checkFolder, kindFromFileName, readFunnelProposal, scanFolder, titleFromFileName } from '../workspace/linkFolder';
 import { renderDocumentTemplate } from '../workspace/templates';
 import { documentFileName, fingerprintOf, type DocumentOnDisk, type WorkspaceFiles } from '../workspace/workspace';
 import { LIMITS, requireId, requireInt, requireLabel, requireRequestId, requireText } from './validation';
@@ -353,7 +354,9 @@ export class LatteService implements BackendApi {
       // Latte's own README is not a deliverable; one the client already had is.
       if (name === WORK_FILES.readme && this.deps.files.readDocument(work.brandId, work.id, name).content.startsWith('# Latte work directory')) continue;
       const stat = this.deps.files.statDocument(work.brandId, work.id, name);
-      out.push({ fileName: name, title: titleFromFileName(name), kind: kindOf(kindFromFileName(name)), bytes: stat.bytes, modifiedAt: stat.modifiedAt });
+      // Read, never consumed: the human sees the proposal before deciding to adopt.
+      const proposed = readFunnelProposal(this.deps.files.readDocument(work.brandId, work.id, name).content).stages;
+      out.push({ fileName: name, title: titleFromFileName(name), kind: kindOf(kindFromFileName(name)), bytes: stat.bytes, modifiedAt: stat.modifiedAt, funnelStages: proposed });
     }
     return out;
   }
@@ -366,6 +369,9 @@ export class LatteService implements BackendApi {
     const candidate = candidates.find((c) => c.fileName === fileName);
     if (!candidate) throw new ValidationError('Ese archivo no está en la carpeta del trabajo o ya es un documento');
     const now = this.clock();
+    // The agent's proposal is consumed here, before the first fingerprint, so
+    // the version Latte starts tracking is the deliverable without the block.
+    const funnelStages = this.consumeFunnelProposal(work.brandId, work.id, candidate.fileName);
     const disk = this.deps.files.readDocument(work.brandId, work.id, candidate.fileName);
     const record: DocumentRecord = {
       id: newId('doc'),
@@ -374,7 +380,7 @@ export class LatteService implements BackendApi {
       title: candidate.title,
       fileName: candidate.fileName,
       status: 'draft',
-      funnelStages: [],
+      funnelStages,
       baseDocumentId: null,
       baseRevisionId: null,
       baseFingerprint: null,
@@ -466,6 +472,7 @@ export class LatteService implements BackendApi {
     const used = new Set(this.deps.repo.usedFileNames(work.id));
     for (const name of scan.markdown) {
       if (used.has(name)) continue;
+      const proposed = this.consumeFunnelProposal(brand.id, work.id, name);
       const disk = this.deps.files.readDocument(brand.id, work.id, name);
       const record: DocumentRecord = {
         id: newId('doc'),
@@ -474,7 +481,7 @@ export class LatteService implements BackendApi {
         title: titleFromFileName(name),
         fileName: name,
         status: 'draft',
-      funnelStages: [],
+        funnelStages: proposed,
         baseDocumentId: null,
         baseRevisionId: null,
         baseFingerprint: null,
@@ -639,6 +646,18 @@ export class LatteService implements BackendApi {
       extraEnv: { ENGRAM_PROJECT: memoryProjectFor(brand.id) },
       trustedFolder: this.folderTrust(work.id),
     };
+  }
+
+  /**
+   * Reads the funnel block an agent left on a file and takes it out of the
+   * file. Returns the stages it proposed, or none when there was no proposal —
+   * in which case the file is not rewritten at all.
+   */
+  private consumeFunnelProposal(brandId: string, workId: string, fileName: string): FunnelStage[] {
+    const proposal = readFunnelProposal(this.deps.files.readDocument(brandId, workId, fileName).content);
+    if (proposal.stages.length === 0) return [];
+    this.deps.files.writeDocument(brandId, workId, proposal.body, fileName);
+    return proposal.stages;
   }
 
   private folderTrust(workId: string): boolean {

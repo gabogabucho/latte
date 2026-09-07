@@ -131,6 +131,20 @@ app.whenReady().then(async () => {
     assert.equal((await api('readDocument', ids[2])).baseOutdated, false);
     record('Review queue and acknowledgement does not approve', 'preload base change; UI queue/status/acknowledgement');
 
+    // What an agent actually leaves behind: a file with a stage proposed in front matter.
+    const workDir = path.join(root, 'data', 'brands', brand.id, 'works', work.id);
+    const left = path.join(workDir, 'retencion.md');
+    fs.writeFileSync(left, '---\nfunnel: retention\n---\n# Segundo pedido\nSIMULACIÓN. No publicar.\n');
+    await win.reload();
+    await click('Revisar');
+    await click('Agregar retencion.md · Retención');
+    const adopted = (await api('listDocuments', work.id)).find(d => d.fileName === 'retencion.md');
+    assert.deepEqual(adopted.funnelStages, ['retention'], 'The proposed stage must arrive with the document');
+    assert.equal(fs.readFileSync(left, 'utf8'), '# Segundo pedido\nSIMULACIÓN. No publicar.\n', 'The block is a message to Latte, not part of the piece');
+    assert.equal((await api('readDocument', adopted.id)).fingerprint, (await api('documentState', adopted.id)).fingerprint);
+    await clickTab('Embudo'); await shot('06-proposed-stage-adopted');
+    record('Agent proposes a stage, the human adopts it', 'file on disk + UI adoption + preload read assertion', { fileName: 'retencion.md' });
+
     await click('Ajustes'); await click('Perfiles');
     const builtins = await api('listProfiles');
     // The neutral assistant ships without SOUL on purpose; clone one that carries instructions.

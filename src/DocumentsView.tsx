@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AlertTriangle, Check, Download, FilePlus, FileText, FolderOpen, History, Layers, LoaderCircle, Plus, RefreshCw, Save, X } from 'lucide-react';
-import type { DocumentContent, DocumentKind, Revision, WorkDocument, Work } from '../shared/contracts';
+import type { DocumentContent, DocumentKind, FunnelStage, Revision, WorkDocument, Work } from '../shared/contracts';
 import { api } from './browser-api';
 import { DocumentExplorer } from './DocumentExplorer';
 import { DocumentMetadata, hasMetadataDrafts } from './DocumentMetadata';
+import { STAGE_LABEL } from './document-organizer';
 import { documentDrafts } from './document-drafts';
 
 const KIND_LABEL: Record<DocumentKind, string> = { brief: 'Encargo', strategy: 'Estrategia', calendar: 'Calendario', research: 'Investigación', copy: 'Piezas', note: 'Nota' };
@@ -44,7 +45,7 @@ export interface DocumentsViewProps {
   hasBrand: boolean;
   onStart: () => void;
   /** Markdown in the folder that Latte is not tracking yet. */
-  untracked: { fileName: string; title: string }[];
+  untracked: { fileName: string; title: string; funnelStages?: FunnelStage[] }[];
   onTrack: (fileName: string) => Promise<void>;
   /** Role currently writing to each file, by file name. */
   editors: Record<string, { roleId: string; roleName: string }>;
@@ -268,7 +269,8 @@ export function DocumentsView(props: DocumentsViewProps) {
       <span>{props.untracked.length === 1
         ? <>Hay un archivo en la carpeta que Latte no sigue: <strong>{props.untracked[0].fileName}</strong>. Si lo agregás, gana versiones y exportación.</>
         : <>Hay {props.untracked.length} archivos en la carpeta que Latte no sigue. Si los agregás, ganan versiones y exportación.</>}</span>
-      {props.untracked.slice(0, 3).map(f => <button key={f.fileName} disabled={props.busy} onClick={() => void props.onTrack(f.fileName)}>Agregar {f.fileName}</button>)}
+      {/* The stage the agent proposed, shown before adopting: the human decides, not the file. */}
+      {props.untracked.slice(0, 3).map(f => <button key={f.fileName} disabled={props.busy} onClick={() => void props.onTrack(f.fileName)}>Agregar {f.fileName}{f.funnelStages?.length ? ' · ' + f.funnelStages.map(s => STAGE_LABEL[s]).join(' + ') : ''}</button>)}
     </div>}
 
     {suggestion && <div className="doc-suggestion">

@@ -135,7 +135,8 @@ export function renderInstructions(input: InstructionsInput): string {
     `- \`./${WORK_FILES.metaDir}/\` holds immutable snapshots. Never modify or delete anything in it.`,
     '- Stay inside this directory. Do not touch other brands, other works or global tool configuration.',
     '- When you take a decision that should stick, state it explicitly so the human can log it in Latte.',
-    `- The funnel stages are \`${FUNNEL_STAGES.join('`, `')}\`. You cannot set them yourself: Latte owns that classification and the human assigns it. So name the stage you would give every file you write, and say plainly which stages have nothing in them. An empty stage is a finding, not a detail.`,
+    `- The funnel stages are \`${FUNNEL_STAGES.join('`, `')}\`. You do not assign them; the human does, when they adopt the file. What you can do is propose one: begin a Markdown file you create with a front matter block — a line \`---\`, then \`funnel: ${FUNNEL_STAGES[2]}, ${FUNNEL_STAGES[3]}\`, then a line \`---\`. Latte reads it when the human adopts the file and takes it out of the deliverable. Name only the stages the piece really serves.`,
+    '- Say plainly which stages have nothing in them. An empty stage is a finding, not a detail.',
   );
   if (memoryProject) {
     parts.push(
