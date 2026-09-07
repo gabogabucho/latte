@@ -294,3 +294,24 @@ it('tells each agent who is on the team and who could be called in', async () =>
     expect(claude).toContain('you cannot read what they said');
   } finally { b.cleanup(); }
 });
+
+it('a handoff resolves against whatever roles exist, including profiles you made yourself', async () => {
+  const b = await makeBackend();
+  try {
+    // A profile that ships with nothing: created here, in Settings, by a person.
+    await b.service.saveProfile({ id: 'crm-lifecycle', name: 'CRM y ciclo de vida', initial: 'C', summary: 'Correo, retención y reactivación.', soul: '# Soul', skills: '' }, null);
+    const brand = await b.service.createBrand('Bruma');
+    const work = await b.service.createWork(brand.id, 'Suscripcion');
+    const dir = path.join(b.dir, 'brands', brand.id, 'works', work.id);
+
+    // The instruction file offers it like any other role: nothing here is a fixed list.
+    const claude = fs.readFileSync(path.join(dir, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('`crm-lifecycle` — CRM y ciclo de vida');
+
+    fs.writeFileSync(path.join(dir, 'para-crm.md'), '---\npara: crm-lifecycle\n---\nArmar el correo de reactivación a 60 días.\n');
+    const [handoff] = await b.service.listHandoffs(work.id);
+    expect([handoff.roleId, handoff.known, handoff.roleName]).toEqual(['crm-lifecycle', true, 'CRM y ciclo de vida']);
+    // And it opens: the same path a shipped role takes.
+    expect((await b.service.listRoles()).map(r => r.id)).toContain('crm-lifecycle');
+  } finally { b.cleanup(); }
+});
