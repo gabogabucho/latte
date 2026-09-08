@@ -60,6 +60,12 @@ nsis:
   # The public download is one file with one name, so the landing can link
   # straight to it: /releases/latest/download/Latte-Setup.exe
   artifactName: Latte-Setup.exe
+  # The welcome page of an assisted installer shows a 164x314 image. Without
+  # one, NSIS draws its own grey default at the first moment anybody sees the
+  # product. Regenerate with `npm run assets:installer`; the icon of the
+  # installer itself is inherited from `win.icon` above.
+  installerSidebar: build/installerSidebar.bmp
+  uninstallerSidebar: build/uninstallerSidebar.bmp
   oneClick: false
   perMachine: false
   allowElevation: true
