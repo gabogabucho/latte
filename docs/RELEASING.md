@@ -60,6 +60,26 @@ y `latest.yml` tienen que hablar de la misma versión.
 
 ## 4. Construir
 
+### En CI, que es de donde debería salir
+
+`.github/workflows/release-windows.yml` compila en un runner limpio de Windows.
+Se dispara solo al pushear un tag `v*`, y a mano desde la pestaña Actions
+(«Run workflow») cuando solo querés el instalador para probar.
+
+Hace lo mismo que el camino local, más lo que una máquina de trabajo no
+garantiza: que el tag y `package.json` digan la misma versión, que los tests y
+los typechecks pasen antes de empaquetar, y que `latest.yml` declare la versión
+que corresponde. Con un tag deja la release **en borrador** con los dos
+archivos adjuntos; nunca la publica.
+
+Existe por un susto concreto: el `Latte-Setup.exe` que había en el disco tenía
+dos días y le faltaban cuatro cambios ya mergeados. Un build que sale de un
+clon limpio del tag no puede tener esa clase de sorpresa. Y es el requisito de
+entrada para firmar gratis con SignPath Foundation, que firma artefactos
+salidos de un CI público y no de un disco ajeno.
+
+### A mano, en tu máquina
+
 ```bash
 npm run pack:win
 ```
