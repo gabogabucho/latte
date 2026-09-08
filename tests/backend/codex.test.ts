@@ -68,6 +68,30 @@ describe('CodexChatAdapter against a fake app-server', () => {
     removeDir(dir);
   });
 
+  it('asks Codex for its own catalog instead of hardcoding one', async () => {
+    const spawned: Array<{ args: string[]; env: Record<string, string | undefined> }> = [];
+    adapter = fakeAdapter(events, dir, spawned);
+
+    const models = await adapter.listModels(SYSTEM_ACCOUNT_ID);
+    // Hidden models, entries without an identifier and repeats are not
+    // offered; the rest keeps the runtime's own name, description and default.
+    expect(models).toEqual([
+      { id: 'gpt-6-astra', label: 'GPT-6-Astra', description: 'Our most capable model.', isDefault: true },
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', description: 'Everyday workhorse.', isDefault: false },
+    ]);
+    expect(spawned).toHaveLength(1);
+
+    // A managed account is asked with its own CODEX_HOME.
+    await adapter.listModels('acc_00112233445566aa');
+    expect(spawned[1].env.CODEX_HOME).toBe('C:\\managed\\acc_00112233445566aa');
+
+    // With a conversation open, the running server answers: nothing new is spawned.
+    await adapter.start({ workId: 'wrk_1', directory: dir, title: 't', label: 'Codex', accountId: SYSTEM_ACCOUNT_ID });
+    const before = spawned.length;
+    expect((await adapter.listModels(SYSTEM_ACCOUNT_ID)).map(m => m.id)).toEqual(['gpt-6-astra', 'gpt-5.6-sol']);
+    expect(spawned).toHaveLength(before);
+  });
+
   it('starts a thread in the work directory, streams a reply and persists the thread id', async () => {
     const spawned: Array<{ args: string[]; env: Record<string, string | undefined> }> = [];
     adapter = fakeAdapter(events, dir, spawned);

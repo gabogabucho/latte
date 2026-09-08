@@ -1,6 +1,6 @@
 import type { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import type { AccountLoginStart, ChatEvent, ChatMessage, ChatPart, PermissionReply } from '../../../shared/contracts';
+import type { AccountLoginStart, AgentModel, ChatEvent, ChatMessage, ChatPart, PermissionReply } from '../../../shared/contracts';
 import { NotFoundError, UnavailableError, ValidationError } from '../../core/errors';
 import { newId } from '../../core/ids';
 import { scrubEnv } from '../../runtime/terminalManager';
@@ -225,6 +225,36 @@ export class CodexChatAdapter implements RuntimeAdapter {
     const live = this.chats.get(chatId);
     if (!live) throw new NotFoundError('Chat', chatId);
     return live;
+  }
+
+  /**
+   * The catalog Codex itself reports for this account, over the same protocol
+   * a conversation uses. `model/list` is the source of truth: Latte does not
+   * hardcode a list that would go stale the day a model ships.
+   *
+   * A conversation already open answers without spawning anything. Otherwise a
+   * short-lived server is started and stopped here, which is why this is asked
+   * when the Settings screen needs it and never while the app starts.
+   */
+  async listModels(accountId: string): Promise<AgentModel[]> {
+    const live = this.servers.get(accountId);
+    if (live) return parseModelList(await live.request('model/list', {}));
+    const runtime = await this.deps.resolveExecutable();
+    if (!runtime) throw new UnavailableError('Codex is not installed or not on PATH');
+    const server = new CodexAppServer({
+      executable: runtime.executable,
+      env: { ...scrubEnv(this.env), ...this.deps.accountEnv(accountId === SYSTEM_ACCOUNT_ID ? null : accountId) },
+      cwd: this.deps.serverCwd,
+      platform: this.platform,
+      spawnImpl: this.deps.spawnImpl,
+      requestTimeoutMs: this.deps.requestTimeoutMs,
+      log: this.deps.log,
+    });
+    try {
+      return parseModelList(await server.request('model/list', {}));
+    } finally {
+      server.stop();
+    }
   }
 
   private async serverFor(accountId: string): Promise<CodexAppServer> {
@@ -550,4 +580,27 @@ function stringify(value: unknown): string {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+
+/**
+ * `model/list` answers `{ data: [...] }`. Only the fields Latte shows are
+ * taken, and a model the runtime marks as hidden is not offered: the list is
+ * Codex's, not Latte's opinion of it.
+ */
+function parseModelList(result: unknown): AgentModel[] {
+  if (!isRecord(result) || !Array.isArray(result.data)) return [];
+  const models: AgentModel[] = [];
+  for (const entry of result.data) {
+    if (!isRecord(entry) || entry.hidden === true) continue;
+    const id = typeof entry.id === 'string' ? entry.id : typeof entry.model === 'string' ? entry.model : '';
+    if (!id || models.some((m) => m.id === id)) continue;
+    models.push({
+      id,
+      label: typeof entry.displayName === 'string' && entry.displayName ? entry.displayName : id,
+      description: typeof entry.description === 'string' ? entry.description : '',
+      isDefault: entry.isDefault === true,
+    });
+  }
+  return models;
 }

@@ -208,13 +208,23 @@ export interface PrimaryAgent { runtime: ChatRuntime; model: string | null; acco
 export interface AgentAccount {
   runtime: 'claude' | 'codex'; id: string; label: string; system: boolean; loggedIn: boolean; detail: string;
   /**
-   * Model IDs worth suggesting for this account: the aliases the CLI itself
-   * documents, plus whatever that account's own configuration already uses.
-   * Suggestions, never a catalog — the runtime is the one that decides what it
-   * accepts, so the field stays free text.
+   * Model IDs worth suggesting for this account without asking anyone: the
+   * aliases the CLI itself documents, plus whatever that account's own
+   * configuration already uses. Cheap and always there. The real catalog, when
+   * the runtime has one, arrives separately through `listAccountModels`.
    */
   models: string[];
 }
+
+/**
+ * One model a runtime says this account can use.
+ *
+ * `source` is the point: `catalog` means the runtime answered with its own
+ * list, `suggested` means Latte could only offer what it can state as fact.
+ * The difference is shown, never hidden behind an identical-looking list.
+ */
+export interface AgentModel { id: string; label: string; description: string; isDefault: boolean }
+export interface AgentModelList { source: 'catalog' | 'suggested'; models: AgentModel[]; detail: string }
 export interface AgentRuntimeInfo { runtime: 'claude' | 'codex'; installed: boolean; version: string | null; detail: string; accounts: AgentAccount[] }
 export type AccountLoginStart =
   | { mode: 'terminal'; sessionId: string; instructions: string }
@@ -385,6 +395,13 @@ export interface LatteAPI {
   /** Starts the runtime's own login (browser OAuth). Claude runs inside an embedded terminal session; Codex returns a URL. */
   startAccountLogin(runtime: 'claude' | 'codex', accountId: string): Promise<AccountLoginStart>;
   logoutAccount(runtime: 'claude' | 'codex', accountId: string): Promise<void>;
+  /**
+   * The models this account can use. Asks the runtime when it has a catalog
+   * (Codex answers `model/list` over its app-server); falls back to what Latte
+   * can state as fact when it does not. Costs a process, so it is asked when
+   * the Settings screen needs it, never on start.
+   */
+  listAccountModels(runtime: 'claude' | 'codex', accountId: string): Promise<AgentModelList>;
   // Updates
   /** Asks the update server whether there is a newer version. Never installs anything. */
   checkForUpdate(): Promise<UpdateState>;

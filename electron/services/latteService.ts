@@ -10,6 +10,7 @@ import type {
   DocumentPatch,
   FolderEntries,
   FunnelStage,
+  AgentModelList,
   AgentRuntimeInfo,
   AgentSession,
   Brand,
@@ -1026,6 +1027,12 @@ export class LatteService implements BackendApi {
     if (!isAccountRuntime(runtime)) throw new TypeError('Unknown runtime');
     if (!AccountStore.isValidId(accountId)) throw new TypeError('Invalid account id');
     await this.deps.hub.logout(runtime, accountId);
+  }
+
+  async listAccountModels(runtime: 'claude' | 'codex', accountId: string): Promise<AgentModelList> {
+    if (!isAccountRuntime(runtime)) throw new TypeError('Unknown runtime');
+    if (!AccountStore.isValidId(accountId)) throw new TypeError('Invalid account id');
+    return this.deps.hub.listAccountModels(runtime, accountId);
   }
 
   async replyQuestion(chatId: string, requestId: string, answers: string[][] | null): Promise<void> {
