@@ -203,6 +203,43 @@ describe('Team through the service', () => {
     await expect(b.service.getFolderTrust('wrk_nope')).rejects.toThrow();
   });
 
+  it('changes the model of one conversation, resuming it, and leaves a paused one for later', async () => {
+    const brand = await b.service.createBrand('Casa');
+    const work = await b.service.createWork(brand.id, 'Trabajo');
+    const member = await b.service.addTeamMember(work.id, 'strategist');
+    expect((await b.service.listTeam(work.id))[0].model).toBeNull();
+
+    // Live conversation: the runtime restarts and the same conversation comes back.
+    const changed = await b.service.setTeamMemberModel(member.id, 'fake-provider/fake-model');
+    expect(changed.member).toMatchObject({ id: member.id, model: 'fake-provider/fake-model' });
+    expect(changed.session).not.toBeNull();
+    expect(changed.resumed).toBe(true);
+    expect((await b.service.listTeam(work.id))[0]).toMatchObject({ model: 'fake-provider/fake-model', status: 'idle' });
+
+    // Same value twice is not a restart.
+    const again = await b.service.setTeamMemberModel(member.id, 'fake-provider/fake-model');
+    expect(again.member.model).toBe('fake-provider/fake-model');
+
+    // A model the runtime refuses leaves neither a broken setting nor a closed
+    // conversation: the previous model is put back and the chat reopened.
+    await expect(b.service.setTeamMemberModel(member.id, 'modelo-inexistente')).rejects.toThrow(/not configured/i);
+    expect((await b.service.listTeam(work.id))[0]).toMatchObject({ model: 'fake-provider/fake-model', status: 'idle' });
+
+    // Paused: the change is recorded, nothing is woken up to apply it.
+    await b.service.pauseTeamMember(member.id);
+    const paused = await b.service.setTeamMemberModel(member.id, null);
+    expect(paused.session).toBeNull();
+    expect(paused.resumed).toBe(false);
+    expect((await b.service.listTeam(work.id))[0]).toMatchObject({ model: null, status: 'paused' });
+    // Reopening keeps the setting: null means "whatever the runtime uses by
+    // default", which the session then reports as the effective model.
+    await b.service.openTeamMember(member.id);
+    expect((await b.service.listTeam(work.id))[0].model).toBeNull();
+
+    await expect(b.service.setTeamMemberModel(member.id, 'con espacio')).rejects.toThrow();
+    await expect(b.service.setTeamMemberModel('mem_nope', 'x')).rejects.toThrow();
+  });
+
   it('lists roles, adds members with the primary agent, sends the role as system prompt and tracks status', async () => {
     const roles = await b.service.listRoles();
     expect(roles.map((r) => r.id)).toEqual(['assistant', 'strategist', 'researcher', 'analyst', 'paid-media', 'reviewer']);
