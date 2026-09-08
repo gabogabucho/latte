@@ -225,6 +225,16 @@ export interface AgentAccount {
  */
 export interface AgentModel { id: string; label: string; description: string; isDefault: boolean }
 export interface AgentModelList { source: 'catalog' | 'suggested'; models: AgentModel[]; detail: string }
+/**
+ * How much this work's team may do without stopping to ask.
+ *
+ * `ask` is the default: every tool asks. `folder` grants reading and writing
+ * inside the work folder. `auto` means Latte answers each request itself —
+ * once, never "always", so the moment it is turned off the next request asks
+ * you again and no runtime kept a grant behind your back.
+ */
+export type WorkPermissionMode = 'ask' | 'folder' | 'auto';
+
 /** What changing a conversation's model did. `session` is null when it was paused. */
 export interface MemberModelChange { member: TeamMember; session: ChatSession | null; resumed: boolean }
 export interface AgentRuntimeInfo { runtime: 'claude' | 'codex'; installed: boolean; version: string | null; detail: string; accounts: AgentAccount[] }
@@ -307,9 +317,9 @@ export interface LatteAPI {
   applyFunnelProposal(documentId: string): Promise<WorkDocument>;
   /** Drops the proposal and leaves the stages as they were. */
   dismissFunnelProposal(documentId: string): Promise<WorkDocument>;
-  /** Whether this work may read and write inside its own folder without asking each time. */
-  getFolderTrust(workId: string): Promise<boolean>;
-  setFolderTrust(workId: string, trusted: boolean): Promise<boolean>;
+  /** How much this work's team may do without asking. */
+  getWorkPermissions(workId: string): Promise<WorkPermissionMode>;
+  setWorkPermissions(workId: string, mode: WorkPermissionMode): Promise<WorkPermissionMode>;
   /** Adopts an existing file as a tracked document: versions, export, conflict check. */
   trackFile(workId: string, fileName: string): Promise<WorkDocument>;
   /**
