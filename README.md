@@ -7,9 +7,9 @@ Todo en tu máquina.
 
 ![Latte: documentos de un trabajo, equipo de roles y aviso de cambio externo](assets/latte-documents-1440x1000.png)
 
-> **Alpha para Windows.** Latte no trae los agentes ni una cuenta de IA: usás la
-> tuya y la inferencia la paga tu proveedor. Y lo que un agente escribe es una
-> propuesta, no un hecho: revisala antes de darla por buena.
+> **Alpha para Windows.** Latte no trae los agentes ni una cuenta de IA. Usás la
+> tuya y la inferencia la paga tu proveedor. Lo que un agente escribe es una
+> propuesta hasta que la revisás.
 
 ## Instalar
 
