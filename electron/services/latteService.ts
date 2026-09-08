@@ -61,11 +61,28 @@ import { briefDocumentId, type DocumentRecord, type LatteRepository } from '../s
 import { renderInstructions, type InstructionPack, type PackSkill } from '../workspace/instructions';
 import { checkFolder, contains, importFileName, kindFromFileName, readFunnelProposal, readHandoff, scanFolder, titleFromFileName } from '../workspace/linkFolder';
 import { renderDocumentTemplate } from '../workspace/templates';
+import { DeliverableFiles } from '../workspace/deliverables';
 import { documentFileName, fingerprintOf, type DocumentOnDisk, type WorkspaceFiles } from '../workspace/workspace';
 import { LIMITS, requireId, requireInt, requireLabel, requireRequestId, requireText } from './validation';
 
 /** Everything the renderer can call, minus the event subscriptions (wired in the preload). */
-export type BackendApi = Omit<LatteAPI, 'onAgentEvent' | 'onChatEvent' | 'reportUnsaved' | 'windowControl' | 'onWindowState'>;
+/**
+ * What the backend answers. Everything that belongs to the application rather
+ * than to the workspace — window controls, and the update flow, which needs to
+ * quit and restart the app — is served by the main process directly.
+ */
+export type BackendApi = Omit<
+  LatteAPI,
+  | 'onAgentEvent'
+  | 'onChatEvent'
+  | 'reportUnsaved'
+  | 'windowControl'
+  | 'onWindowState'
+  | 'checkForUpdate'
+  | 'downloadUpdate'
+  | 'installUpdate'
+  | 'onUpdateState'
+>;
 
 export interface LatteServiceDeps {
   repo: LatteRepository;
@@ -87,6 +104,8 @@ export interface LatteServiceDeps {
   chooseFiles?: (title: string) => Promise<string[]>;
   /** Shows a folder in the system file manager. */
   revealPath?: (target: string) => Promise<void>;
+  revealFile?: (target: string) => Promise<void>;
+  confirmHtml?: (fileName: string) => Promise<boolean>;
   /** Discipline pack prepended to every generated instruction file. */
   pack?: InstructionPack | null;
   /** Opens an http(s) URL in the system browser (OAuth logins). */
@@ -546,6 +565,36 @@ export class LatteService implements BackendApi {
       otherFiles: otherFiles.slice(0, FOLDER_ENTRY_LIMIT),
       truncated: scan.subfolders.length > FOLDER_ENTRY_LIMIT || otherFiles.length > FOLDER_ENTRY_LIMIT,
     };
+  }
+
+  private deliverables(workId: string): DeliverableFiles {
+    const work = this.deps.repo.getWork(requireId(workId, 'workId'));
+    return new DeliverableFiles(this.deps.files.workDir(work.brandId, work.id));
+  }
+
+  async listDeliverables(workId: string) { return this.deliverables(workId).list(); }
+
+  async openDeliverable(workId: string, fileName: string): Promise<void> {
+    const files = this.deliverables(workId);
+    files.resolve(fileName);
+    if (!this.deps.revealPath) throw new UnavailableError('Abrir requiere la aplicación de escritorio');
+    if (/\.html?$/i.test(fileName) && (!this.deps.confirmHtml || !await this.deps.confirmHtml(fileName))) return;
+    // The file may have changed while the native confirmation was open.
+    await this.deps.revealPath(files.resolve(fileName));
+  }
+
+  async revealDeliverable(workId: string, fileName: string): Promise<void> {
+    if (!this.deps.revealFile) throw new UnavailableError('Mostrar requiere la aplicación de escritorio');
+    await this.deps.revealFile(this.deliverables(workId).resolve(fileName));
+  }
+
+  async copyDeliverable(workId: string, fileName: string): Promise<string | null> {
+    const files = this.deliverables(workId);
+    files.resolve(fileName);
+    const target = await this.deps.chooseExportPath(fileName);
+    if (!target) return null;
+    files.copy(fileName, target);
+    return target;
   }
 
   /** Adopts an existing file: from here it has versions, export and conflict checks. */

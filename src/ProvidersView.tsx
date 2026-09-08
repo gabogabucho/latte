@@ -3,6 +3,7 @@ import { Check, ExternalLink, KeyRound, LoaderCircle, LogIn, LogOut, Plug, Plus,
 import type { AgentAccount, AgentRuntimeInfo, PrimaryAgent, ProviderInfo, ProviderOAuthStart } from '../shared/contracts';
 import { agentBus, api, isDesktop } from './browser-api';
 import { TerminalPane } from './TerminalPane';
+import { accountModelKey, selectedAccountModel, selectedProviderModel, validModelInput } from './provider-models';
 
 const displayError = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const RUNTIME_NAME: Record<'claude' | 'codex', string> = { claude: 'Claude Code', codex: 'Codex' };
@@ -108,16 +109,26 @@ export function ProvidersView({ onChanged, onNotice, onError }: { onChanged: () 
       {runtimes?.map(rt => <div className="runtime-card" key={rt.runtime}>
         <div className="runtime-head"><strong>{RUNTIME_NAME[rt.runtime]}</strong><small>{rt.detail}</small></div>
         {rt.installed && <div className="provider-list">
-          {rt.accounts.map(a => <div className={'provider-card' + (isPrimaryAccount(a) ? ' is-primary' : '')} key={a.id}>
+          {rt.accounts.map(a => {
+            const chosen = selectedAccountModel(a, primary, modelChoice);
+            const unchanged = isPrimaryAccount(a) && (primary?.model ?? '') === chosen.trim();
+            return <div className={'provider-card' + (isPrimaryAccount(a) ? ' is-primary' : '')} key={a.id}>
             <span className={'provider-status' + (a.loggedIn ? '' : ' off')}>{a.loggedIn ? <Check size={14} /> : <LogIn size={14} />}</span>
-            <div><strong>{a.label}{isPrimaryAccount(a) && <em className="tag">PRINCIPAL</em>}</strong><small>{a.detail}</small></div>
+            <div><strong>{a.label}{isPrimaryAccount(a) && <em className="tag">PRINCIPAL</em>}</strong><small>{a.detail}</small>
+              {a.loggedIn && <>
+                <div className="provider-model-row">
+                  <input aria-label={`Modelo de ${RUNTIME_NAME[rt.runtime]} (${a.label})`} aria-invalid={!validModelInput(chosen)} placeholder="Modelo por defecto del CLI" value={chosen} maxLength={200} disabled={busy} autoComplete="off" spellCheck={false} onChange={e => setModelChoice(prev => ({ ...prev, [accountModelKey(a)]: e.target.value }))} />
+                  <button disabled={busy || unchanged || !validModelInput(chosen)} onClick={() => makePrimary({ runtime: rt.runtime, model: chosen.trim() || null, accountId: a.id })}><Star size={13} />{isPrimaryAccount(a) ? 'Guardar modelo' : 'Usar como principal'}</button>
+                </div>
+                <small>Ingresá un ID de modelo admitido por tu CLI y cuenta, o dejá vacío para usar su modelo por defecto. Aplica a chats nuevos que usen el agente principal.</small>
+              </>}
+            </div>
             <div className="provider-actions">
-              {a.loggedIn && !isPrimaryAccount(a) && <button disabled={busy} title="Usar esta cuenta para los chats nuevos" onClick={() => makePrimary({ runtime: rt.runtime, model: null, accountId: a.id })}><Star size={13} />Usar como principal</button>}
               {!a.loggedIn && <button className="primary" disabled={busy || Boolean(login && !login.ended)} onClick={() => startLogin(a)}><LogIn size={13} />Iniciar sesión</button>}
               {a.loggedIn && <button disabled={busy} onClick={() => { if (window.confirm(`¿Cerrar la sesión de ${RUNTIME_NAME[rt.runtime]} (${a.label})?`)) void run(() => api.logoutAccount(a.runtime, a.id), 'Sesión cerrada'); }}><LogOut size={13} />Cerrar sesión</button>}
               {!a.system && <button disabled={busy} title="Quitar este perfil de Latte" onClick={() => { if (window.confirm(`¿Quitar el perfil ${a.label}? Se borra su carpeta gestionada.`)) void run(() => api.removeAgentAccount(a.runtime, a.id), 'Perfil quitado'); }}><Trash2 size={13} /></button>}
             </div>
-          </div>)}
+          </div>; })}
           {login && login.runtime === rt.runtime && <div className="chat-card login-card" role="group" aria-label="Inicio de sesión en curso">
             <div className="chat-card-title"><Plug size={15} />{login.ended ? 'Login finalizado' : login.url ? 'Login en el navegador' : 'Iniciando sesión…'}</div>
             <p>{login.instructions}</p>
@@ -141,13 +152,13 @@ export function ProvidersView({ onChanged, onNotice, onError }: { onChanged: () 
       {providers && connected.length === 0 && <p className="footnote">Todavía no hay proveedores conectados por API.</p>}
       <div className="provider-list">
         {connected.map(p => {
-          const chosen = modelChoice[p.id] ?? p.models[0] ?? '';
+          const chosen = selectedProviderModel(p, primary, modelChoice);
           const isPrimary = primary?.runtime === 'opencode' && primary.model?.startsWith(`${p.id}/`);
           return <div className={'provider-card' + (isPrimary ? ' is-primary' : '')} key={p.id}>
             <span className="provider-status"><Check size={14} /></span>
             <div><strong>{p.name}{isPrimary && <em className="tag">PRINCIPAL</em>}</strong><small>{p.models.length} modelo{p.models.length === 1 ? '' : 's'} · <code>{p.id}</code>{isPrimary && primary?.model ? ` · ${primary.model.split('/').slice(1).join('/')}` : ''}</small>
-              {p.models.length > 0 && <div className="provider-model-row">
-                <select aria-label={`Modelo de ${p.name}`} value={chosen} disabled={busy} onChange={e => setModelChoice(prev => ({ ...prev, [p.id]: e.target.value }))}>{p.models.map(m => <option key={m} value={m}>{m}</option>)}</select>
+              {(p.models.length > 0 || chosen) && <div className="provider-model-row">
+                <select aria-label={`Modelo de ${p.name}`} value={chosen} disabled={busy} onChange={e => setModelChoice(prev => ({ ...prev, [p.id]: e.target.value }))}>{chosen && !p.models.includes(chosen) && <option value={chosen}>{chosen} (guardado; no está en el catálogo)</option>}{p.models.map(m => <option key={m} value={m}>{m}</option>)}</select>
                 <button disabled={busy || !chosen || (isPrimary && primary?.model === `${p.id}/${chosen}`)} onClick={() => makePrimary({ runtime: 'opencode', model: `${p.id}/${chosen}`, accountId: null })}><Star size={13} />Usar como principal</button>
               </div>}
             </div>

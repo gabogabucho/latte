@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FileText, FolderOpen, Plus, RefreshCw, Search } from 'lucide-react';
 import type { DocumentState, DocumentStatus, FunnelStage, WorkDocument } from '../shared/contracts';
 import { filterDocuments, reviewReasons, STAGES, STAGE_LABEL, STATUS_LABEL } from './document-organizer';
+import { Deliverables } from './Deliverables';
 import { FolderContents } from './FolderContents';
 
 interface Untracked { fileName: string; title: string; funnelStages?: FunnelStage[] }
@@ -83,6 +84,8 @@ export function DocumentList({ documents, workId, selectedId, states, failed, ch
     </div>
 
     <FolderContents workId={workId} untracked={untracked} onTrack={onTrack} onImported={onImported} busy={busy} />
+
+    <Deliverables workId={workId} />
 
     {suggestion && <div className="doc-suggestion">
       <span><strong>{suggestion.label}</strong> {suggestion.hint}</span>

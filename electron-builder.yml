@@ -1,0 +1,76 @@
+# Packaging for Latte. Windows/NSIS first: it is the only target that has been
+# designed for here, and it is the one the updater supports out of the box.
+#
+# Nothing in this file has been executed yet — no installer has been produced
+# and no release has been published. Treat every value as a proposal to verify
+# on the first real build (see docs/RELEASING.md).
+appId: app.ohmylatte.latte
+productName: Latte
+directories:
+  output: release
+
+# Development keeps `main: electron/main.cjs` (TypeScript through tsx). Only the
+# packaged application points at the compiled bundle.
+extraMetadata:
+  main: dist-electron/main.cjs
+
+files:
+  - dist/**
+  - dist-electron/**
+  - packs/**
+  - assets/icon-*.png
+  - package.json
+# Production dependencies are collected by electron-builder itself; development
+# dependencies (tsx, vite, electron-builder) never travel.
+
+# node-pty is the only native dependency and it ships N-API prebuilds, which
+# load in Node and in Electron without an ABI-specific rebuild: its own loader
+# falls back to prebuilds/<platform>-<arch>/ when build/Release is absent.
+# Rebuilding it from source fails anyway — the winpty submodule inside the npm
+# tarball has no git metadata, so node-gyp cannot run GetCommitHash.bat.
+# sql.js is WebAssembly and never needed a rebuild either.
+npmRebuild: false
+
+asar: true
+asarUnpack:
+  # Native addon: a .node file cannot be loaded from inside an archive.
+  - '**/node_modules/node-pty/**'
+  # Ships sql-wasm.wasm next to its JavaScript; unpacking removes any doubt
+  # about how the WebAssembly file is located at runtime.
+  - '**/node_modules/sql.js/**'
+
+publish:
+  provider: github
+  owner: ohmylatte
+  repo: latte
+  # Draft on purpose: the release is written, then a human looks at it and
+  # publishes. Nothing reaches users by running a build.
+  releaseType: draft
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # electron-builder converts this PNG to the .ico the installer needs.
+  icon: assets/icon-512.png
+  artifactName: Latte-Setup.exe
+
+nsis:
+  # The public download is one file with one name, so the landing can link
+  # straight to it: /releases/latest/download/Latte-Setup.exe
+  artifactName: Latte-Setup.exe
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Latte
+  # Brands, works, documents and versions live in userData and are not the
+  # installer's to remove. Uninstalling Latte must not erase the user's work.
+  deleteAppDataOnUninstall: false
+  # Differential downloads are an optimisation, and they interact with the
+  # fixed artifact name above. Off until a real update between two published
+  # versions has been observed working.
+  differentialPackage: false

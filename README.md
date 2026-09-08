@@ -94,6 +94,7 @@ el navegador y **no ejecuta ningún agente**.
 - **Embudo de campaña.** Cada documento puede estar en varias etapas a la vez —descubrimiento, consideración, conversión, retención— o en ninguna. La clasificación es virtual: no mueve ni renombra un solo archivo. Una etapa vacía se muestra como hallazgo, porque es la parte del recorrido que nadie está atendiendo.
 - **El agente propone la etapa, vos la aplicás.** Un agente no puede llamar a Latte, solo escribir archivos. Así que propone con un bloque `funnel: conversion, retention` al principio del markdown. Latte lo saca del archivo apenas lo ve —no llega al editor, ni a una versión, ni a una exportación— y lo deja pendiente hasta que aprietes Aplicar o Descartar.
 - **Ves toda la carpeta, no solo lo que Latte sigue.** Los `.docx`, los PDF y las subcarpetas del cliente aparecen listados. Tu agente los lee; pedirte que confíes en una carpeta que no podés inspeccionar sería otra cosa.
+- **Entregables para personas, en `entregables/`.** Lo que recibe el cliente —PDF, DOCX, XLSX, presentaciones, imágenes, HTML— lo deja tu agente en esa carpeta del trabajo y Latte lo lista con formato, tamaño y fecha, con tres acciones explícitas: abrir, mostrar en la carpeta y guardar una copia. Latte no los versiona, no los edita y no convierte un formato en otro: renombrar un Markdown a `.pdf` no es una conversión. El HTML pregunta antes de abrirse, afuera de Latte, porque puede ejecutar scripts.
 - **Cola de revisión.** Todo lo que pide atención junto: por estado, o porque cambió el documento que toma como base. Marcar la base revisada no aprueba el documento.
 - **Perfiles de agente con archivos.** Cada perfil propio vive en `agents/<id>/` con `profile.json`, `SOUL.md` y `SKILL.md`. Se crean, se duplican y se editan desde Ajustes. Los incluidos son de solo lectura y clonables; un perfil roto se muestra como diagnóstico sin tumbar el resto del catálogo.
 - **Skills que vienen puestas.** Un rol es quién hace el trabajo; una skill es el oficio que comparten todos. La primera, «Escritura sin relleno», corta muletillas, frases vacías y cierres de efecto, y pide concreto. Viene activada y se apaga desde Ajustes.
@@ -203,6 +204,7 @@ brands/<brandId>/works/<workId>/
   brief.md                                the editable deliverable (single authority, see below)
   CLAUDE.md, AGENTS.md                    managed context: pack + brand context + brief + decisions
   README.md                               explains the folder to humans and agents
+  entregables/                            human-facing output written by the agent (see below)
   .latte/snapshots/<timestamp>-<rev>.md   immutable snapshots (read-only files + DB triggers)
 ```
 
@@ -282,6 +284,35 @@ instructions to an agent are not filesystem isolation.
 A derived document (a calendar built on a strategy) pins the exact base
 revision it used. When that base changes, the derived document says it needs a
 look; nothing is regenerated and nothing is declared wrong.
+
+### Deliverables for people (`entregables/`)
+
+Markdown is how the work is thought and reviewed; it is not what a client
+receives. The instruction file tells every agent to leave human-facing output —
+PDF, DOCX, XLSX, decks, images, self-contained HTML — in `./entregables/`
+inside the work folder, and to produce real formats only with tools it actually
+has: renaming a Markdown file to `.pdf` is not a conversion, and saying so is
+part of the pack.
+
+Latte treats that folder as a **catalog, not a database**. It lists the files
+with their format, size and date, and offers three explicit actions: open with
+the system application, show in the file manager, and save a copy elsewhere.
+It does not version them, does not edit them, does not convert them and never
+claims a binary was reviewed.
+
+The safety rules are the boring kind, and they are tested:
+
+- Names are validated before touching the disk (no separators, no traversal, no
+  hidden files, no Windows reserved names, no trailing space or dot) and only a
+  closed list of deliverable extensions is served.
+- The folder must be a real directory and each file a real file: symlinks,
+  junctions and hard links are refused, `realpath` is compared, and a work that
+  points at a linked client folder is treated exactly the same.
+- **HTML asks first.** It opens in the external application, never inside a
+  Latte window, and only after a native confirmation that says why.
+- A copy never replaces: it must keep the original extension and is written
+  with exclusive creation, so an existing file at the destination is an error
+  with a name, not a silent overwrite.
 
 ### Team: roles with their own conversation
 

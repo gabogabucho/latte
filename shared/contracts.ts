@@ -109,6 +109,8 @@ export interface HandoffRequest { fileName: string; roleId: string; roleName: st
 export interface AgentSkill { id: string; name: string; summary: string; enabled: boolean }
 
 export interface FolderEntries { subfolders: string[]; otherFiles: string[]; truncated: boolean }
+export interface DeliverableFile { fileName: string; extension: string; bytes: number; modifiedAt: string }
+export interface DeliverableListing { files: DeliverableFile[]; truncated: boolean }
 
 export interface UntrackedFile { fileName: string; title: string; kind: DocumentKind; bytes: number; modifiedAt: string | null; /** Stages the agent proposed in the file; empty when it proposed none. */ funnelStages: FunnelStage[] }
 
@@ -128,6 +130,35 @@ export interface RuntimeStatus { provider: Provider; available: boolean; detail:
 export interface MemoryResult { available: boolean; text: string }
 /** Read-only facts about this installation, shown in the Settings screen. */
 export interface AppInfo { dataDir: string; engine: string; engineReason: string; pack: string | null; packRoles: number }
+
+// --- Updates -----------------------------------------------------------------
+
+/**
+ * Where the update flow stands. `unsupported` is the honest state for a source
+ * checkout or a build without the updater: nothing is checked and nothing is
+ * promised.
+ */
+export type UpdatePhase = 'unsupported' | 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error';
+
+export interface UpdateState {
+  phase: UpdatePhase;
+  /** Version being offered, downloaded or ready. Null when there is nothing. */
+  version: string | null;
+  /** 0..100 while downloading; 0 otherwise. */
+  percent: number;
+  /** Reason for `unsupported` and `error`; empty for every other phase. */
+  message: string;
+}
+
+/**
+ * Result of asking to install. `unsaved` is a refusal, not a warning: the
+ * update never starts while a document has changes the user has not saved.
+ */
+export type InstallOutcome =
+  | { status: 'installing' }
+  | { status: 'unsaved' }
+  | { status: 'cancelled' }
+  | { status: 'not-ready' };
 
 // --- Structured chat (OpenCode runtime underneath, native Latte UI on top) ---
 
@@ -237,6 +268,10 @@ export interface LatteAPI {
   listUntrackedFiles(workId: string): Promise<UntrackedFile[]>;
   /** The rest of the work folder: subfolders and files Latte does not track. */
   listFolderEntries(workId: string): Promise<FolderEntries>;
+  listDeliverables(workId: string): Promise<DeliverableListing>;
+  openDeliverable(workId: string, fileName: string): Promise<void>;
+  revealDeliverable(workId: string, fileName: string): Promise<void>;
+  copyDeliverable(workId: string, fileName: string): Promise<string | null>;
   /** Opens this work's folder in the system file manager. */
   revealWorkFolder(workId: string): Promise<string>;
   /** Copies chosen files into this work's folder. Returns what landed there. */
@@ -341,5 +376,17 @@ export interface LatteAPI {
   /** Starts the runtime's own login (browser OAuth). Claude runs inside an embedded terminal session; Codex returns a URL. */
   startAccountLogin(runtime: 'claude' | 'codex', accountId: string): Promise<AccountLoginStart>;
   logoutAccount(runtime: 'claude' | 'codex', accountId: string): Promise<void>;
+  // Updates
+  /** Asks the update server whether there is a newer version. Never installs anything. */
+  checkForUpdate(): Promise<UpdateState>;
+  /** Downloads the offered version in the background. Work continues meanwhile. */
+  downloadUpdate(): Promise<UpdateState>;
+  /**
+   * Restarts and installs. Refused while a document has unsaved changes, and
+   * confirmed with a native dialog because it stops agents and terminals.
+   */
+  installUpdate(): Promise<InstallOutcome>;
+  /** Fires on every phase change, including the progress of a download. */
+  onUpdateState(callback: (state: UpdateState) => void): () => void;
 }
 declare global { interface Window { latte?: LatteAPI } }

@@ -157,6 +157,11 @@ export class TerminalManager {
     for (const id of [...this.sessions.keys()]) this.stop(id);
   }
 
+  /** Terminals a restart would kill. Used to warn before an update installs. */
+  liveCount(): number {
+    return this.sessions.size;
+  }
+
   private require(sessionId: string): LiveSession {
     const live = this.sessions.get(sessionId);
     if (!live) throw new NotFoundError('Agent session', sessionId);

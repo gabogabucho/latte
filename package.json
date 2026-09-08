@@ -4,10 +4,20 @@
   "private": true,
   "description": "Latte - An Agent Marketing Platform. Local-first desktop workspace for directing coding/marketing agents around brands and deliverables.",
   "license": "MIT",
+  "author": "Oh My Latte <hola@ohmylatte.app>",
+  "homepage": "https://ohmylatte.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ohmylatte/latte.git"
+  },
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "vite build",
+    "build:main": "node scripts/build-electron.mjs",
+    "build:desktop": "npm run build && npm run build:main",
+    "pack:win": "npm run build:desktop && electron-builder --win --publish never",
+    "release:win": "npm run build:desktop && electron-builder --win --publish always",
     "start": "node scripts/start.mjs",
     "dev:web": "vite",
     "dev:electron": "cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
@@ -15,7 +25,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit",
-    "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
+    "typecheck:web": "tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.web-tests.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:web",
     "smoke:opencode": "tsx scripts/smoke-opencode.ts",
     "smoke:desktop": "cross-env LATTE_SMOKE_EXIT_MS=15000 node scripts/dev.mjs"
@@ -23,6 +33,7 @@
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^1.41.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -41,6 +52,8 @@
     "@vitejs/plugin-react": "^5.0.0",
     "cross-env": "^10.1.0",
     "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vite": "^7.1.0",

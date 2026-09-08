@@ -41,6 +41,12 @@ export interface AgentHubDeps {
   transcripts?: TranscriptStore;
   /** Where per-member role prompts are written, so they can be cleaned up too. */
   promptDir?: string;
+  /**
+   * Working directory for the login terminals. A packaged app inherits its cwd
+   * from whatever launched it (a shortcut, the shell, Explorer), so the data
+   * directory is used instead: it always exists and belongs to Latte.
+   */
+  loginCwd?: string;
   env?: NodeJS.ProcessEnv;
   clock?: () => string;
 }
@@ -187,7 +193,7 @@ export class AgentHub {
       provider: runtime,
       executable: found.executable,
       args: runtime === 'claude' ? ['auth', 'login'] : ['login'],
-      cwd: process.cwd(),
+      cwd: this.deps.loginCwd ?? process.cwd(),
       extraEnv,
     });
     return {
@@ -423,6 +429,11 @@ export class AgentHub {
   shutdown(): void {
     this.sessions.clear();
     for (const adapter of this.adapters()) adapter.shutdown();
+  }
+
+  /** Conversations a restart would interrupt. Used to warn before an update installs. */
+  liveCount(): number {
+    return this.sessions.size;
   }
 
   /** Persist a runtime session id learned after start (Claude reveals it with its first reply). */

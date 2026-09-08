@@ -465,3 +465,31 @@ html,body,#root{height:100%;overflow:hidden}
 @media(max-width:1000px){.profiles-layout{grid-template-columns:180px minmax(0,1fr);gap:14px}.profile-editor{padding:16px}.document-metadata{padding:10px 14px}.profile-editor-heading{flex-wrap:wrap}}
 @media(max-width:720px){.profiles-layout{grid-template-columns:1fr}.profile-list{display:grid;grid-template-columns:1fr 1fr}.profiles-heading{flex-wrap:wrap}.metadata-save{flex-wrap:wrap}.explorer-body{max-height:400px}}
 @media(max-width:1100px){.agent-head .agent-title{display:none}.agent-mode-tabs{margin-left:0}}
+/* Aviso de actualización: informa y espera. Nunca tapa el trabajo ni empuja el layout. */
+.update-toast{position:fixed;right:20px;bottom:48px;z-index:60;width:340px;max-width:calc(100vw - 40px);background:var(--paper);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px;box-shadow:0 14px 34px rgba(40,37,31,.18);font-size:12px;line-height:1.65;animation:update-rise .22s ease-out}
+.update-toast.ready{border-left-color:#4c6146}
+.update-toast-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:6px}
+.update-toast-head strong{font-size:13px;letter-spacing:-.1px}
+.update-toast-head button{border:0;padding:2px;color:var(--muted)}
+.update-toast p{margin:0 0 10px;color:#4f483f}
+.update-toast p strong{color:#302c26}
+.update-blocked{color:#91462e}
+.update-progress{height:4px;border-radius:3px;background:#e8e1d6;overflow:hidden;margin-bottom:12px}
+.update-progress i{display:block;height:100%;background:var(--accent);transition:width .25s ease-out}
+.update-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.update-actions button{font-size:12px;padding:7px 12px}
+.update-actions .subtle{border:0;color:var(--muted);margin:0}
+@keyframes update-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media(max-width:720px){.update-toast{right:12px;left:12px;width:auto;bottom:44px}}
+/* Entregables: el mismo panel plegable que la carpeta, con las acciones al lado del archivo. */
+.deliverables{border-bottom:0}
+.doc-list .deliverables{border-top:1px solid var(--line)}
+.doc-list .deliverables .folder-body{max-height:196px}
+.deliverable-row{gap:6px}
+.deliverable-row>span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.deliverable-row>span strong{font:11px/1.45 'DM Sans',sans-serif;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.deliverable-row>span small{font-family:'DM Sans',sans-serif;font-size:10px;color:var(--muted);letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.deliverable-row .icon-button{padding:5px;color:#a8947a;flex-shrink:0}
+.deliverable-row .icon-button:hover:not(:disabled){color:var(--accent);background:#ffffff88}
+.deliverable-note{color:#4c6146;overflow-wrap:anywhere}
+.deliverables .stage-empty code{font-size:10px;background:#e6ded1;border-radius:3px;padding:1px 4px}

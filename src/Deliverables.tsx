@@ -1,0 +1,87 @@
+import { useEffect, useState } from 'react';
+import { ChevronDown, Copy, ExternalLink, FolderOpen, Package, RefreshCw } from 'lucide-react';
+import type { DeliverableListing } from '../shared/contracts';
+import { api, isDesktop } from './browser-api';
+
+// The day is enough to tell two versions of a deliverable apart in one line.
+const date = (value: string) => new Date(value).toLocaleDateString('es-AR', { dateStyle: 'short' });
+const size = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+/**
+ * What the client actually receives: the PDF, the deck, the spreadsheet, the
+ * self-contained HTML. They live in `entregables/` inside the work folder,
+ * which is where the agent is told to write them.
+ *
+ * Latte lists them and hands them over — open, show in the folder, copy
+ * somewhere else. It does not version them, does not edit them and never
+ * converts one format into another. A binary is opaque to a Markdown
+ * workspace, and promising otherwise would break on the first real delivery.
+ * Opening is always the human's decision, and HTML asks again before opening
+ * because it can run scripts.
+ */
+export function Deliverables({ workId }: { workId: string }) {
+  const [open, setOpen] = useState(false);
+  const [listing, setListing] = useState<DeliverableListing | null>(null);
+  const [error, setError] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState('');
+  const [refresh, setRefresh] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  // One readdir, so the count is honest even while the panel is closed.
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    setError('');
+    api.listDeliverables(workId)
+      .then(result => { if (live) setListing(result); })
+      .catch(e => { if (live) setError(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [workId, refresh]);
+
+  useEffect(() => { setOpen(false); setNote(''); }, [workId]);
+
+  if (!isDesktop) return null;
+  const files = listing?.files ?? [];
+
+  // The file may have been replaced or removed since the list was read; every
+  // action reports what actually happened instead of assuming it worked.
+  const act = async (fileName: string, run: () => Promise<void>) => {
+    setBusy(fileName);
+    setError('');
+    try { await run(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(''); }
+  };
+
+  return <section className={'folder-contents deliverables' + (open ? ' open' : '')} aria-label="Entregables del trabajo">
+    <header>
+      <button aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        <ChevronDown size={15} className={open ? 'rotated' : ''} />
+        Entregables <small>{loading && !listing ? '…' : files.length}</small>
+      </button>
+      {open && <button className="icon-button" aria-label="Actualizar entregables" disabled={loading} onClick={() => { setNote(''); setRefresh(n => n + 1); }}><RefreshCw size={12} /></button>}
+    </header>
+    {open && <div className="folder-body">
+      {error && <p role="alert" className="explorer-warning">{error}</p>}
+      {note && <p className="footnote deliverable-note">{note}</p>}
+      {files.length === 0 && !loading && !error && <p className="stage-empty">Todavía no hay entregables. Tu agente deja acá los archivos finales —PDF, DOCX, XLSX, presentaciones, imágenes, HTML— en la carpeta <code>entregables/</code> del trabajo.</p>}
+
+      {files.map(f => <div key={f.fileName} className="folder-row deliverable-row">
+        <Package size={14} />
+        <span title={f.fileName}>
+          <strong>{f.fileName}</strong>
+          <small>{f.extension.toUpperCase()} · {size(f.bytes)} · {date(f.modifiedAt)}</small>
+        </span>
+        <button className="icon-button" aria-label={`Abrir ${f.fileName}`} title="Abrir con la aplicación del sistema" disabled={busy === f.fileName} onClick={() => void act(f.fileName, () => api.openDeliverable(workId, f.fileName))}><ExternalLink size={13} /></button>
+        <button className="icon-button" aria-label={`Mostrar ${f.fileName} en la carpeta`} title="Mostrar en la carpeta" disabled={busy === f.fileName} onClick={() => void act(f.fileName, () => api.revealDeliverable(workId, f.fileName))}><FolderOpen size={13} /></button>
+        <button className="icon-button" aria-label={`Copiar ${f.fileName} a otra carpeta`} title="Guardar una copia en otra carpeta" disabled={busy === f.fileName} onClick={() => void act(f.fileName, async () => {
+          const target = await api.copyDeliverable(workId, f.fileName);
+          setNote(target ? `Copia guardada en ${target}. El original sigue en entregables/.` : '');
+        })}><Copy size={13} /></button>
+      </div>)}
+
+      {listing?.truncated && <p className="footnote">La carpeta tiene más entregables de los que entran en esta lista; se muestran los primeros.</p>}
+      {files.length > 0 && <p className="footnote">Latte no versiona ni edita estos archivos: los lista y te los entrega. Lo que cambia adentro lo maneja el agente o la aplicación con la que los abrís.</p>}
+    </div>}
+  </section>;
+}

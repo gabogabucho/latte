@@ -38,6 +38,9 @@ describe('explicit browser preview', () => {
     expect((await api.runtimeStatus()).every(r => !r.available)).toBe(true);
     await expect(api.startAgent('demo-work', 'claude')).rejects.toThrow('escritorio');
     expect((await api.readMemory('demo')).available).toBe(false);
+    // No disk in a browser tab: no deliverables to list, and no file to open.
+    expect((await api.listDeliverables('demo-work')).files).toEqual([]);
+    await expect(api.openDeliverable('demo-work', 'propuesta.pdf')).rejects.toThrow('escritorio');
   });
 });
 

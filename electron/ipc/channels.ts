@@ -27,6 +27,10 @@ export const API_METHODS = [
   'exportDocument',
   'listUntrackedFiles',
   'listFolderEntries',
+  'listDeliverables',
+  'openDeliverable',
+  'revealDeliverable',
+  'copyDeliverable',
   'revealWorkFolder',
   'importFiles',
   'listHandoffs',
@@ -116,6 +120,10 @@ export const API_ARITY: Record<ApiMethod, number> = {
   exportDocument: 1,
   listUntrackedFiles: 1,
   listFolderEntries: 1,
+  listDeliverables: 1,
+  openDeliverable: 2,
+  revealDeliverable: 2,
+  copyDeliverable: 2,
   revealWorkFolder: 1,
   importFiles: 1,
   listHandoffs: 1,
@@ -178,6 +186,18 @@ export const API_ARITY: Record<ApiMethod, number> = {
 export const CHANNEL_PREFIX = 'latte:';
 export const AGENT_EVENT_CHANNEL = 'latte:agent-event';
 export const CHAT_EVENT_CHANNEL = 'latte:chat-event';
+
+/**
+ * Updates live outside API_METHODS on purpose: they are not backend
+ * operations. They need the app itself (quit, install, native dialogs), so
+ * they are their own small surface with the same envelope and the same sender
+ * check as everything else. The preload repeats these names literally.
+ */
+export const UPDATE_STATE_CHANNEL = 'latte:update-state';
+export const UPDATE_CHECK_CHANNEL = 'latte:update-check';
+export const UPDATE_DOWNLOAD_CHANNEL = 'latte:update-download';
+export const UPDATE_INSTALL_CHANNEL = 'latte:update-install';
+export const UPDATE_CHANNELS = [UPDATE_CHECK_CHANNEL, UPDATE_DOWNLOAD_CHANNEL, UPDATE_INSTALL_CHANNEL] as const;
 
 export function channelFor(method: ApiMethod): string {
   return `${CHANNEL_PREFIX}${method}`;
