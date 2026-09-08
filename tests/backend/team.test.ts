@@ -187,20 +187,28 @@ describe('Team through the service', () => {
     await fake.close();
   });
 
-  it('keeps the folder grant off until asked, per work, and survives a reopen', async () => {
+  it('keeps every grant off until asked, per work, and reads what older versions wrote', async () => {
     const brand = await b.service.createBrand('Casa');
     const uno = await b.service.createWork(brand.id, 'Uno');
     const dos = await b.service.createWork(brand.id, 'Dos');
 
-    expect(await b.service.getFolderTrust(uno.id)).toBe(false);
-    expect(await b.service.setFolderTrust(uno.id, true)).toBe(true);
-    expect(await b.service.getFolderTrust(uno.id)).toBe(true);
+    expect(await b.service.getWorkPermissions(uno.id)).toBe('ask');
+    expect(await b.service.setWorkPermissions(uno.id, 'folder')).toBe('folder');
+    expect(await b.service.getWorkPermissions(uno.id)).toBe('folder');
     // A grant is about one folder. The next work starts closed, as it should.
-    expect(await b.service.getFolderTrust(dos.id)).toBe(false);
+    expect(await b.service.getWorkPermissions(dos.id)).toBe('ask');
 
-    expect(await b.service.setFolderTrust(uno.id, false)).toBe(false);
-    expect(await b.service.getFolderTrust(uno.id)).toBe(false);
-    await expect(b.service.getFolderTrust('wrk_nope')).rejects.toThrow();
+    expect(await b.service.setWorkPermissions(uno.id, 'auto')).toBe('auto');
+    expect(b.service.autoApprovesChat('mem_nope')).toBe(false);
+
+    expect(await b.service.setWorkPermissions(uno.id, 'ask')).toBe('ask');
+    expect(await b.service.getWorkPermissions(uno.id)).toBe('ask');
+    await expect(b.service.getWorkPermissions('wrk_nope')).rejects.toThrow();
+    await expect(b.service.setWorkPermissions(uno.id, 'todo' as never)).rejects.toThrow();
+
+    // A database written before the mode existed said `1` for the folder grant.
+    b.repo.setMeta('trust-folder:' + dos.id, '1');
+    expect(await b.service.getWorkPermissions(dos.id)).toBe('folder');
   });
 
   it('changes the model of one conversation, resuming it, and leaves a paused one for later', async () => {

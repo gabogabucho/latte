@@ -505,3 +505,14 @@ html,body,#root{height:100%;overflow:hidden}
 .terminal-console .settings-lead{margin-bottom:16px}
 .terminal-console .terminal-stack{min-height:0}
 .terminal-console .agent-idle{padding:22px 10px}
+/* Permisos del trabajo: tres niveles, y el último se ve distinto porque lo es. */
+.folder-trust.mode-folder{border-color:rgba(120,180,140,.4)}
+.folder-trust.mode-folder>summary{color:#8fbf9e}
+.folder-trust.mode-auto{border-color:rgba(200,140,80,.55);background:rgba(200,140,80,.07)}
+.folder-trust.mode-auto>summary{color:#d9a066}
+.permission-modes{display:flex;flex-direction:column;gap:5px;padding:4px 8px 8px}
+.permission-modes button{display:block;width:100%;text-align:left;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:none}
+.permission-modes button.selected{border-color:var(--accent);background:rgba(200,140,80,.1)}
+.permission-modes strong{display:block;font-size:11px;font-weight:550}
+.permission-modes small{display:block;font-size:10px;line-height:1.6;color:var(--muted);margin-top:3px}
+.permission-warning{margin:0 8px 8px;font-size:10px;line-height:1.6;color:#d99a6c}

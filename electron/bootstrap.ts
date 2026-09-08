@@ -93,13 +93,37 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   const terminal = new TerminalManager({ loadPty: options.loadPty ?? loadPty, emit: options.emit, env, platform });
   const detector = new RuntimeDetector({ runner, terminalAvailability: () => terminal.availability(), platform, env });
 
+  /**
+   * Automatic mode: Latte answers the permission request instead of the human.
+   *
+   * The reply is always "once", never "always". A runtime that is told
+   * "always" writes the grant down — Claude Code puts it in `.claude/` and
+   * keeps it forever — so turning the mode off would leave permissions granted
+   * behind the user's back. Answering once means every request keeps coming
+   * here, and the moment the work goes back to `ask` the next one reaches the
+   * human again.
+   *
+   * The request is not forwarded to the interface: a card that asks nothing is
+   * noise. What the agent actually ran is already in the conversation, tool by
+   * tool, and the banner says the mode is on.
+   */
+  const emitChat = (event: ChatEvent): void => {
+    const forward = options.emitChat ?? (() => {});
+    if (event.type !== 'permission' || !service.autoApprovesChat(event.chatId)) { forward(event); return; }
+    void hub.replyPermission(event.chatId, event.request.id, 'once').catch((error: unknown) => {
+      // The conversation may have ended between the request and the answer.
+      options.log?.(`[latte] auto-approval failed: ${error instanceof Error ? error.message : String(error)}`);
+      forward(event);
+    });
+  };
+
   const chat = new ChatManager({
     resolveExecutable: async () => {
       const found = await detector.resolve('opencode');
       return found ? { executable: found.executable, version: found.version } : null;
     },
     serverCwd: paths.root,
-    emit: options.emitChat ?? (() => {}),
+    emit: (event) => emitChat(event),
     env,
     platform,
     endpoint: options.chatEndpoint,
@@ -118,7 +142,7 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
       const found = await detector.resolve('claude');
       return found ? { executable: found.executable, version: found.version } : null;
     },
-    emit: options.emitChat ?? (() => {}),
+    emit: (event) => emitChat(event),
     accountEnv: (accountId) => accounts.envFor('claude', accountId),
     onSessionId: (chatId, sessionId) => hub.rememberSession(chatId, sessionId),
     promptDir: path.join(paths.root, 'prompts'),
@@ -132,7 +156,7 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
       const found = await detector.resolve('codex');
       return found ? { executable: found.executable, version: found.version } : null;
     },
-    emit: options.emitChat ?? (() => {}),
+    emit: (event) => emitChat(event),
     accountEnv: (accountId) => accounts.envFor('codex', accountId),
     serverCwd: paths.root,
     env,

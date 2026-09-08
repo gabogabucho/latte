@@ -277,6 +277,43 @@ describe('Model catalog through the service', () => {
   });
 });
 
+describe('Automatic mode', () => {
+  it('answers the permission itself, once, and never shows a card that asks nothing', async () => {
+    const fake = await startFakeOpenCode();
+    const chatEvents: ChatEvent[] = [];
+    const b = await makeBackend({ chatEndpoint: fake.endpoint, emitChat: (e) => chatEvents.push(e) });
+    try {
+      const brand = await b.service.createBrand('Casa');
+      const work = await b.service.createWork(brand.id, 'Trabajo');
+      const member = await b.service.addTeamMember(work.id, 'strategist');
+
+      // Asking is the default: the request reaches the interface and waits there.
+      await b.service.sendChat(member.id, 'Hola');
+      await waitFor(() => chatEvents.some((e) => e.type === 'permission'));
+      expect(fake.requests.some((r) => r.path === '/permission/per_1/reply')).toBe(false);
+      await b.service.replyPermission(member.id, 'per_1', 'once');
+
+      // Automatic: Latte answers, and the card never appears.
+      await b.service.setWorkPermissions(work.id, 'auto');
+      chatEvents.length = 0;
+      fake.requests.length = 0;
+      await b.service.sendChat(member.id, 'Otra vez');
+      await waitFor(() => fake.requests.some((r) => r.path === '/permission/per_1/reply'));
+      // "once", never "always": no runtime is left holding a grant of its own.
+      expect(fake.requests.find((r) => r.path === '/permission/per_1/reply')?.body).toEqual({ reply: 'once' });
+      expect(chatEvents.some((e) => e.type === 'permission')).toBe(false);
+
+      // Back to asking takes effect on the next request, with nothing to undo.
+      await b.service.setWorkPermissions(work.id, 'ask');
+      chatEvents.length = 0;
+      fake.requests.length = 0;
+      await b.service.sendChat(member.id, 'Y otra');
+      await waitFor(() => chatEvents.some((e) => e.type === 'permission'));
+      expect(fake.requests.some((r) => r.path === '/permission/per_1/reply')).toBe(false);
+    } finally { b.cleanup(); await fake.close(); }
+  });
+});
+
 describe('AgentHub through the service', () => {
   let fake: FakeOpenCode;
   let b: TestBackend;

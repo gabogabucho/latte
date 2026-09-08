@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ArrowUpRight, Bookmark, Check, ChevronDown, Circle, Copy, FileText, Folder, LoaderCircle, MessageSquare, Minus, PanelLeftClose, PanelLeftOpen, Plus, Save, Settings2, Square, TerminalSquare, X } from 'lucide-react';
-import type { Brand, Work, Decision, RuntimeStatus, AgentSession, Provider, ChatSession, ChatRuntimeStatus, PrimaryAgent, AgentRuntimeInfo, AgentRole, TeamMember, TeamMemberOptions, WorkDocument, DocumentKind, UntrackedFile, HandoffRequest } from '../shared/contracts';
+import type { Brand, Work, Decision, WorkPermissionMode, RuntimeStatus, AgentSession, Provider, ChatSession, ChatRuntimeStatus, PrimaryAgent, AgentRuntimeInfo, AgentRole, TeamMember, TeamMemberOptions, WorkDocument, DocumentKind, UntrackedFile, HandoffRequest } from '../shared/contracts';
 import { api, chatStore, isDesktop } from './browser-api';
 import { DocumentsView, NewDocumentDialog } from './DocumentsView';
 import { hasMetadataDrafts } from './DocumentMetadata';
@@ -74,7 +74,7 @@ export function App() {
   useEffect(() => { const onResize = () => setAgentWidth(w => clampAgentWidth(w)); window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize); }, []);
   // Team: live sessions by chat id (= member id), the persisted roster of the current work, and the selected member per work.
   const [chats, setChats] = useState<Record<string, ChatSession>>({}), [startingChat, setStartingChat] = useState(false);
-  const [trustedFolder, setTrustedFolder] = useState(false);
+  const [permissions, setPermissions] = useState<WorkPermissionMode>('ask');
   const [team, setTeam] = useState<TeamMember[]>([]), [roles, setRoles] = useState<AgentRole[]>([]), [selectedMembers, setSelectedMembers] = useState<Record<string, string>>({});
   const [chatRuntime, setChatRuntime] = useState<ChatRuntimeStatus | null>(null);
   const [primary, setPrimary] = useState<PrimaryAgent | null>(null), [agentRuntimes, setAgentRuntimes] = useState<AgentRuntimeInfo[]>([]);
@@ -162,7 +162,7 @@ export function App() {
     ...(chatRuntime?.available ? [{ key: 'opencode', label: `OpenCode · ${chatRuntime.defaultModel ?? 'modelo por defecto'}`, runtime: 'opencode' as const, accountId: null }] : []),
   ].filter(c => !(c.runtime === primaryRuntime && (c.runtime === 'opencode' || c.accountId === (primary?.accountId ?? 'system'))));
   useEffect(() => { void api.listBrands().then(list => { setBrands(list); if (list[0]) { setBrand(list[0]); setContext(list[0].context); } }).catch(e => setError(displayError(e))); void api.runtimeStatus().then(setRuntimes).catch(e => setError(displayError(e))); void api.listRoles().then(setRoles).catch(e => setError(displayError(e))); void refreshChatStatus(); }, []);
-  useEffect(() => { if (!work) { setTeam([]); setTrustedFolder(false); return; } void loadTeam(work.id).catch(e => setError(displayError(e))); void api.getFolderTrust(work.id).then(setTrustedFolder).catch(() => setTrustedFolder(false)); }, [work?.id]);
+  useEffect(() => { if (!work) { setTeam([]); setPermissions('ask'); return; } void loadTeam(work.id).catch(e => setError(displayError(e))); void api.getWorkPermissions(work.id).then(setPermissions).catch(() => setPermissions('ask')); }, [work?.id]);
   useEffect(() => { if (!brand) return; const n = ++generation.current; setWork(null); setWorks([]); setDecisions([]); setDocuments([]); void api.listWorks(brand.id).then(list => { if (n !== generation.current) return; setWorks(list); if (list[0]) setWork(list[0]); }).catch(e => setError(displayError(e))); }, [brand?.id]);
   useEffect(() => { if (!work) { setDocuments([]); setDecisions([]); setUntracked([]); setHandoffs([]); return; } let active = true; void Promise.all([api.listDocuments(work.id), api.listDecisions(work.id), api.listUntrackedFiles(work.id).catch(() => []), api.listHandoffs(work.id).catch(() => [])]).then(([docs, d, untrackedFiles, asks]) => { if (active) { setDocuments(docs); setDecisions(d); setUntracked(untrackedFiles); setHandoffs(asks); } }).catch(e => setError(displayError(e))); return () => { active = false; }; }, [work?.id]);
   /**
@@ -287,11 +287,15 @@ export function App() {
    * Claude members are reopened right here: pause and resume keeps their
    * history. One that is mid-answer is left alone and named.
    */
-  const trustFolder = (next: boolean) => {
+  const changePermissions = (next: WorkPermissionMode) => {
     if (!work) return;
     void run(async () => {
-      await api.setFolderTrust(work.id, next);
-      setTrustedFolder(next);
+      const previous = permissions;
+      await api.setWorkPermissions(work.id, next);
+      setPermissions(next);
+      // `auto` is answered by Latte as requests arrive, so it needs no restart.
+      // The folder grant is a start-time flag of the runtime, so it does.
+      if (next === 'auto' || previous === 'auto') { setNotice(next === 'auto' ? 'Modo automático activado para este trabajo. Latte aprueba cada pedido sin preguntarte.' : 'Modo automático apagado. El próximo pedido vuelve a preguntarte.'); return; }
       const claudeChats = Object.values(chats).filter(c => c.workId === work.id && c.provider === 'claude');
       const busyNames = claudeChats.filter(c => chatStore.get(c.id).status !== 'idle').map(c => c.roleName);
       const idle = claudeChats.filter(c => chatStore.get(c.id).status === 'idle');
@@ -394,7 +398,7 @@ export function App() {
       <div className="document-footer"><span><FileText size={13} />{work ? `${documents.length} documento${documents.length === 1 ? '' : 's'} en este trabajo` : 'Un espacio para tu criterio'}</span><span>{work ? date(work.updatedAt) : 'An Agent Marketing Platform'}</span></div>
     </main>
     <aside className="agent-panel">{focusChat && (error || notice) && <div role={error ? 'alert' : 'status'} className={'message ' + (error ? 'error' : '')}><span>{error || notice}</span><button aria-label="Cerrar aviso" onClick={() => { setError(''); setNotice(''); }}><X size={16} /></button></div>}<button type="button" className={'panel-resizer' + (dragging ? ' dragging' : '')} aria-label="Ajustar ancho del panel del agente" title="Arrastrá para cambiar el ancho" onPointerDown={startResize} />
-      <TeamPanel work={work} team={team} chats={chats} selectedId={selectedMemberId} roles={roles} primaryLabel={primaryLabel} primaryDetail={primaryDetail} primaryReady={primaryReady} checking={checkingAgents} choices={runtimeChoices} busy={busy || startingChat} isDesktop={isDesktop} onSelect={selectMember} onAdd={addMember} onOpen={openMember} onPause={pauseMember} onFinish={finishMember} onRestart={restartMember} onRemove={removeMember} onModel={setMemberModel} handoffs={handoffs} onAcceptHandoff={acceptHandoff} onDismissHandoff={dismissHandoff} onSaveAsDocument={saveAnswerAsDocument} untracked={untracked.map(f => f.fileName)} onAdoptFile={fileName => void trackFile(fileName)} primaryRuntime={primaryRuntime} trustedFolder={trustedFolder} onTrustFolder={trustFolder} onProviders={() => setSettings('agents')} onRecheck={() => void refreshChatStatus()} onError={setError} />
+      <TeamPanel work={work} team={team} chats={chats} selectedId={selectedMemberId} roles={roles} primaryLabel={primaryLabel} primaryDetail={primaryDetail} primaryReady={primaryReady} checking={checkingAgents} choices={runtimeChoices} busy={busy || startingChat} isDesktop={isDesktop} onSelect={selectMember} onAdd={addMember} onOpen={openMember} onPause={pauseMember} onFinish={finishMember} onRestart={restartMember} onRemove={removeMember} onModel={setMemberModel} handoffs={handoffs} onAcceptHandoff={acceptHandoff} onDismissHandoff={dismissHandoff} onSaveAsDocument={saveAnswerAsDocument} untracked={untracked.map(f => f.fileName)} onAdoptFile={fileName => void trackFile(fileName)} primaryRuntime={primaryRuntime} permissions={permissions} onPermissions={changePermissions} onProviders={() => setSettings('agents')} onRecheck={() => void refreshChatStatus()} onError={setError} />
       <details className="active-context">
         <summary><Bookmark size={12} />Contexto<span>{[brand?.context ? 'marca' : null, work ? 'trabajo' : null, decisions.length ? `${decisions.length} decisiones` : null].filter(Boolean).join(' · ') || 'sin contexto'}</span></summary>
         <div className="active-context-body">

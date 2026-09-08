@@ -11,6 +11,7 @@ import type {
   FolderEntries,
   FunnelStage,
   AgentModelList,
+  WorkPermissionMode,
   MemberModelChange,
   AgentRuntimeInfo,
   AgentSession,
@@ -913,8 +914,19 @@ export class LatteService implements BackendApi {
     return proposal.stages;
   }
 
+  /**
+   * Reads the stored mode, understanding what older versions wrote: the grant
+   * used to be a boolean, and `1` meant what `folder` means now.
+   */
+  private workPermissions(workId: string): WorkPermissionMode {
+    const raw = this.deps.repo.getMeta(FOLDER_TRUST_KEY + workId);
+    if (raw === 'auto') return 'auto';
+    if (raw === 'folder' || raw === '1') return 'folder';
+    return 'ask';
+  }
+
   private folderTrust(workId: string): boolean {
-    return this.deps.repo.getMeta(FOLDER_TRUST_KEY + workId) === '1';
+    return this.workPermissions(workId) !== 'ask';
   }
 
   /**
@@ -922,18 +934,29 @@ export class LatteService implements BackendApi {
    * asking every time. Off by default: the human grants it, per work, and it
    * covers that folder only. Everything else keeps asking.
    */
-  async getFolderTrust(workId: string): Promise<boolean> {
+  async getWorkPermissions(workId: string): Promise<WorkPermissionMode> {
     const id = requireId(workId, 'workId');
     this.deps.repo.getWork(id);
-    return this.folderTrust(id);
+    return this.workPermissions(id);
   }
 
-  async setFolderTrust(workId: string, trusted: boolean): Promise<boolean> {
+  /**
+   * Grants are per work and never global: the folder you opened is the only
+   * thing they cover. `auto` takes effect on the next request; `folder` is a
+   * start-time flag of the runtime, so the UI reopens the conversations.
+   */
+  async setWorkPermissions(workId: string, mode: WorkPermissionMode): Promise<WorkPermissionMode> {
     const id = requireId(workId, 'workId');
     this.deps.repo.getWork(id);
-    if (typeof trusted !== 'boolean') throw new TypeError('Invalid folder trust value');
-    this.deps.repo.setMeta(FOLDER_TRUST_KEY + id, trusted ? '1' : '0');
-    return trusted;
+    if (mode !== 'ask' && mode !== 'folder' && mode !== 'auto') throw new ValidationError('Modo de permisos inválido');
+    this.deps.repo.setMeta(FOLDER_TRUST_KEY + id, mode);
+    return mode;
+  }
+
+  /** Used by the event path to decide whether Latte answers a request itself. */
+  autoApprovesChat(chatId: string): boolean {
+    const member = this.deps.repo.findMember(chatId);
+    return member ? this.workPermissions(member.workId) === 'auto' : false;
   }
 
   async listChatMessages(chatId: string): Promise<ChatMessage[]> {

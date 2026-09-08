@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Check, CircleCheck, FolderCheck, FolderLock, LoaderCircle, MessageSquare, MessageSquarePlus, Pause, Play, Plug, Plus, Settings2, Trash2, UserPlus, X } from 'lucide-react';
-import type { AgentModelList, AgentRole, ChatRuntime, ChatSession, HandoffRequest, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
+import { Check, CircleCheck, FolderCheck, FolderLock, LoaderCircle, MessageSquare, MessageSquarePlus, Pause, Play, Plug, Plus, Settings2, Trash2, UserPlus, X, Zap } from 'lucide-react';
+import type { AgentModelList, AgentRole, WorkPermissionMode, ChatRuntime, ChatSession, HandoffRequest, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
 import { api, chatStore } from './browser-api';
 import { ChatPane } from './ChatPane';
 import { useChatState } from './chat-store';
@@ -46,9 +46,9 @@ export interface TeamPanelProps {
   /** Files the agent left in the folder that are not documents yet. */
   untracked: string[];
   onAdoptFile: (fileName: string) => void;
-  /** The team may read and write inside this work folder without asking each time. */
-  trustedFolder: boolean;
-  onTrustFolder: (trusted: boolean) => void;
+  /** How much this work's team may do without asking. */
+  permissions: WorkPermissionMode;
+  onPermissions: (mode: WorkPermissionMode) => void;
 }
 
 const RUNTIME_SHORT: Record<ChatRuntime, string> = { opencode: 'OpenCode', claude: 'Claude', codex: 'Codex' };
@@ -93,7 +93,7 @@ export function TeamPanel(props: TeamPanelProps) {
           <button className="icon-button" aria-label="Quitar del equipo" title="Quitar del equipo" disabled={busy} onClick={() => { if (window.confirm(`¿Quitar a ${selected.roleName} del equipo? Su conversación deja de estar disponible desde Latte.`)) void props.onRemove(selected.id); }}><Trash2 size={13} /></button>
         </div>}
       </div>
-      {(props.primaryRuntime === 'claude' || team.some(m => m.runtime === 'claude')) && <FolderTrust trusted={props.trustedFolder} busy={busy} onChange={props.onTrustFolder} />}
+      {<WorkPermissions mode={props.permissions} busy={busy} hasClaude={props.primaryRuntime === 'claude' || team.some(m => m.runtime === 'claude')} onChange={props.onPermissions} />}
     </>}
     {firstTeam && <RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} checking={props.checking} busy={busy} isDesktop={isDesktop} canCancel={team.length > 0} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} />}
     {adding && !firstTeam && <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget && !busy) setAdding(false); }}>
@@ -119,17 +119,56 @@ export function TeamPanel(props: TeamPanelProps) {
  * It stays one line tall on purpose: the conversation below needs the height
  * more than this does.
  */
-function FolderTrust({ trusted, busy, onChange }: { trusted: boolean; busy: boolean; onChange: (v: boolean) => void }) {
-  return <details className={'folder-trust' + (trusted ? ' granted' : '')}>
+const PERMISSION_LABEL: Record<WorkPermissionMode, string> = {
+  ask: 'Piden permiso por cada cosa',
+  folder: 'Escriben en esta carpeta sin preguntar',
+  auto: 'Automático: Latte aprueba por vos',
+};
+
+/**
+ * How much this work's team may do without stopping to ask.
+ *
+ * Three levels, because the middle one is the honest default for writing
+ * documents and the last one is a real handover of judgement: in `auto` Latte
+ * answers every request itself. It answers *once* each time, never "always",
+ * so nothing is written into a runtime's own permission file and going back to
+ * asking takes effect on the very next request.
+ */
+function WorkPermissions({ mode, busy, hasClaude, onChange }: { mode: WorkPermissionMode; busy: boolean; hasClaude: boolean; onChange: (mode: WorkPermissionMode) => void }) {
+  const pick = (next: WorkPermissionMode) => {
+    if (next === mode) return;
+    const warning = [
+      'Modo automático para este trabajo.',
+      'Latte va a aprobar cada pedido del agente sin preguntarte: archivos, comandos, web y herramientas.',
+      hasClaude ? 'Claude Code no tiene sandbox: un comando puede tocar cualquier archivo al que tenga permiso tu usuario, dentro o fuera de la carpeta del trabajo. Codex sí queda limitado a la carpeta.' : '',
+      'Se apaga cuando quieras y el pedido siguiente vuelve a preguntarte. ¿Activar?',
+    ].filter(Boolean).join('\n\n');
+    if (next === 'auto' && !window.confirm(warning)) return;
+    onChange(next);
+  };
+  return <details className={'folder-trust mode-' + mode}>
     <summary>
-      {trusted ? <FolderCheck size={13} /> : <FolderLock size={13} />}
-      <span>{trusted ? 'Escriben en esta carpeta sin preguntar' : 'Piden permiso por cada archivo'}</span>
+      {mode === 'ask' ? <FolderLock size={13} /> : mode === 'folder' ? <FolderCheck size={13} /> : <Zap size={13} />}
+      <span>{PERMISSION_LABEL[mode]}</span>
     </summary>
-    <p>{trusted
-      ? 'Leen y escriben en la carpeta de este trabajo sin preguntar. Fuera de la carpeta, y para comandos, web o herramientas MCP, siguen preguntando.'
-      : 'Claude Code pide permiso por cada archivo que escribe: son tres o cuatro cortes por tarea. Podés permitirlo de una vez, solo para esta carpeta.'}</p>
-    <p className="folder-trust-note">Aplica a las conversaciones que abras desde ahora.</p>
-    <button className="subtle" disabled={busy} onClick={() => onChange(!trusted)}>{trusted ? 'Volver a preguntar siempre' : 'Permitir en esta carpeta'}</button>
+    <div className="permission-modes" role="radiogroup" aria-label="Permisos de este trabajo">
+      {(['ask', 'folder', 'auto'] as WorkPermissionMode[]).map(value => <button
+        key={value}
+        role="radio"
+        aria-checked={mode === value}
+        className={mode === value ? 'selected' : ''}
+        disabled={busy}
+        onClick={() => pick(value)}
+      >
+        <strong>{PERMISSION_LABEL[value]}</strong>
+        <small>{value === 'ask'
+          ? 'Cada archivo y cada comando te pregunta. Es el modo seguro y el más lento.'
+          : value === 'folder'
+            ? 'Leen y escriben en la carpeta de este trabajo sin preguntar. Comandos, web y herramientas siguen preguntando. Aplica a las conversaciones que abras desde ahora.'
+            : 'Latte responde que sí a todo lo que pida el agente de este trabajo, sin preguntarte. Responde una vez por pedido: no le deja permisos guardados a ningún runtime, y apagarlo vuelve a preguntar en el pedido siguiente.'}</small>
+      </button>)}
+    </div>
+    {mode === 'auto' && hasClaude && <p className="permission-warning">Claude Code no tiene sandbox: lo que apruebe Latte puede tocar cualquier archivo al que tenga permiso tu usuario. Codex queda limitado a la carpeta del trabajo.</p>}
   </details>;
 }
 
