@@ -18,6 +18,8 @@ export interface TeamPanelProps {
   primaryLabel: string;
   primaryDetail: string;
   primaryReady: boolean;
+  /** The runtimes are still being detected: the list of agents is not empty, it is unknown. */
+  checking: boolean;
   /** Runtime the primary agent uses; the folder grant only changes anything for Claude. */
   primaryRuntime: ChatRuntime;
   choices: RuntimeChoice[];
@@ -89,11 +91,11 @@ export function TeamPanel(props: TeamPanelProps) {
       </div>
       {(props.primaryRuntime === 'claude' || team.some(m => m.runtime === 'claude')) && <FolderTrust trusted={props.trustedFolder} busy={busy} onChange={props.onTrustFolder} />}
     </>}
-    {firstTeam && <RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} busy={busy} isDesktop={isDesktop} canCancel={team.length > 0} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} />}
+    {firstTeam && <RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} checking={props.checking} busy={busy} isDesktop={isDesktop} canCancel={team.length > 0} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} />}
     {adding && !firstTeam && <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget && !busy) setAdding(false); }}>
       <section role="dialog" aria-modal="true" aria-labelledby="add-member-title" className="modal">
         <div className="modal-head"><div><div className="document-kicker">TU ESTUDIO, CON ORDEN</div><h2 id="add-member-title">Un miembro nuevo.</h2></div><button className="modal-close" aria-label="Cerrar" onClick={() => setAdding(false)}><X size={20} /></button></div>
-        <div className="modal-body"><RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} busy={busy} isDesktop={isDesktop} canCancel={false} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} /></div>
+        <div className="modal-body"><RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} checking={props.checking} busy={busy} isDesktop={isDesktop} canCancel={false} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} /></div>
       </section></div>}
     {!work && <div className="agent-idle"><div className="agent-symbol"><MessageSquare size={27} /></div><h3>Un equipo listo<br />para trabajar.</h3><p className="footnote">Elegí o creá un trabajo para armar su equipo.</p></div>}
     {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} onSaveAsDocument={props.onSaveAsDocument} untracked={props.untracked} onAdoptFile={props.onAdoptFile} /> : <ResumeCard member={selected} busy={busy} onOpen={() => props.onOpen(selected.id)} onRestart={() => props.onRestart(selected.id)} onRemove={() => props.onRemove(selected.id)} />)}
@@ -163,7 +165,7 @@ function ResumeCard({ member, busy, onOpen, onRestart, onRemove }: { member: Tea
   </div>;
 }
 
-function RolePicker({ roles, choices, primaryLabel, primaryDetail, primaryReady, busy, isDesktop, canCancel, onCancel, onAdd, onProviders, onRecheck }: { roles: AgentRole[]; choices: RuntimeChoice[]; primaryLabel: string; primaryDetail: string; primaryReady: boolean; busy: boolean; isDesktop: boolean; canCancel: boolean; onCancel: () => void; onAdd: (roleId: string, options: TeamMemberOptions | null) => Promise<void>; onProviders: () => void; onRecheck: () => void }) {
+function RolePicker({ roles, choices, primaryLabel, primaryDetail, primaryReady, checking, busy, isDesktop, canCancel, onCancel, onAdd, onProviders, onRecheck }: { roles: AgentRole[]; choices: RuntimeChoice[]; primaryLabel: string; primaryDetail: string; primaryReady: boolean; checking: boolean; busy: boolean; isDesktop: boolean; canCancel: boolean; onCancel: () => void; onAdd: (roleId: string, options: TeamMemberOptions | null) => Promise<void>; onProviders: () => void; onRecheck: () => void }) {
   const [roleId, setRoleId] = useState(roles[0]?.id ?? 'assistant');
   const [choice, setChoice] = useState('primary');
   const [opening, setOpening] = useState(false);
@@ -181,15 +183,24 @@ function RolePicker({ roles, choices, primaryLabel, primaryDetail, primaryReady,
       {roles.map(role => <button key={role.id} role="radio" aria-checked={roleId === role.id} className={'role-card' + (roleId === role.id ? ' selected' : '')} onClick={() => setRoleId(role.id)}><span className="team-avatar" data-role={role.id} aria-hidden="true">{role.initial}</span><span><strong>{role.name}</strong><small>{role.summary}</small></span>{roleId === role.id && <Check size={14} />}</button>)}
     </div>
     <label className="field-label" htmlFor="member-runtime">CON QUÉ AGENTE</label>
-    <select id="member-runtime" value={choice} disabled={busy || opening} onChange={e => setChoice(e.target.value)}>
-      <option value="primary">Agente principal · {primaryLabel}</option>
-      {choices.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+    {/*
+      Detecting the runtimes means running their CLIs, and that costs seconds.
+      Until it answers, the list is not empty: it is unknown. Saying so beats a
+      picker with one option that looks broken.
+    */}
+    <select id="member-runtime" value={choice} disabled={busy || opening || checking} onChange={e => setChoice(e.target.value)}>
+      {checking
+        ? <option value="primary">Buscando los agentes instalados…</option>
+        : <>
+          <option value="primary">Agente principal · {primaryLabel}</option>
+          {choices.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+        </>}
     </select>
-    {choice === 'primary' && <small className="runtime-detail">{primaryDetail}</small>}
+    {choice === 'primary' && <small className="runtime-detail">{checking ? 'Latte le está preguntando a cada CLI si está instalado y con sesión iniciada. Tarda unos segundos la primera vez.' : primaryDetail}</small>}
     <div className="chat-card-actions">
-      <button className="primary" disabled={busy || opening || !ready || !isDesktop} onClick={() => void add()}>{opening ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />}{opening ? 'Abriendo…' : 'Abrir conversación'}</button>
-      {isDesktop && <button className="subtle" onClick={onProviders}><Plug size={13} />{primaryReady ? 'Cambiar agente principal' : 'Conectar un proveedor'}</button>}
-      {isDesktop && !primaryReady && <button className="subtle" onClick={onRecheck}>Volver a comprobar</button>}
+      <button className="primary" disabled={busy || opening || checking || !ready || !isDesktop} onClick={() => void add()}>{opening || checking ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />}{opening ? 'Abriendo…' : checking ? 'Buscando agentes…' : 'Abrir conversación'}</button>
+      {isDesktop && !checking && <button className="subtle" onClick={onProviders}><Plug size={13} />{primaryReady ? 'Cambiar agente principal' : 'Conectar un proveedor'}</button>}
+      {isDesktop && !checking && !primaryReady && <button className="subtle" onClick={onRecheck}>Volver a comprobar</button>}
     </div>
     {!isDesktop && <small className="preview-note">La vista web guarda en este navegador. Para conversar con agentes, abrí Latte Desktop.</small>}
   </div>;

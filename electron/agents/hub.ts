@@ -165,7 +165,7 @@ export class AgentHub {
 
   addAccount(runtime: AccountRuntime, label: string): Promise<AgentAccount> {
     const record = this.deps.accounts.create(runtime, label);
-    return Promise.resolve({ runtime, id: record.id, label: record.label, system: false, loggedIn: false, detail: 'Sin sesión iniciada' });
+    return Promise.resolve({ runtime, id: record.id, label: record.label, system: false, loggedIn: false, detail: 'Sin sesión iniciada', models: this.deps.accounts.suggestedModels(runtime, record.id) });
   }
 
   removeAccount(runtime: AccountRuntime, accountId: string): void {

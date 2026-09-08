@@ -12,6 +12,8 @@ export type AccountRuntime = 'claude' | 'codex';
 
 export const SYSTEM_ACCOUNT_ID = 'system';
 const ACCOUNT_ID = /^acc_[a-f0-9]{16}$/;
+/** The aliases `claude --model` documents. Each one points at the latest model of its tier. */
+const CLAUDE_MODEL_ALIASES = ['fable', 'opus', 'sonnet'] as const;
 
 interface AccountRecord { id: string; label: string; createdAt: string }
 
@@ -104,14 +106,46 @@ export class AccountStore {
     ];
     const results: AgentAccount[] = [];
     for (const entry of entries) {
+      const models = this.suggestedModels(runtime, entry.id);
       if (!executable) {
-        results.push({ runtime, ...entry, loggedIn: false, detail: `${runtime === 'claude' ? 'Claude Code' : 'Codex'} no está instalado` });
+        results.push({ runtime, ...entry, loggedIn: false, detail: `${runtime === 'claude' ? 'Claude Code' : 'Codex'} no está instalado`, models });
         continue;
       }
       const status = await this.status(runtime, executable, entry.id);
-      results.push({ runtime, ...entry, ...status });
+      results.push({ runtime, ...entry, ...status, models });
     }
     return results;
+  }
+
+  /**
+   * What to offer under the model field. Not a catalog: Latte cannot enumerate
+   * what a subscription CLI accepts, so it suggests only what it can state as
+   * fact — the aliases Claude Code's own `--model` help documents (an alias
+   * always points at the latest model of that tier, so it does not go stale),
+   * and the model this Codex profile already has configured.
+   */
+  suggestedModels(runtime: AccountRuntime, accountId: string): string[] {
+    if (runtime === 'claude') return [...CLAUDE_MODEL_ALIASES];
+    const configured = this.codexConfiguredModel(accountId);
+    return configured ? [configured] : [];
+  }
+
+  private codexConfiguredModel(accountId: string): string | null {
+    const home = accountId === SYSTEM_ACCOUNT_ID
+      ? (this.env.CODEX_HOME ?? (this.env.USERPROFILE || this.env.HOME ? path.join((this.env.USERPROFILE ?? this.env.HOME) as string, '.codex') : null))
+      : this.dir('codex', accountId);
+    if (!home) return null;
+    const config = readTextIfExists(path.join(home, 'config.toml'));
+    if (!config) return null;
+    // Top-level `model = "..."` only: a value under a [profile] table belongs
+    // to that profile, and Latte does not pass one.
+    for (const line of config.split(/\r?\n/)) {
+      const text = line.trim();
+      if (text.startsWith('[')) break;
+      const match = /^model\s*=\s*["']([^"']{1,200})["']$/.exec(text);
+      if (match) return match[1];
+    }
+    return null;
   }
 
   async status(runtime: AccountRuntime, executable: string, accountId: string): Promise<{ loggedIn: boolean; detail: string }> {

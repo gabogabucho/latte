@@ -105,7 +105,7 @@ export function ProvidersView({ onChanged, onNotice, onError }: { onChanged: () 
 
     <section className="providers-section">
       <div className="field-label">CON TU SUSCRIPCIÓN</div>
-      {loading && !runtimes && <p className="footnote"><LoaderCircle className="spin" size={13} /> Consultando runtimes…</p>}
+      {loading && !runtimes && <p className="footnote"><LoaderCircle className="spin" size={13} /> Buscando los agentes instalados: Latte le pregunta a cada CLI si está instalado y con sesión iniciada. Tarda unos segundos.</p>}
       {runtimes?.map(rt => <div className="runtime-card" key={rt.runtime}>
         <div className="runtime-head"><strong>{RUNTIME_NAME[rt.runtime]}</strong><small>{rt.detail}</small></div>
         {rt.installed && <div className="provider-list">
@@ -117,10 +117,16 @@ export function ProvidersView({ onChanged, onNotice, onError }: { onChanged: () 
             <div><strong>{a.label}{isPrimaryAccount(a) && <em className="tag">PRINCIPAL</em>}</strong><small>{a.detail}</small>
               {a.loggedIn && <>
                 <div className="provider-model-row">
-                  <input aria-label={`Modelo de ${RUNTIME_NAME[rt.runtime]} (${a.label})`} aria-invalid={!validModelInput(chosen)} placeholder="Modelo por defecto del CLI" value={chosen} maxLength={200} disabled={busy} autoComplete="off" spellCheck={false} onChange={e => setModelChoice(prev => ({ ...prev, [accountModelKey(a)]: e.target.value }))} />
+                  {/*
+                    Free text with suggestions, never a closed list: Latte
+                    cannot enumerate what a subscription CLI accepts, and a
+                    closed list would leave out the model released yesterday.
+                  */}
+                  <input list={a.models.length > 0 ? `models-${accountModelKey(a)}` : undefined} aria-label={`Modelo de ${RUNTIME_NAME[rt.runtime]} (${a.label})`} aria-invalid={!validModelInput(chosen)} placeholder="Modelo por defecto del CLI" value={chosen} maxLength={200} disabled={busy} autoComplete="off" spellCheck={false} onChange={e => setModelChoice(prev => ({ ...prev, [accountModelKey(a)]: e.target.value }))} />
+                  {a.models.length > 0 && <datalist id={`models-${accountModelKey(a)}`}>{a.models.map(m => <option key={m} value={m} />)}</datalist>}
                   <button disabled={busy || unchanged || !validModelInput(chosen)} onClick={() => makePrimary({ runtime: rt.runtime, model: chosen.trim() || null, accountId: a.id })}><Star size={13} />{isPrimaryAccount(a) ? 'Guardar modelo' : 'Usar como principal'}</button>
                 </div>
-                <small>Ingresá un ID de modelo admitido por tu CLI y cuenta, o dejá vacío para usar su modelo por defecto. Aplica a chats nuevos que usen el agente principal.</small>
+                <small>{a.models.length > 0 ? `Elegí una sugerencia (${a.models.join(', ')}) o escribí cualquier ID que tu CLI acepte.` : 'Ingresá un ID de modelo admitido por tu CLI y cuenta.'} Vacío usa el modelo por defecto del CLI. Aplica a chats nuevos que usen el agente principal. La lista es una sugerencia: quien decide qué acepta es el runtime, no Latte.</small>
               </>}
             </div>
             <div className="provider-actions">
