@@ -79,6 +79,35 @@ describe('AccountStore', () => {
     expect(codex[0]).toMatchObject({ loggedIn: true, detail: 'Logged in using ChatGPT' });
   });
 
+  it('suggests only models it can state as fact', async () => {
+    const home = path.join(dir, 'home');
+    fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
+    const store = new AccountStore({
+      root: path.join(dir, 'accounts'),
+      runner: fakeRunner(() => ({ code: 0, stdout: JSON.stringify({ loggedIn: false }) })),
+      resolveExecutable: async () => 'C:\\bin\\cli.exe',
+      env: { USERPROFILE: home },
+    });
+
+    // Claude Code documents aliases in its own --model help; they never go stale.
+    expect(store.suggestedModels('claude', SYSTEM_ACCOUNT_ID)).toEqual(['fable', 'opus', 'sonnet']);
+    // Codex has no catalog to ask for: the only fact is what its profile configured.
+    expect(store.suggestedModels('codex', SYSTEM_ACCOUNT_ID)).toEqual([]);
+    fs.writeFileSync(path.join(home, '.codex', 'config.toml'), 'model = "gpt-6-astra"\nmodel_reasoning_effort = "low"\n');
+    expect(store.suggestedModels('codex', SYSTEM_ACCOUNT_ID)).toEqual(['gpt-6-astra']);
+    expect((await store.describe('codex'))[0].models).toEqual(['gpt-6-astra']);
+
+    // A model inside a [profile] table belongs to that profile, which Latte never passes.
+    fs.writeFileSync(path.join(home, '.codex', 'config.toml'), '[profiles.otro]\nmodel = "no-es-el-default"\n');
+    expect(store.suggestedModels('codex', SYSTEM_ACCOUNT_ID)).toEqual([]);
+
+    // A managed profile is read from its own directory, not from the user's.
+    const managed = store.create('codex', 'Segunda');
+    expect(store.suggestedModels('codex', managed.id)).toEqual([]);
+    fs.writeFileSync(path.join(store.dir('codex', managed.id), 'config.toml'), "model = 'gpt-5.6-luna'\n");
+    expect(store.suggestedModels('codex', managed.id)).toEqual(['gpt-5.6-luna']);
+  });
+
   it('reports installed-but-logged-out and missing CLIs honestly', async () => {
     const runner = fakeRunner(() => ({ code: 0, stdout: JSON.stringify({ loggedIn: false }) }));
     const store = new AccountStore({ root: path.join(dir, 'accounts'), runner, resolveExecutable: async (runtime) => (runtime === 'claude' ? 'C:\\bin\\claude.exe' : null) });

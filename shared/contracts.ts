@@ -205,7 +205,16 @@ export interface TeamMemberOptions { runtime?: ChatRuntime | null; model?: strin
 /** The agent a new chat starts with. Chosen once in the Providers screen, never asked per chat. */
 export interface PrimaryAgent { runtime: ChatRuntime; model: string | null; accountId: string | null; label: string }
 /** A Claude Code / Codex login. `system` = the user's own CLI profile; otherwise a Latte-managed profile directory. */
-export interface AgentAccount { runtime: 'claude' | 'codex'; id: string; label: string; system: boolean; loggedIn: boolean; detail: string }
+export interface AgentAccount {
+  runtime: 'claude' | 'codex'; id: string; label: string; system: boolean; loggedIn: boolean; detail: string;
+  /**
+   * Model IDs worth suggesting for this account: the aliases the CLI itself
+   * documents, plus whatever that account's own configuration already uses.
+   * Suggestions, never a catalog — the runtime is the one that decides what it
+   * accepts, so the field stays free text.
+   */
+  models: string[];
+}
 export interface AgentRuntimeInfo { runtime: 'claude' | 'codex'; installed: boolean; version: string | null; detail: string; accounts: AgentAccount[] }
 export type AccountLoginStart =
   | { mode: 'terminal'; sessionId: string; instructions: string }
