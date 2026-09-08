@@ -7,22 +7,38 @@ Todo en tu máquina.
 
 ![Latte: documentos de un trabajo, equipo de roles y aviso de cambio externo](assets/latte-documents-1440x1000.png)
 
-> **Alpha personal.** Esto es código fuente, no un producto instalable. Se probó
-> en Windows 11 por una sola persona. No hay instalador, no hay binario firmado,
-> no hay actualizaciones automáticas y no hay soporte. Si lo usás, revisá lo que
-> los agentes escriben antes de tomarlo por bueno.
+> **Alpha para Windows.** Latte no trae los agentes ni una cuenta de IA: usás la
+> tuya y la inferencia la paga tu proveedor. Y lo que un agente escribe es una
+> propuesta, no un hecho: revisala antes de darla por buena.
 
-## Instalación
+## Instalar
+
+Descargá **[Latte-Setup.exe](https://github.com/ohmylatte/latte/releases/latest/download/Latte-Setup.exe)** y ejecutalo.
+
+El instalador todavía no está firmado, así que Windows va a mostrar «Windows
+protegió tu PC»: **Más información → Ejecutar de todas formas**. Si preferís no
+hacerlo, corré Latte desde el código, más abajo.
+
+Necesitás además al menos un agente instalado y autenticado por tu cuenta:
+[Claude Code](https://claude.com/claude-code),
+[Codex](https://developers.openai.com/codex/cli) u
+[OpenCode](https://opencode.ai). Latte los detecta solos.
+
+Desde ahí, Latte se actualiza solo: te avisa cuando hay una versión nueva, la
+descarga mientras seguís trabajando y se reinicia cuando vos lo decidís. Nunca
+sobre un documento sin guardar.
+
+## Desde el código
 
 ```bash
-git clone https://github.com/gabogabucho/latte.git
+git clone https://github.com/ohmylatte/latte.git
 cd latte
 npm ci
 npm run dev
 ```
 
-Con eso ya funciona: `npm run dev` levanta Vite y Electron sin compilar nada.
-Es el camino recomendado y el único ejercitado a fondo.
+`npm run dev` levanta Vite y Electron sin compilar nada. Es el camino de
+desarrollo y el más ejercitado.
 
 ### Opcional: renderer compilado
 
@@ -31,12 +47,14 @@ npm run build   # compila SOLO la interfaz (Vite) a dist/
 npm start       # abre Latte usando dist/, sin servidor de desarrollo
 ```
 
-Honestidad sobre esto: `npm run build` compila **solo el renderer**. El proceso
-principal de Electron sigue ejecutando TypeScript en tiempo de ejecución a través
-de tsx, igual que en desarrollo. No hay empaquetado, no hay instalador y no se
-genera un ejecutable distribuible. Los dos comandos están configurados pero **no
-fueron validados en esta entrega**: si `npm start` no encuentra `dist/`, te
-dice exactamente qué correr.
+`npm run build` compila **solo el renderer**: el proceso principal sigue
+ejecutando TypeScript por tsx, igual que en desarrollo. Es el camino corto para
+mirar la interfaz sin servidor, no el que produce el instalador.
+
+Para eso está `npm run pack:win`, que empaqueta el proceso principal con esbuild
+y arma `release/Latte-Setup.exe`. En un release de verdad no lo corras a mano:
+lo hace [el workflow de CI](.github/workflows/release-windows.yml) desde un clon
+limpio del tag. El detalle está en [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ### Si `npm run dev` levanta el servidor pero no abre la ventana
 
@@ -75,8 +93,8 @@ y el agente puede leerlo.
 
 | Requisito | Detalle |
 | --- | --- |
-| Node.js | 24 LTS (el proyecto usa `node:sqlite`, incorporado en Node 24) |
-| Sistema | Probado en Windows 11. Las rutas POSIX están escritas pero no ejercitadas en vivo |
+| Sistema | Windows. macOS y Linux no están soportados |
+| Node.js | Solo para correrlo desde el código: 24 LTS (el proyecto usa `node:sqlite`, incorporado en Node 24) |
 | Agentes | Al menos uno instalado y con sesión iniciada: [Claude Code](https://claude.com/claude-code), [Codex](https://developers.openai.com/codex/cli/) u [OpenCode](https://opencode.ai) |
 | Facturación | La inferencia la paga tu cuenta con tu proveedor. Latte no factura ni intermedia nada |
 | Engram | Opcional, para memoria de marca. Sin él, la app lo dice y sigue andando |
@@ -106,7 +124,9 @@ el navegador y **no ejecuta ningún agente**.
 
 ### Límites que conviene conocer
 
-- Alpha de una sola persona: esperá bordes ásperos y cambios de esquema.
+- Es una alpha: esperá bordes ásperos y cambios de esquema entre versiones. La base se copia antes de cada migración, y una base escrita por una versión más nueva no se abre en una vieja.
+- **Windows.** macOS y Linux no están: las ramas POSIX existen en el código pero no se ejercitan.
+- El instalador **no está firmado**, así que SmartScreen advierte hasta que el binario acumule reputación.
 - **No todo lo que hace un agente está aislado.** Latte le da al agente la carpeta del trabajo como contexto y las instrucciones lo dicen, pero un runtime puede escribir cualquier archivo al que tenga permiso. Las instrucciones no son un sandbox. Los permisos reales los aplica cada runtime, y Latte te muestra sus pedidos para que decidas.
 - Un guardado hecho **fuera** de Latte no se intercepta: reemplaza el archivo y Latte lo detecta después.
 - El comportamiento de los modelos frente a las instrucciones de marketing está **medido una sola vez**, no evaluado a fondo: un A/B de la skill de escritura contra Claude Code 2.1.263, mismo brief y mismo modelo, cambiando solo si la skill está en el `CLAUDE.md`. Hay fixtures en `docs/marketing-eval/` para hacerlo en serio.
