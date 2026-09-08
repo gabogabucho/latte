@@ -3,10 +3,13 @@
 Cómo se arma el instalador de Windows, cómo se publica y cómo llega la
 actualización a quien ya tiene Latte instalado.
 
-> **Estado: el instalador se construye y la aplicación empaquetada arranca.**
+> **Estado: 0.1.0 publicada. El instalador se descarga desde el enlace público
+> y el actualizador lo encuentra.**
 > `npm run pack:win` produce `release/Latte-Setup.exe` y `release/latest.yml`,
-> y la aplicación empaquetada abre con base de datos, packs y terminal
-> funcionando. Lo que **no** está verificado: instalar con ese `.exe`, una
+> la aplicación empaquetada abre con base de datos, packs y terminal
+> funcionando, y la release normal en GitHub sirve el archivo por
+> `/releases/latest/download/`. Lo que **no** está verificado: instalar con ese
+> `.exe` (accesos directos, desinstalador, datos que sobreviven), una
 > actualización real entre dos versiones publicadas, y la firma de código.
 > El detalle está en la sección 10.
 
@@ -251,13 +254,37 @@ Verificado, con la salida del build y del arranque a la vista:
 - [x] La aplicación **empaquetada** abre: base de datos `node:sqlite`, packs,
       terminal `node-pty` lista.
 - [x] El actualizador llega a GitHub y reporta el estado real.
+- [x] **0.1.0 publicada** como release normal (no prerelease), con
+      `Latte-Setup.exe` y `latest.yml` como assets.
+- [x] **El enlace público sirve el archivo.**
+      `/releases/latest/download/Latte-Setup.exe` responde 200 con los
+      108.681.365 bytes exactos del build y los bytes `MZ` de un ejecutable.
+- [x] **El actualizador ve la versión publicada**: `Update for version 0.1.0 is
+      not available (latest version: 0.1.0)`, en vez del `No published
+      versions` de antes.
+
+### Cómo probar la app empaquetada sin cerrar tu Latte
+
+`requestSingleInstanceLock()` es lo primero que corre en `main.ts`, y el lock
+vive en el `userData` de Electron. Con una instancia abierta, el `.exe`
+empaquetado se cierra solo diciendo que ya hay una ventana. Dale su propio
+perfil y conviven:
+
+```bash
+LATTE_SMOKE_EXIT_MS=12000 LATTE_DATA_DIR=<datos temporales> \
+  ./release/win-unpacked/Latte.exe --user-data-dir=<perfil temporal>
+```
+
+Arranca, hace su chequeo de actualización y se cierra solo. La línea que
+importa es `[latte:smoke] renderer loaded=true consoleErrors=0`.
 
 Falta, y no lo demos por hecho:
 
 - [ ] **Instalar con `Latte-Setup.exe`.** Lo que se probó es
       `release/win-unpacked/Latte.exe`, no el instalador corriendo: accesos
       directos, desinstalador, y que los datos en `%APPDATA%/Latte` sobrevivan
-      a una reinstalación.
+      a una reinstalación. Instalar software es decisión de quien publica, no
+      del build.
 - [ ] **Una actualización real entre dos versiones publicadas**, de punta a
       punta: aviso, descarga, reinicio e instalación. Es lo único que prueba de
       verdad el circuito completo, y necesita dos releases en GitHub.
