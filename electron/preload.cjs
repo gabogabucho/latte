@@ -79,6 +79,7 @@ const METHODS = [
   'startAccountLogin',
   'logoutAccount',
   'listAccountModels',
+  'setTeamMemberModel',
   'listRoles',
   'listProfiles',
   'saveProfile',

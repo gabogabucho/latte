@@ -396,6 +396,11 @@ export class LatteRepository {
     this.db.run('UPDATE team_members SET session_id = ?, updated_at = ? WHERE id = ?', [sessionId, updatedAt, id]);
   }
 
+  /** The model a member's conversation runs on. Empty string means the runtime's default. */
+  setMemberModel(id: string, model: string | null, updatedAt: string): void {
+    this.db.run('UPDATE team_members SET model = ?, updated_at = ? WHERE id = ?', [model, updatedAt, id]);
+  }
+
   setMemberDone(id: string, done: boolean, updatedAt: string): void {
     this.db.run('UPDATE team_members SET done = ?, updated_at = ? WHERE id = ?', [done ? 1 : 0, updatedAt, id]);
   }

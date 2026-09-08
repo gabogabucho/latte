@@ -15,7 +15,7 @@ export type SettingsSection = 'agents' | 'profiles' | 'skills' | 'tools' | 'work
  * Opening or closing it never writes anything; the workspace state stays in
  * App and comes back untouched.
  */
-export function SettingsScreen({ onProfileDirtyChange, controls, section, onSection, onClose, onChanged, onNotice, onError, notice, error, onDismiss }: {
+export function SettingsScreen({ onProfileDirtyChange, controls, section, onSection, onClose, onChanged, onNotice, onError, notice, error, onDismiss, terminal }: {
   /** Window controls: Settings is a full screen, so it needs them too. */
   controls: ReactNode;
   onProfileDirtyChange: (dirty:boolean)=>void;
@@ -28,6 +28,8 @@ export function SettingsScreen({ onProfileDirtyChange, controls, section, onSect
   notice: string;
   error: string;
   onDismiss: () => void;
+  /** The raw CLI console: an escape hatch, so it lives here and not in the work. */
+  terminal?: ReactNode;
 }) {
   const [profileDirty,setProfileDirty]=useState(false);
   const canLeave=()=>!profileDirty||window.confirm('Hay cambios sin guardar en el perfil. ¿Descartarlos?');
@@ -54,6 +56,7 @@ export function SettingsScreen({ onProfileDirtyChange, controls, section, onSect
         <h2>Agentes y proveedores</h2>
         <p className="settings-lead">Quién hace el trabajo cuando abrís una conversación. Latte no guarda claves ni tokens: cada runtime usa su propio almacén de credenciales.</p>
         <ProvidersView onChanged={onChanged} onNotice={onNotice} onError={onError} />
+        {terminal}
       </section>}
       {section === 'profiles' && <ProfilesView onChanged={onChanged} onError={onError} onNotice={onNotice} onDirtyChange={setProfileDirty} />}
       {section === 'skills' && <SkillsView onNotice={onNotice} onError={onError} />}

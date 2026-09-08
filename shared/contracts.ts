@@ -225,6 +225,8 @@ export interface AgentAccount {
  */
 export interface AgentModel { id: string; label: string; description: string; isDefault: boolean }
 export interface AgentModelList { source: 'catalog' | 'suggested'; models: AgentModel[]; detail: string }
+/** What changing a conversation's model did. `session` is null when it was paused. */
+export interface MemberModelChange { member: TeamMember; session: ChatSession | null; resumed: boolean }
 export interface AgentRuntimeInfo { runtime: 'claude' | 'codex'; installed: boolean; version: string | null; detail: string; accounts: AgentAccount[] }
 export type AccountLoginStart =
   | { mode: 'terminal'; sessionId: string; instructions: string }
@@ -402,6 +404,13 @@ export interface LatteAPI {
    * the Settings screen needs it, never on start.
    */
   listAccountModels(runtime: 'claude' | 'codex', accountId: string): Promise<AgentModelList>;
+  /**
+   * Changes the model of one conversation. The runtime restarts underneath —
+   * neither Claude Code nor Codex can swap a model in place — and the same
+   * conversation is resumed. `resumed` reports whether that worked, so the UI
+   * never claims a history it does not have. `null` means the runtime's default.
+   */
+  setTeamMemberModel(memberId: string, model: string | null): Promise<MemberModelChange>;
   // Updates
   /** Asks the update server whether there is a newer version. Never installs anything. */
   checkForUpdate(): Promise<UpdateState>;

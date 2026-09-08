@@ -315,6 +315,42 @@ export class AgentHub {
     return this.describe(this.deps.repo.getMember(memberId));
   }
 
+  /**
+   * Changes the model of a member's conversation without throwing away what
+   * was said.
+   *
+   * Neither runtime swaps a model in place: Claude Code takes it as a process
+   * argument and Codex as a thread option — its protocol has no `setModel` at
+   * all. So the runtime is stopped and started again, resuming the same
+   * conversation by its own id. `resumed` says whether that actually worked;
+   * a restart that quietly dropped the thread would be worse than the terminal
+   * this replaced.
+   */
+  async setMemberModel(memberId: string, model: string | null, context: MemberContext): Promise<{ member: TeamMember; session: ChatSession | null; resumed: boolean }> {
+    const record = this.deps.repo.getMember(memberId);
+    const next = model && model.trim() ? model.trim() : null;
+    const live = Boolean(this.liveSession(memberId));
+    if (next === (record.model ?? null)) return { member: this.describe(record), session: this.liveSession(memberId), resumed: live };
+    if (live) this.stop(memberId);
+    this.deps.repo.setMemberModel(memberId, next, this.clock());
+    const updated = this.deps.repo.getMember(memberId);
+    // A paused conversation is not woken up to change a setting: the next time
+    // it opens it will already be on the new model.
+    if (!live) return { member: this.describe(updated), session: null, resumed: false };
+    try {
+      const session = await this.open(updated, context);
+      return { member: this.describe(this.deps.repo.getMember(memberId)), session, resumed: session.resumed };
+    } catch (error) {
+      // The runtime refused the model (OpenCode checks its own catalog, a CLI
+      // may just fail to start). Leaving the member on a model that does not
+      // work, with its conversation closed, would be the worst of both: the
+      // previous model is put back and the conversation reopened.
+      this.deps.repo.setMemberModel(memberId, record.model ?? null, this.clock());
+      try { await this.open(this.deps.repo.getMember(memberId), context); } catch { /* reported through the original error */ }
+      throw error;
+    }
+  }
+
   removeMember(memberId: string): void {
     this.deps.repo.getMember(memberId);
     this.stop(memberId);

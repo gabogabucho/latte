@@ -11,6 +11,7 @@ import type {
   FolderEntries,
   FunnelStage,
   AgentModelList,
+  MemberModelChange,
   AgentRuntimeInfo,
   AgentSession,
   Brand,
@@ -865,6 +866,13 @@ export class LatteService implements BackendApi {
   /** Starts this member's conversation over. The member, its role and its runtime stay. */
   async restartTeamMember(memberId: string): Promise<TeamMember> {
     return this.deps.hub.restartMember(requireId(memberId, 'memberId'));
+  }
+
+  /** Changes this conversation's model, resuming what was already said. */
+  async setTeamMemberModel(memberId: string, model: string | null): Promise<MemberModelChange> {
+    const member = this.deps.hub.getMember(requireId(memberId, 'memberId'));
+    if (model !== null && (typeof model !== 'string' || model.trim().length > 200 || /[\s ]/.test(model.trim()))) throw new ValidationError('ID de modelo inválido');
+    return this.deps.hub.setMemberModel(member.id, model, this.memberContext(member.workId));
   }
 
   async removeTeamMember(memberId: string): Promise<void> {

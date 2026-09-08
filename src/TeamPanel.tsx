@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Check, CircleCheck, FolderCheck, FolderLock, LoaderCircle, MessageSquare, MessageSquarePlus, Pause, Play, Plug, Plus, Trash2, UserPlus, X } from 'lucide-react';
-import type { AgentRole, ChatRuntime, ChatSession, HandoffRequest, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
-import { chatStore } from './browser-api';
+import { Check, CircleCheck, FolderCheck, FolderLock, LoaderCircle, MessageSquare, MessageSquarePlus, Pause, Play, Plug, Plus, Settings2, Trash2, UserPlus, X } from 'lucide-react';
+import type { AgentModelList, AgentRole, ChatRuntime, ChatSession, HandoffRequest, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
+import { api, chatStore } from './browser-api';
 import { ChatPane } from './ChatPane';
 import { useChatState } from './chat-store';
 
@@ -38,6 +38,8 @@ export interface TeamPanelProps {
   onRemove: (memberId: string) => Promise<void>;
   onProviders: () => void;
   onRecheck: () => void;
+  /** Changes the model of one conversation; the runtime restarts and resumes underneath. */
+  onModel: (memberId: string, model: string | null) => void;
   onError: (message: string) => void;
   /** Turns an answer into a document of the work. */
   onSaveAsDocument?: (text: string) => void;
@@ -82,7 +84,9 @@ export function TeamPanel(props: TeamPanelProps) {
           {team.map(member => <MemberTab key={member.id} member={member} chat={chats[member.id] ?? null} selected={member.id === selectedId} busy={busy} onSelect={() => props.onSelect(member.id)} />)}
         </div>
         <button className="team-tab-add" aria-label="Sumar un rol al equipo" title="Sumar un rol al equipo" disabled={busy || !isDesktop} onClick={() => setAdding(true)}><UserPlus size={15} /></button>
+        <button className="team-tab-add" aria-label="Proveedores de IA" title="Agentes y proveedores" onClick={props.onProviders}><Settings2 size={15} /></button>
         {selected && <div className="team-tab-actions">
+          <ModelPicker member={selected} busy={busy} onModel={props.onModel} />
           {selectedLive && <button className="icon-button" aria-label="Pausar conversación" title="Pausar: la conversación queda guardada y se puede reanudar" disabled={busy} onClick={() => void props.onPause(selected.id)}><Pause size={13} /></button>}
           {selectedStatus !== 'ended' && <button className="icon-button" aria-label="Marcar como finalizado" title="Finalizar: cierra la conversación y la marca como terminada" disabled={busy} onClick={() => void props.onFinish(selected.id)}><CircleCheck size={13} /></button>}
           <button className="icon-button" aria-label="Conversación nueva" title="Conversación nueva: descarta esta conversación y empieza otra con el mismo rol" disabled={busy} onClick={() => { if (window.confirm(`¿Empezar una conversación nueva con ${selected.roleName}? La actual se descarta; ${selected.roleName} sigue en el equipo y los documentos no se tocan.`)) void props.onRestart(selected.id); }}><MessageSquarePlus size={13} /></button>
@@ -204,4 +208,61 @@ function RolePicker({ roles, choices, primaryLabel, primaryDetail, primaryReady,
     </div>
     {!isDesktop && <small className="preview-note">La vista web guarda en este navegador. Para conversar con agentes, abrí Latte Desktop.</small>}
   </div>;
+}
+
+
+/**
+ * The model this conversation runs on, changed without leaving it.
+ *
+ * Neither CLI swaps a model in place, so Latte restarts the runtime and
+ * resumes the same conversation. The list is the runtime's own catalog where
+ * there is one; OpenCode has 155 models behind a provider, which is a Settings
+ * decision and not a control to squeeze next to a chat, so there it only
+ * reports what is in use.
+ */
+function ModelPicker({ member, busy, onModel }: { member: TeamMember; busy: boolean; onModel: (memberId: string, model: string | null) => void }) {
+  const [list, setList] = useState<AgentModelList | null>(null);
+  useEffect(() => {
+    let live = true;
+    setList(null);
+    // OpenCode already publishes what it has configured; the subscription
+    // runtimes are asked one by one, and answer a catalog or an honest
+    // "this is what Latte knows".
+    const ask = member.runtime === 'opencode'
+      ? api.chatStatus().then((status): AgentModelList => ({
+        source: 'catalog',
+        detail: `Modelos configurados en OpenCode${status.defaultModel ? ` · por defecto ${status.defaultModel}` : ''}.`,
+        models: status.models.map(id => ({ id, label: id, description: '', isDefault: id === status.defaultModel })),
+      }))
+      : api.listAccountModels(member.runtime, member.accountId ?? 'system');
+    void ask.then(value => { if (live) setList(value); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [member.runtime, member.accountId]);
+
+  const models = list?.models ?? [];
+  const current = member.model ?? '';
+  // OpenCode ids read `provider/model`; grouping by provider keeps a long list navigable.
+  const groups = new Map<string, typeof models>();
+  for (const model of models) {
+    const slash = model.id.indexOf('/');
+    const group = slash > 0 ? model.id.slice(0, slash) : '';
+    groups.set(group, [...(groups.get(group) ?? []), model]);
+  }
+  const grouped = groups.size > 1 || (groups.size === 1 && !groups.has(''));
+  const option = (m: AgentModelList['models'][number]) => <option key={m.id} value={m.id}>{m.label}{m.isDefault ? ' · por defecto' : ''}</option>;
+
+  return <select
+    className="team-model"
+    aria-label={`Modelo de ${member.roleName}`}
+    title={list ? `${list.detail} Cambiarlo reinicia el runtime y retoma esta conversación.` : 'Buscando los modelos de esta conversación…'}
+    value={current}
+    disabled={busy || !list}
+    onChange={e => onModel(member.id, e.target.value || null)}
+  >
+    <option value="">{list ? 'Modelo por defecto' : 'Buscando modelos…'}</option>
+    {current !== '' && !models.some(m => m.id === current) && <option value={current}>{current}</option>}
+    {grouped
+      ? [...groups.entries()].map(([group, items]) => group ? <optgroup key={group} label={group}>{items.map(option)}</optgroup> : items.map(option))
+      : models.map(option)}
+  </select>;
 }
