@@ -2,6 +2,8 @@ import type { AgentProfile, ProfileInput } from '../../shared/contracts';
 import type {
   AccountLoginStart,
   AgentAccount,
+  AgentModel,
+  AgentModelList,
   AgentRole,
   AgentRuntimeInfo,
   ChatMessage,
@@ -87,9 +89,13 @@ export function isAccountRuntime(value: unknown): value is AccountRuntime {
  * conversation; its id doubles as the chat id, so pausing and resuming keeps
  * the same identity on screen and in the runtime's own history.
  */
+/** Asking Codex for its catalog spawns a process; a few minutes of memory is enough. */
+const MODEL_CACHE_MS = 5 * 60_000;
+
 export class AgentHub {
   /** Live sessions by chat id (= member id). Pruned whenever the adapter no longer owns the chat. */
   private readonly sessions = new Map<string, ChatSession>();
+  private readonly modelCache = new Map<string, { at: number; value: AgentModelList }>();
   private readonly clock: () => string;
 
   constructor(private readonly deps: AgentHubDeps) {
@@ -429,6 +435,39 @@ export class AgentHub {
   shutdown(): void {
     this.sessions.clear();
     for (const adapter of this.adapters()) adapter.shutdown();
+  }
+
+  /**
+   * The models an account can use, asked to the runtime that owns them.
+   *
+   * Codex answers `model/list` with its real catalog; Claude Code has no such
+   * command, so the honest answer there is the aliases its own `--model` help
+   * documents. The caller is told which of the two it got, because "the
+   * runtime said so" and "Latte knows this much" are not the same claim.
+   * Cached briefly: asking Codex costs a process.
+   */
+  async listAccountModels(runtime: AccountRuntime, accountId: string): Promise<AgentModelList> {
+    const suggested = (detail: string): AgentModelList => ({
+      source: 'suggested',
+      models: this.deps.accounts.suggestedModels(runtime, accountId).map((id) => ({ id, label: id, description: '', isDefault: false })),
+      detail,
+    });
+    if (runtime === 'claude') return suggested('Claude Code no publica un catálogo: estos son los alias que documenta su propio --model.');
+    const key = `${runtime}:${accountId}`;
+    const cached = this.modelCache.get(key);
+    if (cached && Date.now() - cached.at < MODEL_CACHE_MS) return cached.value;
+    if (!this.deps.codex) return suggested('Codex no está disponible en esta instalación.');
+    try {
+      const models = await (this.deps.codex as RuntimeAdapter & { listModels(accountId: string): Promise<AgentModel[]> }).listModels(accountId);
+      if (models.length === 0) return suggested('Codex no devolvió ningún modelo.');
+      const value: AgentModelList = { source: 'catalog', models, detail: 'Catálogo que devolvió Codex para esta cuenta.' };
+      this.modelCache.set(key, { at: Date.now(), value });
+      return value;
+    } catch (error) {
+      // A closed session or a Codex that will not start is not a reason to show
+      // nothing: what Latte knows on its own still helps.
+      return suggested(`No se pudo consultar el catálogo de Codex: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /** Conversations a restart would interrupt. Used to warn before an update installs. */

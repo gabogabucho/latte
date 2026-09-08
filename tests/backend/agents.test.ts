@@ -256,6 +256,27 @@ describe('ClaudeChatAdapter against a fake Claude Code', () => {
   });
 });
 
+describe('Model catalog through the service', () => {
+  it('says whether the list came from the runtime or from Latte', async () => {
+    const b = await makeBackend();
+    try {
+      // Claude Code has no catalog command: the honest answer is its documented aliases, said so.
+      const claude = await b.service.listAccountModels('claude', SYSTEM_ACCOUNT_ID);
+      expect(claude.source).toBe('suggested');
+      expect(claude.models.map((m) => m.id)).toEqual(['fable', 'opus', 'sonnet']);
+      expect(claude.detail).toMatch(/alias/i);
+
+      // Codex is not installed in this backend: falling back beats showing nothing.
+      const codex = await b.service.listAccountModels('codex', SYSTEM_ACCOUNT_ID);
+      expect(codex.source).toBe('suggested');
+      expect(codex.detail.length).toBeGreaterThan(0);
+
+      await expect(b.service.listAccountModels('opencode' as never, SYSTEM_ACCOUNT_ID)).rejects.toThrow();
+      await expect(b.service.listAccountModels('claude', '../escape')).rejects.toThrow();
+    } finally { b.cleanup(); }
+  });
+});
+
 describe('AgentHub through the service', () => {
   let fake: FakeOpenCode;
   let b: TestBackend;

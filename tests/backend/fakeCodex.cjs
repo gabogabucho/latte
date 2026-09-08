@@ -29,6 +29,16 @@ rl.on('line', (line) => {
     case 'initialize':
       reply({ userAgent: 'fake-codex', codexHome: process.env.CODEX_HOME || 'default-home', platformFamily: 'test' });
       return;
+    case 'model/list':
+      // Shape of the real answer, including a hidden entry Latte must not offer.
+      reply({ data: [
+        { id: 'gpt-6-astra', model: 'gpt-6-astra', displayName: 'GPT-6-Astra', description: 'Our most capable model.', hidden: false, isDefault: true },
+        { id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', description: 'Everyday workhorse.', hidden: false, isDefault: false },
+        { id: 'gpt-oculto', model: 'gpt-oculto', displayName: 'Escondido', hidden: true, isDefault: false },
+        { displayName: 'Sin identificador', hidden: false },
+        { model: 'gpt-6-astra', displayName: 'Repetido', hidden: false },
+      ] });
+      return;
     case 'account/read':
       reply({ account: process.env.FAKE_CODEX_LOGGED_OUT ? null : { type: 'chatgpt', email: 'fake@example.com', planType: 'plus' }, requiresOpenaiAuth: true });
       return;

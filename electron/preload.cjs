@@ -78,6 +78,7 @@ const METHODS = [
   'removeAgentAccount',
   'startAccountLogin',
   'logoutAccount',
+  'listAccountModels',
   'listRoles',
   'listProfiles',
   'saveProfile',

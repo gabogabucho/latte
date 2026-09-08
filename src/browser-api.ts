@@ -104,6 +104,8 @@ listHandoffs:async()=>[],dismissHandoff:unavailable,listSkills:async()=>[],setSk
   listProviders: async () => [], connectProviderKey: unavailable, disconnectProvider: unavailable, startProviderOAuth: unavailable, completeProviderOAuth: unavailable,
   listMcpServers: async () => [], addMcpServer: unavailable, removeMcpServer: unavailable,
   getPrimaryAgent: async () => null, setPrimaryAgent: unavailable, listAgentRuntimes: async () => [], addAgentAccount: unavailable, removeAgentAccount: unavailable, startAccountLogin: unavailable, logoutAccount: unavailable,
+  // No CLI to ask in a browser tab: no catalog, and no pretending there is one.
+  listAccountModels: async () => ({ source: 'suggested' as const, models: [], detail: 'Los modelos se consultan desde Latte Desktop, donde corren los runtimes.' }),
   // The team roster is real only on desktop; the preview shows the roles so the concept is visible.
   listRoles: async()=> (await browserAPI.listProfiles()).map(({id,name,initial,summary,builtin})=>({id,name,initial,summary,builtin})),
   listProfiles:async()=>[...builtinProfiles,...normalized().profiles],

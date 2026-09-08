@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Check, ExternalLink, KeyRound, LoaderCircle, LogIn, LogOut, Plug, Plus, Star, Trash2, Unplug } from 'lucide-react';
-import type { AgentAccount, AgentRuntimeInfo, PrimaryAgent, ProviderInfo, ProviderOAuthStart } from '../shared/contracts';
+import type { AgentAccount, AgentModel, AgentModelList, AgentRuntimeInfo, PrimaryAgent, ProviderInfo, ProviderOAuthStart } from '../shared/contracts';
 import { agentBus, api, isDesktop } from './browser-api';
 import { TerminalPane } from './TerminalPane';
 import { accountModelKey, selectedAccountModel, selectedProviderModel, validModelInput } from './provider-models';
@@ -27,6 +27,30 @@ export function ProvidersView({ onChanged, onNotice, onError }: { onChanged: () 
   const [oauth, setOauth] = useState<{ providerId: string; methodIndex: number; start: ProviderOAuthStart } | null>(null);
   const [code, setCode] = useState('');
   const [modelChoice, setModelChoice] = useState<Record<string, string>>({});
+  const [catalogs, setCatalogs] = useState<Record<string, AgentModelList>>({});
+
+  /**
+   * The real catalog, asked only here and never on start.
+   *
+   * Codex answers `model/list` over its app-server, which means spawning a
+   * process: seconds. So the field is usable from the first render with what
+   * Latte already knows, and the better list replaces it when it arrives. It
+   * is never a reason to wait.
+   */
+  useEffect(() => {
+    if (!runtimes) return;
+    let live = true;
+    for (const rt of runtimes) {
+      for (const account of rt.accounts) {
+        const key = accountModelKey(account);
+        if (!account.loggedIn || catalogs[key]) continue;
+        void api.listAccountModels(rt.runtime, account.id)
+          .then(list => { if (live) setCatalogs(prev => (prev[key] ? prev : { ...prev, [key]: list })); })
+          .catch(() => undefined);
+      }
+    }
+    return () => { live = false; };
+  }, [runtimes]);
 
   const load = async () => {
     setLoading(true);
@@ -86,6 +110,17 @@ export function ProvidersView({ onChanged, onNotice, onError }: { onChanged: () 
 
   const isPrimaryAccount = (a: AgentAccount) => primary?.runtime === a.runtime && (primary.accountId ?? 'system') === a.id;
 
+  // Until the catalog answers, the account's own cheap suggestions stand in.
+  const options = (a: AgentAccount): AgentModel[] =>
+    catalogs[accountModelKey(a)]?.models ?? a.models.map(id => ({ id, label: id, description: '', isDefault: false }));
+
+  const modelHint = (a: AgentAccount): string => {
+    const list = catalogs[accountModelKey(a)];
+    if (!list) return a.models.length > 0 ? 'Elegí uno de la lista o escribí cualquier ID que tu CLI acepte. Buscando el catálogo del runtime…' : 'Escribí un ID de modelo admitido por tu CLI y cuenta.';
+    if (list.source === 'catalog') return `${list.detail} Elegí uno o escribí otro ID: quien decide qué acepta es el runtime.`;
+    return `${list.detail} Son sugerencias, no un catálogo: podés escribir cualquier ID que tu CLI acepte.`;
+  };
+
   if (!isDesktop) {
     return <div className="document-scroll"><div className="document-kicker">PROVEEDORES</div><h1>Tus modelos,<br />tus credenciales.</h1><p className="intro">La conexión con proveedores de IA se hace desde Latte Desktop, donde corren los runtimes locales. Esta vista web no guarda credenciales.</p></div>;
   }
@@ -118,15 +153,16 @@ export function ProvidersView({ onChanged, onNotice, onError }: { onChanged: () 
               {a.loggedIn && <>
                 <div className="provider-model-row">
                   {/*
-                    Free text with suggestions, never a closed list: Latte
-                    cannot enumerate what a subscription CLI accepts, and a
-                    closed list would leave out the model released yesterday.
+                    Free text with a list, never a closed dropdown. Where the
+                    runtime has a catalog it is shown as it came; where it does
+                    not, Latte offers what it can state as fact. Either way a
+                    model released yesterday can still be typed in.
                   */}
-                  <input list={a.models.length > 0 ? `models-${accountModelKey(a)}` : undefined} aria-label={`Modelo de ${RUNTIME_NAME[rt.runtime]} (${a.label})`} aria-invalid={!validModelInput(chosen)} placeholder="Modelo por defecto del CLI" value={chosen} maxLength={200} disabled={busy} autoComplete="off" spellCheck={false} onChange={e => setModelChoice(prev => ({ ...prev, [accountModelKey(a)]: e.target.value }))} />
-                  {a.models.length > 0 && <datalist id={`models-${accountModelKey(a)}`}>{a.models.map(m => <option key={m} value={m} />)}</datalist>}
+                  <input list={options(a).length > 0 ? `models-${accountModelKey(a)}` : undefined} aria-label={`Modelo de ${RUNTIME_NAME[rt.runtime]} (${a.label})`} aria-invalid={!validModelInput(chosen)} placeholder="Modelo por defecto del CLI" value={chosen} maxLength={200} disabled={busy} autoComplete="off" spellCheck={false} onChange={e => setModelChoice(prev => ({ ...prev, [accountModelKey(a)]: e.target.value }))} />
+                  {options(a).length > 0 && <datalist id={`models-${accountModelKey(a)}`}>{options(a).map(m => <option key={m.id} value={m.id} label={[m.label === m.id ? '' : m.label, m.isDefault ? 'por defecto' : '', m.description].filter(Boolean).join(' · ').slice(0, 120) || undefined} />)}</datalist>}
                   <button disabled={busy || unchanged || !validModelInput(chosen)} onClick={() => makePrimary({ runtime: rt.runtime, model: chosen.trim() || null, accountId: a.id })}><Star size={13} />{isPrimaryAccount(a) ? 'Guardar modelo' : 'Usar como principal'}</button>
                 </div>
-                <small>{a.models.length > 0 ? `Elegí una sugerencia (${a.models.join(', ')}) o escribí cualquier ID que tu CLI acepte.` : 'Ingresá un ID de modelo admitido por tu CLI y cuenta.'} Vacío usa el modelo por defecto del CLI. Aplica a chats nuevos que usen el agente principal. La lista es una sugerencia: quien decide qué acepta es el runtime, no Latte.</small>
+                <small>{modelHint(a)} Vacío usa el modelo por defecto del CLI. Aplica a chats nuevos que usen el agente principal.</small>
               </>}
             </div>
             <div className="provider-actions">
