@@ -1,9 +1,21 @@
 import path from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
-import type { AgentEvent, ChatEvent } from '../shared/contracts';
+import type { AgentEvent, ChatEvent, InstallOutcome, UpdateState } from '../shared/contracts';
 import { createBackend, type Backend } from './bootstrap';
-import { AGENT_EVENT_CHANNEL, CHAT_EVENT_CHANNEL } from './ipc/channels';
-import { attachCloseGuard } from './windowClose';
+import { errorMessage } from './core/errors';
+import {
+  AGENT_EVENT_CHANNEL,
+  CHAT_EVENT_CHANNEL,
+  UPDATE_CHECK_CHANNEL,
+  UPDATE_DOWNLOAD_CHANNEL,
+  UPDATE_INSTALL_CHANNEL,
+  UPDATE_STATE_CHANNEL,
+  type IpcEnvelope,
+} from './ipc/channels';
+import { IncompatibleSchemaError } from './storage/backup';
+import { UpdateController, type UpdateActivity } from './updater/controller';
+import { createUpdaterEngine } from './updater/engine';
+import { attachCloseGuard, attachQuitGuard, type CloseGuardHandle } from './windowClose';
 import { registerIpc } from './ipc/register';
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL ?? null;
@@ -11,10 +23,22 @@ const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL ?? null;
 let hasUnsavedWork = false;
 const PRELOAD = path.join(__dirname, 'preload.cjs');
 const APP_ICON = path.join(__dirname, '..', 'assets', 'icon-256.png');
+/** First check once the app has settled, then a quiet one every few hours. */
+const FIRST_CHECK_MS = 25_000;
+const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 let mainWindow: BrowserWindow | null = null;
 let backend: Backend | null = null;
 let unregisterIpc: (() => void) | null = null;
+let updates: UpdateController | null = null;
+let closeGuard: CloseGuardHandle | null = null;
+/**
+ * A quit that was already decided: either the user confirmed it, or there was
+ * nothing to confirm. It exists so one restart is questioned exactly once, no
+ * matter whether it started at the window or at the app.
+ */
+let quitting = false;
+let backendStopped = false;
 
 app.setName('Latte');
 
@@ -38,17 +62,30 @@ async function start(): Promise<void> {
   await app.whenReady();
 
   const dataDir = process.env.LATTE_DATA_DIR ?? path.join(app.getPath('userData'), 'data');
-  backend = await createBackend({
-    dataDir,
-    emit: emitAgentEvent,
-    emitChat: emitChatEvent,
-    chooseExportPath,
-    chooseFolder,
-    chooseFiles,
-    revealPath: async (target) => { await shell.openPath(target); },
-    openExternal: async (url) => { if (isExternalHttp(url)) await shell.openExternal(url); },
-    log: (line) => console.log(line.trimEnd()),
-  });
+  try {
+    backend = await createBackend({
+      dataDir,
+      emit: emitAgentEvent,
+      emitChat: emitChatEvent,
+      chooseExportPath,
+      chooseFolder,
+      chooseFiles,
+      revealPath: async (target) => { const error = await shell.openPath(target); if (error) throw new Error(error); },
+      revealFile: async (target) => { shell.showItemInFolder(target); },
+      confirmHtml: async (fileName) => {
+        const options = { type: 'warning' as const, title: 'Abrir HTML externo', message: `¿Abrir ${fileName}?`, detail: 'El HTML puede ejecutar scripts y conectarse a Internet. Se abrirá en la aplicación externa predeterminada, no dentro de Latte. Abrilo solo si confiás en su contenido.', buttons: ['Cancelar', 'Abrir'], defaultId: 0, cancelId: 0, noLink: true };
+        const result = mainWindow ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options);
+        return result.response === 1;
+      },
+      openExternal: async (url) => { if (isExternalHttp(url)) await shell.openExternal(url); },
+      log: (line) => console.log(line.trimEnd()),
+    });
+  } catch (error) {
+    // Opening the data is the one failure that must not end in a blank window:
+    // it usually means the database belongs to a newer Latte.
+    reportStartFailure(error);
+    return;
+  }
   console.log(`[latte] data dir: ${backend.info.dataDir}`);
   console.log(`[latte] storage: ${backend.info.engine} (${backend.info.engineReason})`);
   if (backend.info.seeded) console.log('[latte] seeded demo brand "Casa Oliva (demo)"');
@@ -78,12 +115,139 @@ async function start(): Promise<void> {
     else if (action === 'maximize') mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
     else if (action === 'close') mainWindow.close();
   });
+  setupUpdates();
   createWindow();
   armSmokeExit();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+}
+
+/**
+ * Updates are opt-in at every step: Latte checks, tells you, and waits. It
+ * downloads only when you ask and restarts only when you confirm. Running from
+ * source there is no installed application to replace, so nothing is checked
+ * and the renderer is told exactly that.
+ */
+function setupUpdates(): void {
+  const enabled = app.isPackaged && DEV_SERVER_URL === null;
+  const { engine, reason, quitAndInstall } = createUpdaterEngine({
+    enabled,
+    disabledReason: 'Estás usando Latte desde el código fuente. Las actualizaciones automáticas vienen con el instalador.',
+    // Alpha builds are published as normal releases so the direct download and
+    // the updater agree; the pre-release channel stays behind an explicit opt-in.
+    allowPrerelease: process.env.LATTE_UPDATE_PRERELEASE === '1',
+    log: (line) => console.log(line),
+  });
+  updates = new UpdateController({
+    engine,
+    unsupportedReason: reason,
+    emit: (state) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(UPDATE_STATE_CHANNEL, state);
+    },
+    hasUnsavedWork: () => hasUnsavedWork,
+    activity: () => ({ chats: backend?.hub.liveCount() ?? 0, terminals: backend?.terminal.liveCount() ?? 0 }),
+    confirmInstall,
+    beginInstall: () => {
+      // The user just said yes to this exact restart. Asking again on the way
+      // out would be the app doubting an answer it already has.
+      quitting = true;
+      closeGuard?.allowClose();
+      quitAndInstall();
+    },
+    installFailed: () => {
+      quitting = false;
+      closeGuard?.requireConfirmation();
+    },
+    log: (line) => console.error(line),
+  });
+
+  const controller = updates;
+  const respond = <T>(sender: number, produce: () => Promise<T> | T): Promise<IpcEnvelope<T>> => Promise.resolve()
+    .then(async () => {
+      if (!isMainSender(sender)) return { ok: false as const, code: 'FORBIDDEN', message: 'Untrusted IPC sender' };
+      return { ok: true as const, value: await produce() };
+    })
+    .catch((error: unknown) => ({ ok: false as const, code: 'INTERNAL', message: errorMessage(error) }));
+
+  ipcMain.handle(UPDATE_CHECK_CHANNEL, (event): Promise<IpcEnvelope<UpdateState>> => respond(event.sender.id, () => controller.check()));
+  ipcMain.handle(UPDATE_DOWNLOAD_CHANNEL, (event): Promise<IpcEnvelope<UpdateState>> => respond(event.sender.id, () => controller.download()));
+  ipcMain.handle(UPDATE_INSTALL_CHANNEL, (event): Promise<IpcEnvelope<InstallOutcome>> => respond(event.sender.id, () => controller.install()));
+
+  if (!engine) return;
+  // unref: a pending check must never be the reason the app stays alive.
+  setTimeout(() => { void controller.check(); }, FIRST_CHECK_MS).unref();
+  setInterval(() => { void controller.check(); }, CHECK_INTERVAL_MS).unref();
+}
+
+/**
+ * The confirmation before a restart. It says what is lost and what is not,
+ * because "se reiniciará" alone does not tell anyone whether their agents,
+ * their terminals or their versions are at risk.
+ */
+function confirmInstall(activity: UpdateActivity, version: string): boolean {
+  const live = [
+    activity.chats > 0 ? `${activity.chats} ${activity.chats === 1 ? 'conversación' : 'conversaciones'}` : null,
+    activity.terminals > 0 ? `${activity.terminals} ${activity.terminals === 1 ? 'terminal' : 'terminales'}` : null,
+  ].filter((part): part is string => part !== null).join(' y ');
+  return ask({
+    type: 'question',
+    buttons: ['Reiniciar e instalar', 'Más tarde'],
+    defaultId: 1,
+    cancelId: 1,
+    title: `Actualizar Latte a ${version}`,
+    message: 'Guardá tus documentos antes de continuar.',
+    detail: live
+      ? `Latte se cierra para instalar la actualización. Se detienen ${live} en curso. Tus documentos guardados, tus versiones y tus decisiones no se tocan.`
+      : 'Latte se cierra para instalar la actualización. Tus documentos guardados, tus versiones y tus decisiones no se tocan.',
+    noLink: true,
+  });
+}
+
+/** The unsaved-work confirmation, shared by the window close and the app quit. */
+function confirmDiscardUnsaved(): boolean {
+  return ask({
+    type: 'warning',
+    buttons: ['Cerrar igual', 'Cancelar'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Cambios sin guardar',
+    message: 'Tenés cambios sin guardar en un documento.',
+    detail: 'Si cerrás ahora, se pierden. Las conversaciones abiertas y las versiones ya guardadas no se ven afectadas.',
+    noLink: true,
+  });
+}
+
+function ask(options: Electron.MessageBoxSyncOptions): boolean {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  return (win ? dialog.showMessageBoxSync(win, options) : dialog.showMessageBoxSync(options)) === 0;
+}
+
+/**
+ * Stops the backend once and only once. Both the window and the app can lead
+ * to a quit; whichever gets here first does the work.
+ */
+function stopBackend(): void {
+  if (backendStopped) return;
+  backendStopped = true;
+  unregisterIpc?.();
+  unregisterIpc = null;
+  backend?.service.shutdown();
+  backend = null;
+}
+
+function reportStartFailure(error: unknown): void {
+  const incompatible = error instanceof IncompatibleSchemaError;
+  console.error(`[latte] no se pudo abrir el espacio de trabajo: ${errorMessage(error)}`);
+  dialog.showErrorBox(
+    incompatible ? 'Tus datos son de una versión más nueva de Latte' : 'Latte no pudo abrir tus datos',
+    incompatible
+      ? `${errorMessage(error)}\n\nNo se abrió ni se modificó nada. Instalá la versión más reciente de Latte y volvé a intentar.`
+      : `${errorMessage(error)}\n\nTus datos siguen en disco, tal como estaban.`,
+  );
+  quitting = true;
+  app.quit();
 }
 
 function isMainSender(senderId: number): boolean {
@@ -127,18 +291,12 @@ function createWindow(): void {
     if (mainWindow === win) mainWindow = null;
   });
 
-  attachCloseGuard(win, {
+  closeGuard = attachCloseGuard(win, {
     hasUnsavedWork: () => hasUnsavedWork,
-    confirm: () => dialog.showMessageBoxSync(win, {
-      type: 'warning',
-      buttons: ['Cerrar igual', 'Cancelar'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'Cambios sin guardar',
-      message: 'Tenés cambios sin guardar en un documento.',
-      detail: 'Si cerrás ahora, se pierden. Las conversaciones abiertas y las versiones ya guardadas no se ven afectadas.',
-      noLink: true,
-    }) === 0,
+    confirm: confirmDiscardUnsaved,
+    // Answering here settles the quit that follows: 'before-quit' must not ask
+    // the same question a second time.
+    onConfirmed: () => { quitting = true; },
   });
 
   // The renderer never opens windows or navigates away. External http(s)
@@ -273,7 +431,7 @@ async function chooseExportPath(suggestedFileName: string): Promise<string | nul
     title: 'Export deliverable',
     defaultPath: path.join(app.getPath('documents'), suggestedFileName),
     filters: [
-      { name: 'Markdown', extensions: ['md'] },
+      { name: 'Formato original', extensions: [path.extname(suggestedFileName).slice(1) || 'md'] },
       { name: 'All files', extensions: ['*'] },
     ],
   };
@@ -303,9 +461,14 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
-  unregisterIpc?.();
-  unregisterIpc = null;
-  backend?.service.shutdown();
-  backend = null;
+attachQuitGuard(app, {
+  hasUnsavedWork: () => hasUnsavedWork,
+  confirm: confirmDiscardUnsaved,
+  isDecided: () => quitting,
+  decide: () => {
+    quitting = true;
+    // Whoever asked, asked for both: the window must not repeat the question.
+    closeGuard?.allowClose();
+  },
+  stop: stopBackend,
 });

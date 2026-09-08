@@ -27,6 +27,10 @@ const METHODS = [
   'exportDocument',
   'listUntrackedFiles',
   'listFolderEntries',
+  'listDeliverables',
+  'openDeliverable',
+  'revealDeliverable',
+  'copyDeliverable',
   'revealWorkFolder',
   'importFiles',
   'listHandoffs',
@@ -91,6 +95,13 @@ const CHAT_EVENT_CHANNEL = 'latte:chat-event';
 const UNSAVED_CHANNEL = 'latte:unsaved';
 const WINDOW_CHANNEL = 'latte:window';
 const WINDOW_STATE_CHANNEL = 'latte:window-state';
+// Updates are not backend operations, so they are not in METHODS. Keep in sync
+// with the UPDATE_* constants in electron/ipc/channels.ts.
+const UPDATE_STATE_CHANNEL = 'latte:update-state';
+const UPDATE_CHECK_CHANNEL = 'latte:update-check';
+const UPDATE_DOWNLOAD_CHANNEL = 'latte:update-download';
+const UPDATE_INSTALL_CHANNEL = 'latte:update-install';
+const UPDATE_PHASES = ['unsupported', 'idle', 'checking', 'available', 'downloading', 'ready', 'error'];
 
 function unwrap(envelope) {
   if (envelope && envelope.ok === true) return envelope.value;
@@ -137,6 +148,25 @@ api.onChatEvent = (callback) => {
   };
   ipcRenderer.on(CHAT_EVENT_CHANNEL, listener);
   return () => ipcRenderer.removeListener(CHAT_EVENT_CHANNEL, listener);
+};
+
+api.checkForUpdate = () => ipcRenderer.invoke(UPDATE_CHECK_CHANNEL).then(unwrap);
+api.downloadUpdate = () => ipcRenderer.invoke(UPDATE_DOWNLOAD_CHANNEL).then(unwrap);
+api.installUpdate = () => ipcRenderer.invoke(UPDATE_INSTALL_CHANNEL).then(unwrap);
+
+api.onUpdateState = (callback) => {
+  if (typeof callback !== 'function') throw new TypeError('onUpdateState expects a function');
+  const listener = (_event, payload) => {
+    if (!payload || UPDATE_PHASES.indexOf(payload.phase) === -1) return;
+    callback({
+      phase: payload.phase,
+      version: typeof payload.version === 'string' ? payload.version : null,
+      percent: typeof payload.percent === 'number' ? payload.percent : 0,
+      message: typeof payload.message === 'string' ? payload.message : '',
+    });
+  };
+  ipcRenderer.on(UPDATE_STATE_CHANNEL, listener);
+  return () => ipcRenderer.removeListener(UPDATE_STATE_CHANNEL, listener);
 };
 
 contextBridge.exposeInMainWorld('latte', Object.freeze(api));

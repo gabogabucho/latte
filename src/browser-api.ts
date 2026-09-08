@@ -74,7 +74,12 @@ export const browserAPI: LatteAPI = {
   listDocumentRevisions: async documentId=>read().revisions.filter(r=>r.documentId===documentId).reverse(),
   exportDocument: async documentId=>{const c=await previewContent(documentId);const url=URL.createObjectURL(new Blob([c.content],{type:'text/markdown;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=c.document.fileName;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return a.download;},
   keepDraftAsVersion: async(documentId,content)=>mutate(s=>revision(s,documentId,content)),
-  listUntrackedFiles: async()=>[],listFolderEntries:async()=>({subfolders:[],otherFiles:[],truncated:false}),revealWorkFolder:unavailable,importFiles:unavailable,listHandoffs:async()=>[],dismissHandoff:unavailable,listSkills:async()=>[],setSkillEnabled:unavailable,applyFunnelProposal:unavailable,dismissFunnelProposal:unavailable,trackFile:unavailable,
+  listUntrackedFiles: async()=>[],listFolderEntries:async()=>({subfolders:[],otherFiles:[],truncated:false}),revealWorkFolder:unavailable,importFiles:unavailable,
+  // There is no work folder in the browser: the deliverables of a work are
+  // files on the machine that runs the agent, so the preview lists none and
+  // refuses the actions instead of pretending it can reach a disk.
+  listDeliverables:async()=>({files:[],truncated:false}),openDeliverable:unavailable,revealDeliverable:unavailable,copyDeliverable:unavailable,
+listHandoffs:async()=>[],dismissHandoff:unavailable,listSkills:async()=>[],setSkillEnabled:unavailable,applyFunnelProposal:unavailable,dismissFunnelProposal:unavailable,trackFile:unavailable,
   saveAsDocument:async(workId,kind,title,content)=>{const c=await browserAPI.createDocument(workId,kind,title);await browserAPI.saveDocument(c.document.id,content,c.fingerprint);return c.document;},
   getFolderTrust:async()=>false,setFolderTrust:unavailable,
   acknowledgeBase:async documentId=>mutate(s=>{const d=contentFrom(s,documentId).document;if(d.baseDocumentId)d.baseFingerprint=contentFrom(s,d.baseDocumentId).fingerprint;return d;}),
@@ -104,6 +109,12 @@ export const browserAPI: LatteAPI = {
   listProfiles:async()=>[...builtinProfiles,...normalized().profiles],
   saveProfile:async(input,expectedFingerprint)=>mutate(s=>{validateProfile(input);if(shippedRoles.some(r=>r.id===input.id))throw new Error('Los perfiles incluidos son de solo lectura');const existing=s.profiles.find(p=>p.id===input.id);if(expectedFingerprint===null?Boolean(existing):!existing||existing.fingerprint!==expectedFingerprint)throw new Error('El perfil cambió o ya existe. Tu borrador sigue intacto; recargá antes de reintentar.');const p:AgentProfile={...input,builtin:false,source:'custom',directory:null,fingerprint:id()};s.profiles=s.profiles.filter(p=>p.id!==input.id);s.profiles.push(p);return p;}),
   listTeam: async () => [], addTeamMember: unavailable, openTeamMember: unavailable, pauseTeamMember: unavailable, finishTeamMember: unavailable, restartTeamMember: unavailable, removeTeamMember: unavailable,
+  // The web preview is always whatever ohmylatte.app is serving: there is
+  // nothing to download and nothing to restart.
+  checkForUpdate: async () => ({ phase: 'unsupported' as const, version: null, percent: 0, message: 'Esta es la vista previa web: se actualiza sola al recargar la página.' }),
+  downloadUpdate: async () => browserAPI.checkForUpdate(),
+  installUpdate: async () => ({ status: 'not-ready' as const }),
+  onUpdateState: () => () => {},
 };
 export const api = window.latte ?? browserAPI;
 export const isDesktop = Boolean(window.latte);

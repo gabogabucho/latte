@@ -11,6 +11,7 @@ import { useActiveEdits } from './chat-store';
 import { SettingsScreen, type SettingsSection } from './SettingsScreen';
 import { TeamPanel, type RuntimeChoice } from './TeamPanel';
 import { TerminalPane } from './TerminalPane';
+import { UpdateBanner } from './UpdateBanner';
 
 type View = 'brief' | 'funnel' | 'context' | 'memory' | 'decisions';
 type Modal = 'brand' | 'work' | 'document' | null;
@@ -315,6 +316,8 @@ export function App() {
     if (!session) return;
     // Loaded, never sent: the request is a draft you read before it costs anything.
     chatStore.setDraft(session.id, handoff.request);
+    // Reveal the conversation without unmounting or saving the document editor.
+    setLayout('conversation'); setView('brief'); setAgentMode('chat');
     await api.dismissHandoff(work.id, handoff.fileName).catch(() => undefined);
     setHandoffs(await api.listHandoffs(work.id).catch(() => []));
     setNotice(`${handoff.roleName} abierto con el pedido cargado. Revisalo antes de enviarlo.`);
@@ -330,7 +333,8 @@ export function App() {
   const workHasLiveChat = (workId: string) => Object.values(chats).some(c => c.workId === workId);
   const sessionWork = works.find(w => w.id === session?.workId);
   const activeTerminals = Object.values(sessions).filter(s => !endedSessions.has(s.id)).length, activeChats = liveChatIds.size;
-  if (settings) return <SettingsScreen onProfileDirtyChange={setProfileDirty} controls={isDesktop ? <WindowControls /> : null} section={settings} onSection={setSettings} onClose={() => { setSettings(null); setError(''); setNotice(''); }} onChanged={() => { void refreshChatStatus(); void api.listRoles().then(setRoles).catch(e=>setError(displayError(e))); }} onNotice={setNotice} onError={setError} notice={notice} error={error} onDismiss={() => { setError(''); setNotice(''); }} />;
+  // The update notice follows the user into Ajustes: it is about the app, not about the view.
+  if (settings) return <><SettingsScreen onProfileDirtyChange={setProfileDirty} controls={isDesktop ? <WindowControls /> : null} section={settings} onSection={setSettings} onClose={() => { setSettings(null); setError(''); setNotice(''); }} onChanged={() => { void refreshChatStatus(); void api.listRoles().then(setRoles).catch(e=>setError(displayError(e))); }} onNotice={setNotice} onError={setError} notice={notice} error={error} onDismiss={() => { setError(''); setNotice(''); }} /><UpdateBanner /></>;
   return <div className={'app-shell' + (railed ? ' railed' : '') + (focusChat ? ' conversation-focus' : '') + (dragging ? ' dragging' : '')} style={{ ['--agent-width' as string]: `${agentWidth}px` }}>
     <aside className="sidebar">
       <div className="wordmark"><span className="logo-mark" aria-hidden="true" />Latte<span className="alpha">ALPHA</span><button className="rail-toggle" aria-expanded={!railed} aria-label={railed ? 'Desplegar el menú' : 'Plegar el menú'} title={railed ? 'Desplegar el menú' : 'Plegar el menú'} onClick={() => setRailed(v => !v)}>{railed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
@@ -371,5 +375,6 @@ export function App() {
     <footer className="statusbar"><span><Circle size={11} />{isDesktop ? `Espacio local · ${activeChats} chats · ${activeTerminals} terminales` : 'Previsualización · localStorage'}</span><span>{busy ? 'Procesando…' : dirty || contextDirty ? 'Cambios sin guardar' : 'Todo guardado'}<Check size={13} /></span><span>Latte <span className="status-version">0.1 / ALPHA</span></span></footer>
     {(modal === 'brand' || modal === 'work') && <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget && !busy) setModal(null); }}><section role="dialog" aria-modal="true" aria-labelledby="dialog-title" className="modal"><div className="modal-head"><div><div className="document-kicker">TU ESTUDIO, CON ORDEN</div><h2 id="dialog-title">{modal === 'brand' ? 'Una nueva marca.' : 'Un nuevo trabajo.'}</h2></div><button className="modal-close" aria-label="Cerrar" onClick={() => setModal(null)}><X size={20} /></button></div><div className="modal-body"><form onSubmit={e => { e.preventDefault(); void create(); }}><label className="field-label" htmlFor="new-name">{modal === 'brand' ? 'NOMBRE DE LA MARCA' : 'TÍTULO DEL TRABAJO'}</label><input autoFocus id="new-name" maxLength={120} value={name} onChange={e => setName(e.target.value)} placeholder={modal === 'brand' ? 'Ej. Casa Oliva' : 'Ej. Investigación de audiencia'} /><p className="footnote">Podés empezar con lo que sabés e incorporar contexto después.</p><button className="primary" disabled={!name.trim() || busy}>Crear {modal === 'brand' ? 'marca' : 'trabajo'}<ArrowUpRight size={16} /></button></form></div></section></div>}
     {modal === 'document' && <NewDocumentDialog documents={documents} busy={busy} onCancel={() => setModal(null)} onCreate={createDocument} />}
+    <UpdateBanner />
   </div>;
 }

@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-electron/
+# Installers and update metadata produced by electron-builder.
+release/
 .vite/
 *.log
 .DS_Store
@@ -51,3 +53,4 @@ assets/*.png
 !assets/icon-256.png
 !assets/icon-64.png
 !assets/favicon.png
+!assets/latte-repo-cover.png

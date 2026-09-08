@@ -114,6 +114,20 @@ export function briefDocumentId(workId: string): string {
 export class LatteRepository {
   constructor(private readonly db: SqlDriver) {}
 
+  /**
+   * Schema version recorded on disk, readable before migrate() writes
+   * anything. Null for a database that was never migrated — the meta table
+   * may not exist yet — which is the same thing as "brand new" here.
+   */
+  storedSchemaVersion(): string | null {
+    try {
+      const row = this.db.get<{ value: string }>("SELECT value FROM meta WHERE key = 'schema_version'");
+      return row ? row.value : null;
+    } catch {
+      return null;
+    }
+  }
+
   migrate(): void {
     this.db.exec(SCHEMA_SQL);
     const documentColumns = this.db.all<{ name: string }>("SELECT name FROM pragma_table_info('documents')").map(c => c.name);

@@ -18,8 +18,10 @@ import { loadPty, type PtyLoadResult } from './runtime/ptyLoader';
 import { TerminalManager } from './runtime/terminalManager';
 import { LatteService } from './services/latteService';
 import { seedDemoIfEmpty } from './services/seed';
+import { prepareForMigration } from './storage/backup';
 import { openDriver, type DriverPreference } from './storage/openDriver';
 import { LatteRepository } from './storage/repository';
+import { SCHEMA_VERSION } from './storage/schema';
 import { loadInstructionPack } from './workspace/packs';
 import { WorkspaceFiles } from './workspace/workspace';
 
@@ -35,6 +37,8 @@ export interface BackendOptions {
   chooseFiles?: (title: string) => Promise<string[]>;
   /** Shows a folder in the system file manager. */
   revealPath?: (target: string) => Promise<void>;
+  revealFile?: (target: string) => Promise<void>;
+  confirmHtml?: (fileName: string) => Promise<boolean>;
   seedDemo?: boolean;
   driver?: DriverPreference;
   runner?: CommandRunner;
@@ -67,7 +71,17 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   const paths = new LattePaths(options.dataDir);
   const { driver, reason } = await openDriver(paths.dbFile, options.driver ?? 'auto');
   const repo = new LatteRepository(driver);
-  repo.migrate();
+  // Updating the app can mean updating the schema. A copy is taken before the
+  // first ALTER TABLE, and a database written by a newer Latte stops the start
+  // here instead of being migrated backwards. A refused start closes its own
+  // handle: leaving the file open would block the retry that follows.
+  try {
+    prepareForMigration(paths.dbFile, repo.storedSchemaVersion(), SCHEMA_VERSION, { log: options.log });
+    repo.migrate();
+  } catch (error) {
+    try { driver.close(); } catch { /* nothing useful to do while failing */ }
+    throw error;
+  }
 
   const files = new WorkspaceFiles(paths);
   // Works linked to a user folder resolve there from the first read on.
@@ -128,7 +142,7 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
   const packsDir = options.packsDir ?? path.resolve(__dirname, '..', 'packs');
   const pack = loadInstructionPack(packsDir, 'marketing-core');
   const roles = new RoleCatalog(pack, new ProfileStore(path.join(paths.root, 'agents')));
-  const hub: AgentHub = new AgentHub({ opencode: chat, claude, codex, accounts, repo, detector, terminal, runner, roles, transcripts, promptDir: path.join(paths.root, 'prompts'), env });
+  const hub: AgentHub = new AgentHub({ opencode: chat, claude, codex, accounts, repo, detector, terminal, runner, roles, transcripts, promptDir: path.join(paths.root, 'prompts'), loginCwd: paths.root, env });
 
   const mcp = new McpCatalog({ runner, detector, accountEnv: (runtime, accountId) => accounts.envFor(runtime, accountId), env });
 
@@ -152,6 +166,8 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
     chooseFolder: options.chooseFolder,
     chooseFiles: options.chooseFiles,
     revealPath: options.revealPath,
+    revealFile: options.revealFile,
+    confirmHtml: options.confirmHtml,
     openExternal: options.openExternal,
   });
 

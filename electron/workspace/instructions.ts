@@ -156,6 +156,8 @@ export function renderInstructions(input: InstructionsInput): string {
 
   parts.push(
     '## Working rules',
+    '- Human-facing files (PDF, DOCX, XLSX, presentations, images, self-contained HTML) belong in ./entregables/. Create this ordinary directory if absent; never replace an existing file or link at that path. Keep context, instructions, handoff requests and existing tracked Markdown at their current paths. Never overwrite an existing output without permission; use a new descriptive filename.',
+    '- Produce real formats only with tools actually available. Renaming Markdown to .pdf/.docx/.xlsx is not conversion. If a required tool is absent, explain the limitation and offer a real alternative. Validate the generated file before calling it ready and tell the human its relative path. Latte lists these files; it does not generate, validate, approve or version binary outputs. Prefer self-contained HTML without external assets; opening HTML is an explicit human decision.',
     '',
     `- Each tracked file listed above is a deliverable of its own. Write in the one your task belongs to; \`./${WORK_FILES.brief}\` holds the ask, not every result.`,
     '- The human edits these same files from Latte. Re-read a file immediately before editing it and keep it valid Markdown.',
