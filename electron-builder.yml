@@ -106,3 +106,24 @@ nsis:
   # fixed artifact name above. Off until a real update between two published
   # versions has been observed working.
   differentialPackage: false
+
+linux:
+  icon: assets/icon-512.png
+  category: Utility
+  # Paquete y metadata Debian. Sin `maintainer` el .deb se construye igual
+  # pero advierte; este es el contacto público del proyecto.
+  maintainer: "Oh My Latte <hola@ohmylatte.app>"
+  # Solo x64 verificado (ver decisiones §8). Añadir arm64 cuando haya runner.
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  artifactName: '${productName}-${version}-linux-${arch}.${ext}'
+  # .desktop: nombre y descripción que se ven en el menú de aplicaciones.
+  desktop:
+    entry:
+      Name: Latte
+      Comment: Dirigí agentes de IA alrededor de tus marcas y entregables
+      Categories: Utility;Office;
+      StartupWMClass: latte
