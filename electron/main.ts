@@ -17,6 +17,10 @@ import { UpdateController, type UpdateActivity } from './updater/controller';
 import { createUpdaterEngine } from './updater/engine';
 import { attachCloseGuard, attachQuitGuard, type CloseGuardHandle } from './windowClose';
 import { registerIpc } from './ipc/register';
+import { mainMessage } from './i18n';
+
+const uiLocale = () => backend?.repo.getMeta('ui_locale') === 'en-US' ? 'en-US' as const : 'es-AR' as const;
+const mt = (key: Parameters<typeof mainMessage>[1], params?: Record<string,string|number>) => mainMessage(uiLocale(), key, params);
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL ?? null;
 /** Last state reported by the renderer; only affects the close confirmation. */
@@ -80,6 +84,11 @@ async function start(): Promise<void> {
       openExternal: async (url) => { if (isExternalHttp(url)) await shell.openExternal(url); },
       log: (line) => console.log(line.trimEnd()),
     });
+    // Persist the first automatic choice. From then on the explicit preference
+    // always wins over an operating-system locale change.
+    if (backend.repo.getMeta('ui_locale') === null) {
+      backend.repo.setMeta('ui_locale', app.getLocale().toLowerCase().startsWith('en') ? 'en-US' : 'es-AR');
+    }
   } catch (error) {
     // Opening the data is the one failure that must not end in a blank window:
     // it usually means the database belongs to a newer Latte.
@@ -189,14 +198,14 @@ function setupUpdates(): void {
 function confirmInstall(activity: UpdateActivity, version: string): boolean {
   const live = [
     activity.chats > 0 ? `${activity.chats} ${activity.chats === 1 ? 'conversación' : 'conversaciones'}` : null,
-    activity.terminals > 0 ? `${activity.terminals} ${activity.terminals === 1 ? 'terminal' : 'terminales'}` : null,
-  ].filter((part): part is string => part !== null).join(' y ');
+    activity.terminals > 0 ? mt(activity.terminals === 1 ? 'terminalOne' : 'terminalMany', { count: activity.terminals }) : null,
+  ].filter((part): part is string => part !== null).join(mt('and'));
   return ask({
     type: 'question',
     buttons: ['Reiniciar e instalar', 'Más tarde'],
     defaultId: 1,
     cancelId: 1,
-    title: `Actualizar Latte a ${version}`,
+    title: mt('updateTitle', { version }),
     message: 'Guardá tus documentos antes de continuar.',
     detail: live
       ? `Latte se cierra para instalar la actualización. Se detienen ${live} en curso. Tus documentos guardados, tus versiones y tus decisiones no se tocan.`
@@ -209,10 +218,10 @@ function confirmInstall(activity: UpdateActivity, version: string): boolean {
 function confirmDiscardUnsaved(): boolean {
   return ask({
     type: 'warning',
-    buttons: ['Cerrar igual', 'Cancelar'],
+    buttons: [mt('closeAnyway'), mt('cancel')],
     defaultId: 1,
     cancelId: 1,
-    title: 'Cambios sin guardar',
+    title: mt('unsavedTitle'),
     message: 'Tenés cambios sin guardar en un documento.',
     detail: 'Si cerrás ahora, se pierden. Las conversaciones abiertas y las versiones ya guardadas no se ven afectadas.',
     noLink: true,
@@ -428,11 +437,11 @@ function emitChatEvent(event: ChatEvent): void {
 
 async function chooseExportPath(suggestedFileName: string): Promise<string | null> {
   const options = {
-    title: 'Export deliverable',
+    title: mt('exportTitle'),
     defaultPath: path.join(app.getPath('documents'), suggestedFileName),
     filters: [
-      { name: 'Formato original', extensions: [path.extname(suggestedFileName).slice(1) || 'md'] },
-      { name: 'All files', extensions: ['*'] },
+      { name: mt('originalFormat'), extensions: [path.extname(suggestedFileName).slice(1) || 'md'] },
+      { name: mt('allFiles'), extensions: ['*'] },
     ],
   };
   const result = mainWindow && !mainWindow.isDestroyed()
@@ -444,14 +453,14 @@ async function chooseExportPath(suggestedFileName: string): Promise<string | nul
 
 /** File picker for bringing the client's own material into a work folder. */
 async function chooseFiles(title: string): Promise<string[]> {
-  const options = { title, properties: ['openFile' as const, 'multiSelections' as const, 'dontAddToRecent' as const], buttonLabel: 'Traer al trabajo' };
+  const options = { title: mt('importTitle'), properties: ['openFile' as const, 'multiSelections' as const, 'dontAddToRecent' as const], buttonLabel: mt('importButton') };
   const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
   return result.canceled ? [] : result.filePaths;
 }
 
 /** Folder picker for pointing a work at an existing folder. */
 async function chooseFolder(title: string): Promise<string | null> {
-  const options = { title, properties: ['openDirectory' as const, 'dontAddToRecent' as const], buttonLabel: 'Usar esta carpeta' };
+  const options = { title: mt('folderTitle'), properties: ['openDirectory' as const, 'dontAddToRecent' as const], buttonLabel: mt('folderButton') };
   const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
   if (result.canceled || result.filePaths.length === 0) return null;
   return result.filePaths[0];

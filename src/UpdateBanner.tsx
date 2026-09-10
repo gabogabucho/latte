@@ -1,3 +1,4 @@
+import { translate as t } from './i18n';
 import { useEffect, useState } from 'react';
 import { Download, LoaderCircle, RefreshCw, X } from 'lucide-react';
 import type { UpdateState } from '../shared/contracts';
@@ -42,10 +43,10 @@ export function UpdateBanner() {
     void api.installUpdate()
       .then(outcome => {
         // 'installing' quits the app; 'cancelled' is an answer, not an error.
-        if (outcome.status === 'unsaved') setBlocked('Tenés cambios sin guardar. Guardalos o descartalos y volvé a intentar: la actualización no empieza sobre un documento abierto.');
-        else if (outcome.status === 'not-ready') setBlocked('La actualización todavía no terminó de descargarse.');
+        if (outcome.status === 'unsaved') setBlocked(t('ui.auto.323'));
+        else if (outcome.status === 'not-ready') setBlocked(t('ui.auto.324'));
       })
-      .catch(() => setBlocked('No se pudo iniciar la actualización. Latte sigue funcionando normalmente.'))
+      .catch(() => setBlocked(t('ui.auto.325')))
       .finally(() => setBusy(false));
   };
   const later = () => setDismissed(key(state));
@@ -54,28 +55,28 @@ export function UpdateBanner() {
   return <section className={'update-toast' + (state.phase === 'ready' ? ' ready' : '')} role="status" aria-live="polite">
     <div className="update-toast-head">
       <strong>{
-        state.phase === 'ready' ? 'Actualización lista para instalar'
-          : state.phase === 'downloading' ? `Descargando la ${version}`
-            : state.phase === 'error' ? 'No se pudo actualizar'
+        state.phase === 'ready' ? t('ui.auto.326')
+          : state.phase === 'downloading' ? t('ui.auto.414', { p0: version })
+            : state.phase === 'error' ? t('ui.auto.327')
               : `Hay una nueva versión de Latte disponible`
       }</strong>
-      <button className="icon-button" aria-label="Ocultar el aviso" title="Ocultar el aviso" onClick={later}><X size={15} /></button>
+      <button className="icon-button" aria-label={t('ui.auto.328')} title={t('ui.auto.328')} onClick={later}><X size={15} /></button>
     </div>
 
-    {state.phase === 'available' && <p>Latte {state.version} está publicada. Podés descargarla ahora y seguir trabajando mientras tanto.</p>}
+    {state.phase === 'available' && <p>Latte {state.version}  {t('ui.auto.329')}</p>}
     {state.phase === 'downloading' && <>
-      <p>Seguí trabajando: se descarga en segundo plano y te avisamos cuando esté lista.</p>
+      <p>{t('ui.auto.330')}</p>
       <div className="update-progress"><i style={{ width: `${state.percent}%` }} /></div>
     </>}
-    {state.phase === 'ready' && <p><strong>Guardá tus documentos antes de continuar.</strong> Latte se reinicia para instalar la {version} y se detienen los agentes y las terminales que estén activos.</p>}
+    {state.phase === 'ready' && <p><strong>{t('ui.auto.331')}</strong>  {t('ui.auto.332')} {version}  {t('ui.auto.333')}</p>}
     {state.phase === 'error' && <p>{state.message}</p>}
     {blocked && <p className="update-blocked" role="alert">{blocked}</p>}
 
     <div className="update-actions">
-      {state.phase === 'available' && <button className="primary" disabled={busy} onClick={download}>{busy ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}Descargar actualización</button>}
-      {state.phase === 'ready' && <button className="primary" disabled={busy} onClick={install}>{busy ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}Reiniciar e instalar</button>}
-      {state.phase === 'error' && <button disabled={busy} onClick={download}>{busy ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}Reintentar</button>}
-      {state.phase !== 'downloading' && <button className="subtle" onClick={later}>Más tarde</button>}
+      {state.phase === 'available' && <button className="primary" disabled={busy} onClick={download}>{busy ? <LoaderCircle className="spin" size={15} /> : <Download size={15} />}{t('ui.auto.334')}</button>}
+      {state.phase === 'ready' && <button className="primary" disabled={busy} onClick={install}>{busy ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}{t('ui.auto.415')}</button>}
+      {state.phase === 'error' && <button disabled={busy} onClick={download}>{busy ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}{t('ui.auto.372')}</button>}
+      {state.phase !== 'downloading' && <button className="subtle" onClick={later}>{t('ui.auto.335')}</button>}
     </div>
   </section>;
 }

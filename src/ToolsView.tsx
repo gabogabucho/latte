@@ -1,3 +1,4 @@
+import { translate as t } from './i18n';
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Check, LoaderCircle, Plug, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import type { ChatRuntime, McpRuntimeTools, McpServer } from '../shared/contracts';
@@ -51,7 +52,7 @@ export function ToolsView({ onNotice, onError }: { onNotice: (text: string) => v
   useEffect(() => { void load(); }, []);
 
   const remove = (runtime: 'claude' | 'codex', name: string) => {
-    if (!window.confirm(`¿Quitar «${name}» de ${RUNTIME_NAME[runtime]}? Se quita de ese runtime, no solo de Latte.`)) return;
+    if (!window.confirm(t('ui.auto.407', { p0: name, p1: RUNTIME_NAME[runtime] }))) return;
     setBusy(true);
     api.removeMcpServer(runtime, name)
       .then(async () => { await load(); onNotice(`«${name}» quitado de ${RUNTIME_NAME[runtime]}`); })
@@ -60,39 +61,38 @@ export function ToolsView({ onNotice, onError }: { onNotice: (text: string) => v
   };
 
   return <section className="settings-section tools-view">
-    <h2>Herramientas de los agentes (MCP)</h2>
+    <h2>{t('ui.auto.304')}</h2>
     <p className="settings-lead">
-      Sin esto, un agente solo ve los archivos de este trabajo. Con MCP puede además consultar y operar
-      herramientas externas. Latte no implementa MCP ni guarda credenciales: lee y escribe la configuración
-      de cada runtime, así que lo que agregues acá también va a estar cuando uses ese CLI por fuera.
+
+      {t('ui.auto.305')}
     </p>
-    <button className="subtle" disabled={loading || busy} onClick={() => void load()}>{loading ? <LoaderCircle className="spin" size={13} /> : <RefreshCw size={13} />}Actualizar</button>
+    <button className="subtle" disabled={loading || busy} onClick={() => void load()}>{loading ? <LoaderCircle className="spin" size={13} /> : <RefreshCw size={13} />}{t('ui.auto.306')}</button>
 
     {/* A blank wait reads as "no hay nada": name what is still pending. */}
     {loading && Object.entries(RUNTIME_NAME).filter(([key]) => !runtimes?.some(r => r.runtime === key)).map(([key, label]) => <div className="runtime-card pending" key={key}>
-      <div className="runtime-head"><strong>{label}</strong><small><LoaderCircle className="spin" size={12} /> Consultando…</small></div>
+      <div className="runtime-head"><strong>{label}</strong><small><LoaderCircle className="spin" size={12} />  {t('ui.auto.408')}</small></div>
     </div>)}
-    {loading && <p className="footnote">El de Claude Code prueba la conexión de cada herramienta, así que es el que más tarda.</p>}
+    {loading && <p className="footnote">{t('ui.auto.307')}</p>}
 
     {runtimes?.map(rt => <div className="runtime-card" key={rt.runtime}>
       <div className="runtime-head">
         <strong>{RUNTIME_NAME[rt.runtime] ?? rt.runtime}</strong>
         <small>{rt.detail}</small>
       </div>
-      {rt.installed && rt.servers.length === 0 && <p className="footnote">Sin herramientas configuradas todavía.</p>}
+      {rt.installed && rt.servers.length === 0 && <p className="footnote">{t('ui.auto.308')}</p>}
       {rt.servers.length > 0 && <div className="provider-list">
         {rt.servers.map(server => <div className="provider-card mcp-card" key={server.name}>
           <i className={'mcp-dot ' + server.status} title={STATUS_LABEL[server.status]} />
           <div>
             <strong>{server.name}</strong>
-            <small title={server.target}>{server.transport === 'http' ? 'HTTP' : 'proceso local'} · {server.target || 'sin destino declarado'}</small>
+            <small title={server.target}>{server.transport === 'http' ? 'HTTP' : t('ui.auto.309')} · {server.target || t('ui.auto.310')}</small>
             {server.detail && server.status !== 'connected' && <small className="mcp-detail">{server.detail}</small>}
           </div>
           <span className="tag">{STATUS_LABEL[server.status]}</span>
           {rt.canEdit && <button className="icon-button" aria-label={`Quitar ${server.name}`} title="Quitar de este runtime" disabled={busy} onClick={() => remove(rt.runtime as 'claude' | 'codex', server.name)}><Trash2 size={14} /></button>}
         </div>)}
       </div>}
-      {rt.installed && rt.canEdit && adding !== rt.runtime && <button className="subtle" disabled={busy} onClick={() => setAdding(rt.runtime as 'claude' | 'codex')}><Plus size={13} />Conectar una herramienta</button>}
+      {rt.installed && rt.canEdit && adding !== rt.runtime && <button className="subtle" disabled={busy} onClick={() => setAdding(rt.runtime as 'claude' | 'codex')}><Plus size={13} />{t('ui.auto.311')}</button>}
       {adding === rt.runtime && <AddServer runtime={rt.runtime as 'claude' | 'codex'} busy={busy} onCancel={() => setAdding(null)} onAdd={async input => {
         setBusy(true);
         try {
@@ -102,12 +102,12 @@ export function ToolsView({ onNotice, onError }: { onNotice: (text: string) => v
           onNotice(`«${input.name}» quedó configurado en ${RUNTIME_NAME[rt.runtime]}`);
         } catch (e) { onError(displayError(e)); } finally { setBusy(false); }
       }} />}
-      {rt.installed && !rt.canEdit && <p className="footnote"><AlertTriangle size={13} /> Para agregar acá, usá <code>opencode mcp add</code> en una terminal: ese comando pregunta paso a paso y no se puede automatizar sin inventar respuestas.</p>}
+      {rt.installed && !rt.canEdit && <p className="footnote"><AlertTriangle size={13} />  {t('ui.auto.312')} <code>opencode mcp add</code>  {t('ui.auto.313')}</p>}
     </div>)}
 
     <p className="footnote">
-      Una herramienta MCP puede leer y escribir fuera de esta carpeta, según lo que ese servidor permita.
-      Los permisos los aplica el runtime, no Latte, y sus pedidos aparecen en la conversación para que decidas.
+
+      {t('ui.auto.314')}
     </p>
   </section>;
 }
@@ -127,29 +127,29 @@ function AddServer({ runtime, busy, onCancel, onAdd }: {
   const env = envText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const ready = name.trim().length > 0 && (transport === 'http' ? /^https?:\/\//.test(url.trim()) : parts.length > 0);
 
-  return <div className="chat-card mcp-form" role="group" aria-label="Conectar una herramienta">
-    <div className="chat-card-title"><Plug size={15} />Conectar en {RUNTIME_NAME[runtime]}</div>
-    <label className="field-label" htmlFor={`mcp-name-${runtime}`}>NOMBRE</label>
+  return <div className="chat-card mcp-form" role="group" aria-label={t('ui.auto.311')}>
+    <div className="chat-card-title"><Plug size={15} />{t('ui.auto.315')} {RUNTIME_NAME[runtime]}</div>
+    <label className="field-label" htmlFor={`mcp-name-${runtime}`}>{t('ui.auto.409')}</label>
     <input id={`mcp-name-${runtime}`} value={name} maxLength={64} placeholder="Ej. notion" onChange={e => setName(e.target.value)} />
-    <label className="field-label" htmlFor={`mcp-transport-${runtime}`}>CÓMO SE CONECTA</label>
+    <label className="field-label" htmlFor={`mcp-transport-${runtime}`}>{t('ui.auto.316')}</label>
     <select id={`mcp-transport-${runtime}`} value={transport} onChange={e => setTransport(e.target.value as 'stdio' | 'http')}>
-      <option value="stdio">Un programa en esta máquina</option>
-      <option value="http">Un servidor por HTTP</option>
+      <option value="stdio">{t('ui.auto.317')}</option>
+      <option value="http">{t('ui.auto.318')}</option>
     </select>
     {transport === 'stdio' ? <>
-      <label className="field-label" htmlFor={`mcp-command-${runtime}`}>COMANDO</label>
+      <label className="field-label" htmlFor={`mcp-command-${runtime}`}>{t('ui.auto.410')}</label>
       <input id={`mcp-command-${runtime}`} value={command} maxLength={400} placeholder="npx -y @modelcontextprotocol/server-filesystem" onChange={e => setCommand(e.target.value)} />
-      <label className="field-label" htmlFor={`mcp-env-${runtime}`}>VARIABLES (UNA POR LÍNEA, OPCIONAL)</label>
+      <label className="field-label" htmlFor={`mcp-env-${runtime}`}>{t('ui.auto.319')}</label>
       <textarea id={`mcp-env-${runtime}`} className="context-editor short" value={envText} placeholder={'API_KEY=...'} onChange={e => setEnvText(e.target.value)} />
-      <p className="footnote">Las variables se las pasa Latte al CLI del runtime y quedan en su configuración. Latte no las guarda ni las muestra después.</p>
+      <p className="footnote">{t('ui.auto.320')}</p>
     </> : <>
-      <label className="field-label" htmlFor={`mcp-url-${runtime}`}>URL</label>
-      <input id={`mcp-url-${runtime}`} value={url} maxLength={500} placeholder="https://mcp.ejemplo.com/mcp" onChange={e => setUrl(e.target.value)} />
-      <p className="footnote">Si el servidor pide autenticación, iniciá sesión con <code>{runtime} mcp login {name || 'nombre'}</code> después de agregarlo.</p>
+      <label className="field-label" htmlFor={t('ui.auto.411', { p0: runtime })}>{t('ui.auto.412')}</label>
+      <input id={t('ui.auto.411', { p0: runtime })} value={url} maxLength={500} placeholder="https://mcp.ejemplo.com/mcp" onChange={e => setUrl(e.target.value)} />
+      <p className="footnote">{t('ui.auto.321')} <code>{runtime} mcp login {name || t('ui.auto.413')}</code>  {t('ui.auto.322')}</p>
     </>}
     <div className="chat-card-actions">
-      <button className="primary" disabled={busy || !ready} onClick={() => void onAdd({ name: name.trim(), transport, command: parts[0] ?? '', args: parts.slice(1), url: url.trim(), env })}>{busy ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}Conectar</button>
-      <button disabled={busy} onClick={onCancel}><X size={14} />Cancelar</button>
+      <button className="primary" disabled={busy || !ready} onClick={() => void onAdd({ name: name.trim(), transport, command: parts[0] ?? '', args: parts.slice(1), url: url.trim(), env })}>{busy ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}{t('ui.auto.261')}</button>
+      <button disabled={busy} onClick={onCancel}><X size={14} />{t('ui.auto.241')}</button>
     </div>
   </div>;
 }

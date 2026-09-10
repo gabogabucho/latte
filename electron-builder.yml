@@ -1,5 +1,4 @@
-# Packaging for Latte. Windows/NSIS first: it is the only target that has been
-# designed for here, and it is the one the updater supports out of the box.
+# Packaging for Latte on Windows and macOS.
 #
 # Nothing in this file has been executed yet — no installer has been produced
 # and no release has been published. Treat every value as a proposal to verify
@@ -46,6 +45,33 @@ publish:
   # Draft on purpose: the release is written, then a human looks at it and
   # publishes. Nothing reaches users by running a build.
   releaseType: draft
+
+# Direct distribution outside the Mac App Store. ZIP is not optional here:
+# electron-updater/Squirrel.Mac needs it to generate and consume latest-mac.yml.
+# Building both architectures in one electron-builder invocation also produces
+# one coherent metadata file containing both ZIPs.
+mac:
+  category: public.app-category.business
+  icon: assets/icon-512.png
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  notarize: true
+  electronUpdaterCompatibility: '>= 2.16'
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  artifactName: '${productName}-${version}-mac-${arch}.${ext}'
+
+dmg:
+  artifactName: '${productName}-${version}-mac-${arch}.${ext}'
 
 win:
   target:

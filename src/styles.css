@@ -404,6 +404,8 @@ html,body,#root{height:100%;overflow:hidden}
 .folder-trust>summary{display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:11px;cursor:pointer;list-style:none;color:#9d8d75}
 .folder-trust>summary::-webkit-details-marker{display:none}
 .folder-trust>summary span{flex:1}
+.folder-trust>summary span strong{display:block;font-weight:600}
+.folder-trust>summary span small{display:block;margin-top:2px;color:var(--muted);font-size:9px;line-height:1.4}
 .folder-trust.granted>summary{color:#8fbf9e}
 .folder-trust p{margin:0 8px 6px;font-size:10px;line-height:1.65;color:#8a7a63}
 .folder-trust .folder-trust-note{opacity:.75}
@@ -515,4 +517,5 @@ html,body,#root{height:100%;overflow:hidden}
 .permission-modes button.selected{border-color:var(--accent);background:rgba(200,140,80,.1)}
 .permission-modes strong{display:block;font-size:11px;font-weight:550}
 .permission-modes small{display:block;font-size:10px;line-height:1.6;color:var(--muted);margin-top:3px}
+.permission-warning,.permission-preview{margin:0 8px 8px!important;padding:7px 8px;border-radius:5px;background:rgba(200,140,80,.1)}
 .permission-warning{margin:0 8px 8px;font-size:10px;line-height:1.6;color:#d99a6c}

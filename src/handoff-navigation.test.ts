@@ -28,7 +28,7 @@ it('reveals the requested chat from review without sending or saving the documen
     setLayout: (value: string) => { state.layout = value; },
     setView: (value: string) => { state.view = value; },
     setAgentMode: (value: string) => { state.agentMode = value; },
-    setHandoffs: vi.fn(), setNotice: vi.fn(),
+    setHandoffs: vi.fn(), setNotice: vi.fn(), t: (key: string) => key,
   };
   expect(initializer).not.toBe('');
   const code = ts.transpileModule(`const handler = ${initializer};`, {

@@ -6,6 +6,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // Keep in sync with electron/ipc/channels.ts (tests assert equality).
 const METHODS = [
+  'getUiLocale',
+  'setUiLocale',
+  'getContentLocale',
+  'setContentLocale',
   'appInfo',
   'listBrands',
   'createBrand',

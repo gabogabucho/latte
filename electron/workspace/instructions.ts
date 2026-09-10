@@ -72,6 +72,8 @@ export interface InstructionsInput {
   team?: { roleId: string; roleName: string; status: string }[];
   /** Roles that exist and could still be called in. */
   available?: { id: string; name: string; summary: string }[];
+  /** Language for human-facing output. Operational instructions remain canonical English. */
+  outputLanguage?: 'es-AR' | 'en-US';
 }
 
 function section(title: string, body: string, empty: string): string {
@@ -156,6 +158,7 @@ export function renderInstructions(input: InstructionsInput): string {
 
   parts.push(
     '## Working rules',
+    `- Write all human-facing answers and new deliverable content in ${input.outputLanguage === 'en-US' ? 'English (United States)' : 'Spanish (Argentina)'}. Keep file names, stage IDs, commands, code, and persisted contracts unchanged.`,
     '- Human-facing files (PDF, DOCX, XLSX, presentations, images, self-contained HTML) belong in ./entregables/. Create this ordinary directory if absent; never replace an existing file or link at that path. Keep context, instructions, handoff requests and existing tracked Markdown at their current paths. Never overwrite an existing output without permission; use a new descriptive filename.',
     '- Produce real formats only with tools actually available. Renaming Markdown to .pdf/.docx/.xlsx is not conversion. If a required tool is absent, explain the limitation and offer a real alternative. Validate the generated file before calling it ready and tell the human its relative path. Latte lists these files; it does not generate, validate, approve or version binary outputs. Prefer self-contained HTML without external assets; opening HTML is an explicit human decision.',
     '',

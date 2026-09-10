@@ -1,3 +1,4 @@
+import { translate as t } from './i18n';
 import { useEffect, useState } from 'react';
 import { FileText, FolderOpen, Plus, RefreshCw, Search } from 'lucide-react';
 import type { DocumentState, DocumentStatus, FunnelStage, WorkDocument } from '../shared/contracts';
@@ -44,43 +45,44 @@ export function DocumentList({ documents, workId, selectedId, states, failed, ch
   const filtered = filterDocuments(documents, { query, stage, status });
   const visible = onlyReview ? filtered.filter(d => needsReview(d).length) : filtered;
 
-  return <aside className="doc-list" aria-label="Documentos del trabajo">
+  return <aside className="doc-list" aria-label={t('ui.auto.117')}>
     <header>
-      <h2>Documentos <small>{documents.length}</small></h2>
-      <button onClick={onCreate} disabled={busy}><Plus size={14} />Documento</button>
+      <h2>{t('ui.auto.350')} <small>{documents.length}</small></h2>
+      <button onClick={onCreate} disabled={busy}><Plus size={14} />{t('ui.auto.118')}</button>
     </header>
 
     <div className="doc-list-filters">
-      <label className="doc-list-search"><Search size={14} /><input aria-label="Buscar documentos" placeholder="Buscar" value={query} onChange={e => setQuery(e.target.value)} /></label>
+      <label className="doc-list-search"><Search size={14} /><input aria-label={t('ui.auto.370')} placeholder={t('ui.auto.371')} value={query} onChange={e => setQuery(e.target.value)} /></label>
       <div>
-        <select aria-label="Filtrar por etapa" value={stage} onChange={e => setStage(e.target.value as typeof stage)}>
-          <option value="all">Todas las etapas</option>
+        <select aria-label={t('ui.auto.119')} value={stage} onChange={e => setStage(e.target.value as typeof stage)}>
+          <option value="all">{t('ui.auto.120')}</option>
           {[...STAGES, 'unclassified' as const].map(s => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
         </select>
         <select aria-label="Filtrar por estado" value={status} onChange={e => setStatus(e.target.value as typeof status)}>
-          <option value="all">Todos los estados</option>
+          <option value="all">{t('ui.auto.121')}</option>
           {Object.entries(STATUS_LABEL).map(([s, label]) => <option key={s} value={s}>{label}</option>)}
         </select>
       </div>
       <button className={'doc-list-review' + (onlyReview ? ' on' : '')} aria-pressed={onlyReview} onClick={() => setOnlyReview(v => !v)}>
-        Revisión <small>{checking && !reviewCount ? '…' : reviewCount}</small>
+
+        {t('ui.auto.122')} <small>{checking && !reviewCount ? '…' : reviewCount}</small>
       </button>
     </div>
 
-    {failed.length > 0 && <div role="alert" className="explorer-warning">No se pudo verificar {failed.length} documento(s).<button onClick={onRefresh}>Reintentar</button></div>}
+    {failed.length > 0 && <div role="alert" className="explorer-warning">No se pudo verificar {failed.length}  {t('ui.auto.123')}<button onClick={onRefresh}>{t('ui.auto.372')}</button></div>}
 
     <div className="doc-list-rows">
-      {visible.map(d => <button key={d.id} data-document-id={d.id} disabled={busy} className={'doc-row' + (selectedId === d.id ? ' selected' : '')} onClick={() => onSelect(d.id)} aria-label={'Abrir documento: ' + d.title} aria-current={selectedId === d.id}>
+      {visible.map(d => <button key={d.id} data-document-id={d.id} disabled={busy} className={'doc-row' + (selectedId === d.id ? ' selected' : '')} onClick={() => onSelect(d.id)} aria-label={t('ui.auto.124') + d.title} aria-current={selectedId === d.id}>
         <FileText size={14} />
         <span>
           <strong>{d.title}</strong>
           <small>{STATUS_LABEL[d.status]} · {d.fileName}</small>
-          {d.proposedFunnelStages.length > 0 && <em className="proposed">Propuesta: {d.proposedFunnelStages.map(s => STAGE_LABEL[s]).join(' + ')}</em>}
+          {d.proposedFunnelStages.length > 0 && <em className="proposed">{t('ui.auto.373')} {d.proposedFunnelStages.map(s => STAGE_LABEL[s]).join(' + ')}</em>}
           {needsReview(d).map(reason => <em key={reason}>{reason}</em>)}
-          {failed.includes(d.id) && <em>No se pudo verificar la base</em>}
+          {failed.includes(d.id) && <em>{t('ui.auto.125')}</em>}
         </span>
       </button>)}
-      {visible.length === 0 && <p className="stage-empty">{onlyReview ? 'Nada para revisar.' : 'Ningún documento coincide.'}</p>}
+      {visible.length === 0 && <p className="stage-empty">{onlyReview ? t('ui.auto.126') : t('ui.auto.127')}</p>}
     </div>
 
     <FolderContents workId={workId} untracked={untracked} onTrack={onTrack} onImported={onImported} busy={busy} />
@@ -89,14 +91,14 @@ export function DocumentList({ documents, workId, selectedId, states, failed, ch
 
     {suggestion && <div className="doc-suggestion">
       <span><strong>{suggestion.label}</strong> {suggestion.hint}</span>
-      <button onClick={onCreate} disabled={busy}><Plus size={13} />Crear</button>
+      <button onClick={onCreate} disabled={busy}><Plus size={13} />{t('ui.auto.083')}</button>
     </div>}
 
     <footer className="doc-list-footer">
       {folder
         ? <span title={folder}><FolderOpen size={12} /><code>{folder}</code></span>
-        : <><span><FolderOpen size={12} />Dentro de Latte</span><button onClick={onUseFolder} disabled={busy}>Usar mi carpeta</button></>}
-      <button className="icon-button" aria-label="Actualizar revisión" disabled={checking} onClick={onRefresh}><RefreshCw size={12} /></button>
+        : <><span><FolderOpen size={12} />Dentro de Latte</span><button onClick={onUseFolder} disabled={busy}>{t('ui.auto.128')}</button></>}
+      <button className="icon-button" aria-label={t('ui.auto.129')} disabled={checking} onClick={onRefresh}><RefreshCw size={12} /></button>
     </footer>
   </aside>;
 }

@@ -1,3 +1,4 @@
+import { translate as t } from './i18n';
 import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -18,5 +19,5 @@ export function TerminalPane({ sessionId, onError }: { sessionId: string; onErro
     const observer = new ResizeObserver(resize); observer.observe(root.current!); resize();
     return () => { off(); input.dispose(); observer.disconnect(); terminal.dispose(); };
   }, [sessionId]);
-  return <div className="terminal-host" ref={root} aria-label="Terminal del agente" />;
+  return <div className="terminal-host" ref={root} aria-label={t('ui.auto.303')} />;
 }

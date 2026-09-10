@@ -1,3 +1,4 @@
+import { translate as t } from './i18n';
 import { useEffect, useState } from 'react';
 import { ChevronDown, File, FilePlus, FilePlus2, Folder, FolderOpen, RefreshCw } from 'lucide-react';
 import type { FolderEntries, FunnelStage } from '../shared/contracts';
@@ -46,26 +47,27 @@ export function FolderContents({ workId, untracked, onTrack, onImported, busy }:
   const total = others.length + folders.length + untracked.length;
   if (!isDesktop) return null;
 
-  return <section className={'folder-contents' + (open ? ' open' : '')} aria-label="Contenido de la carpeta">
+  return <section className={'folder-contents' + (open ? ' open' : '')} aria-label={t('ui.auto.185')}>
     <header>
       <button aria-expanded={open} onClick={() => setOpen(o => !o)}>
         <ChevronDown size={15} className={open ? 'rotated' : ''} />
-        En la carpeta, sin seguir <small>{loading && !entries ? '…' : total}</small>
+
+        {t('ui.auto.186')} <small>{loading && !entries ? '…' : total}</small>
       </button>
-      <button className="icon-button" aria-label="Traer archivos a este trabajo" title="Traer archivos: los copia a la carpeta del trabajo" disabled={busy} onClick={() => void api.importFiles(workId).then(landed => { if (landed.length) { setRefresh(n => n + 1); onImported(landed); } }).catch(e => setError(e instanceof Error ? e.message : String(e)))}><FilePlus2 size={13} /></button>
-      <button className="icon-button" aria-label="Abrir la carpeta del trabajo" title="Abrir la carpeta en el explorador" onClick={() => void api.revealWorkFolder(workId).catch(e => setError(e instanceof Error ? e.message : String(e)))}><FolderOpen size={13} /></button>
-      {open && <button className="icon-button" aria-label="Actualizar contenido de la carpeta" disabled={loading} onClick={() => setRefresh(n => n + 1)}><RefreshCw size={12} /></button>}
+      <button className="icon-button" aria-label={t('ui.auto.187')} title={t('ui.auto.188')} disabled={busy} onClick={() => void api.importFiles(workId).then(landed => { if (landed.length) { setRefresh(n => n + 1); onImported(landed); } }).catch(e => setError(e instanceof Error ? e.message : String(e)))}><FilePlus2 size={13} /></button>
+      <button className="icon-button" aria-label={t('ui.auto.189')} title={t('ui.auto.190')} onClick={() => void api.revealWorkFolder(workId).catch(e => setError(e instanceof Error ? e.message : String(e)))}><FolderOpen size={13} /></button>
+      {open && <button className="icon-button" aria-label={t('ui.auto.191')} disabled={loading} onClick={() => setRefresh(n => n + 1)}><RefreshCw size={12} /></button>}
     </header>
     {open && <div className="folder-body">
-      {error && <p role="alert" className="explorer-warning">No se pudo leer la carpeta: {error}</p>}
-      {!error && total === 0 && !loading && <p className="stage-empty">No hay nada más en la carpeta: todo lo que está es un documento del trabajo.</p>}
+      {error && <p role="alert" className="explorer-warning">{t('ui.auto.192')} {error}</p>}
+      {!error && total === 0 && !loading && <p className="stage-empty">{t('ui.auto.193')}</p>}
 
       {untracked.length > 0 && <div className="folder-group">
         <h4>Markdown que Latte puede seguir <small>{untracked.length}</small></h4>
         {untracked.map(f => <div key={f.fileName} className="folder-row">
           <FilePlus size={14} />
           <span>{f.fileName}{f.funnelStages?.length ? <em>{f.funnelStages.map(s => STAGE_LABEL[s]).join(' + ')}</em> : null}</span>
-          <button disabled={busy} onClick={() => void onTrack(f.fileName)}>Agregar</button>
+          <button disabled={busy} onClick={() => void onTrack(f.fileName)}>{t('ui.auto.357')}</button>
         </div>)}
       </div>}
 
@@ -79,9 +81,9 @@ export function FolderContents({ workId, untracked, onTrack, onImported, busy }:
         {folders.map(name => <div key={name} className="folder-row"><Folder size={14} /><span>{name}/</span></div>)}
       </div>}
 
-      {entries?.truncated && <p className="footnote">La carpeta tiene más de lo que entra en esta lista; se muestran los primeros.</p>}
-      <p className="footnote">Podés soltar archivos en la carpeta desde el explorador, o traerlos con el botón de arriba: se copian acá y el original queda donde estaba.</p>
-      {total > 0 && <p className="footnote">Latte sigue el Markdown del nivel raíz. Lo demás lo ve tu agente, pero no gana versiones ni exportación hasta que sea un documento.</p>}
+      {entries?.truncated && <p className="footnote">{t('ui.auto.194')}</p>}
+      <p className="footnote">{t('ui.auto.195')}</p>
+      {total > 0 && <p className="footnote">{t('ui.auto.196')}</p>}
     </div>}
   </section>;
 }

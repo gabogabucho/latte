@@ -1,5 +1,9 @@
 # Publicar Latte
 
+> La versión de trabajo actual es **0.2.0**. Windows 0.1.0 sigue siendo la
+> última versión cuya instalación fue comprobada; macOS todavía depende de su
+> primera ejecución real en CI y no debe presentarse como verificado.
+
 Cómo se arma el instalador de Windows, cómo se publica y cómo llega la
 actualización a quien ya tiene Latte instalado.
 
@@ -314,5 +318,57 @@ Falta, y no lo demos por hecho:
 - [ ] **Migración de esquema entre dos versiones reales.** El backup y el
       rechazo de esquema futuro tienen tests, pero nunca corrieron sobre una
       base migrada por una versión distinta de la app.
-- [ ] **macOS y Linux.** No están diseñados acá. macOS además necesita firma y
-      notarización para poder actualizarse.
+- [ ] **macOS.** El empaquetado y CI están diseñados, pero todavía deben correr
+      en un runner macOS real y verificarse en Intel y Apple Silicon.
+- [ ] **Linux.** Todavía no está diseñado.
+
+---
+
+## 11. macOS (Intel y Apple Silicon)
+
+El workflow `.github/workflows/release-macos.yml` corre en macOS y ejecuta
+`npm ci`, typechecks y tests antes de empaquetar. La matriz de targets declarada
+en `electron-builder.yml` produce, en **una sola invocación**, DMG y ZIP para
+`x64` y `arm64`:
+
+```text
+Latte-0.2.0-mac-x64.dmg
+Latte-0.2.0-mac-x64.zip
+Latte-0.2.0-mac-arm64.dmg
+Latte-0.2.0-mac-arm64.zip
+latest-mac.yml
+```
+
+El ZIP es obligatorio para `electron-updater` en macOS. Construir ambas
+arquitecturas juntas permite que electron-builder genere un único
+`latest-mac.yml` con los dos ZIP; el workflow falla si falta alguno o si la
+metadata no declara la versión de `package.json`.
+
+Una ejecución manual sin credenciales deja artefactos de QA sin firmar ni
+notarizar. **No se publican.** Un tag `v*` exige los cinco secretos siguientes,
+o el job falla antes de crear/actualizar la release en borrador:
+
+```text
+MAC_CSC_LINK                 # certificado Developer ID Application (.p12), base64 o URL segura
+MAC_CSC_KEY_PASSWORD         # contraseña del certificado
+APPLE_ID                     # cuenta usada por notarytool
+APPLE_APP_SPECIFIC_PASSWORD # contraseña específica de aplicación
+APPLE_TEAM_ID                # Team ID de 10 caracteres
+```
+
+Nunca los agregues al repositorio. Con el conjunto completo, electron-builder
+firma con Hardened Runtime y notariza; después CI valida `codesign`, Gatekeeper
+y el ticket adjunto. Con cero secretos desactiva el descubrimiento automático
+de identidad para que el resultado sea inequívocamente un build local de QA.
+
+Para generar localmente, solamente desde macOS:
+
+```bash
+npm run pack:mac
+```
+
+No alcanza con que el comando termine. Antes de publicar la primera release hay
+que instalar ambos DMG en hardware real, abrir la app, probar `node-pty`, cerrar
+y reabrir, y hacer una actualización real desde una versión anterior. Hasta
+entonces, DMG, ZIP, firma, notarización y `latest-mac.yml` están **configurados,
+no verificados**.

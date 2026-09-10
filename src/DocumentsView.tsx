@@ -1,3 +1,4 @@
+import { currentLocale, translate as t } from './i18n';
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -11,18 +12,11 @@ import { useDocumentStates } from './document-states';
 import { DocumentMetadata, hasMetadataDrafts } from './DocumentMetadata';
 import { documentDrafts } from './document-drafts';
 
-const KIND_LABEL: Record<DocumentKind, string> = { brief: 'Encargo', strategy: 'Estrategia', calendar: 'Calendario', research: 'Investigación', copy: 'Piezas', note: 'Nota' };
-const KIND_HINT: Record<DocumentKind, string> = {
-  brief: 'Qué se pide y qué hay que entregar.',
-  strategy: 'Objetivo, audiencia, propuesta, elecciones, restricciones y medición.',
-  calendar: 'Un mes de acciones: fecha, canal, objetivo, mensaje y CTA.',
-  research: 'Evidencia con fuente; lo que no tiene fuente queda como hipótesis.',
-  copy: 'Piezas listas para usar, cada una con su canal y su CTA.',
-  note: 'Notas de trabajo.',
-};
+const KIND_LABEL: Record<DocumentKind, string> = new Proxy({} as Record<DocumentKind,string>, { get: (_, key: DocumentKind) => t(`kind.${key}` as 'kind.brief') });
+const KIND_HINT: Record<DocumentKind, string> = new Proxy({} as Record<DocumentKind,string>, { get: (_, key: DocumentKind) => t(`kindHint.${key}` as 'kindHint.brief') });
 const NEW_KINDS: DocumentKind[] = ['strategy', 'calendar', 'research', 'copy', 'note'];
 const POLL_MS = 2500;
-const date = (value: string) => new Date(value).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+const date = (value: string) => new Date(value).toLocaleString(currentLocale(), { dateStyle: 'short', timeStyle: 'short' });
 const displayError = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** What the editor is holding for one document. Mirrored in documentDrafts so it survives unmounting. */
@@ -156,7 +150,7 @@ export function DocumentsView(props: DocumentsViewProps) {
       if (outcome.status === 'conflict') {
         setConflict({ mine: editing.content, disk: outcome.disk.content, diskFingerprint: outcome.disk.fingerprint, revisionId: outcome.keptRevision.id });
         setExternal(null);
-        props.onNotice('El archivo cambió fuera del editor. Guardamos esa versión y podés elegir cuál queda.');
+        props.onNotice(t('ui.auto.137'));
         return;
       }
       setEditing({ content: editing.content, fingerprint: outcome.fingerprint, dirty: false });
@@ -164,7 +158,7 @@ export function DocumentsView(props: DocumentsViewProps) {
       setExternal(null);
       props.onWorkUpdated(outcome.work);
       await props.onDocumentsChanged();
-      props.onNotice('Cambios guardados');
+      props.onNotice(t('ui.auto.138'));
     } catch (e) {
       props.onError(displayError(e));
     } finally {
@@ -181,8 +175,8 @@ export function DocumentsView(props: DocumentsViewProps) {
         setEditing({ content: conflict.mine, fingerprint: outcome.fingerprint, dirty: false });
         setConflict(null);
         props.onWorkUpdated(outcome.work);
-        props.onNotice('Se guardó tu versión. La anterior quedó como versión conservada.');
-      } else props.onNotice('El archivo volvió a cambiar. Revisá de nuevo antes de guardar.');
+        props.onNotice(t('ui.auto.139'));
+      } else props.onNotice(t('ui.auto.140'));
     } catch (e) { props.onError(displayError(e)); } finally { setSaving(false); }
   };
 
@@ -194,7 +188,7 @@ export function DocumentsView(props: DocumentsViewProps) {
       await api.keepDraftAsVersion(selected.id, conflict.mine);
       setEditing({ content: conflict.disk, fingerprint: conflict.diskFingerprint, dirty: false });
       setConflict(null);
-      props.onNotice('Quedó la versión del archivo. Tu texto se guardó como versión conservada.');
+      props.onNotice(t('ui.auto.141'));
     } catch (e) { props.onError(displayError(e)); } finally { setSaving(false); }
   };
 
@@ -203,7 +197,7 @@ export function DocumentsView(props: DocumentsViewProps) {
     try {
       await api.snapshotDocument(selected.id);
       setRevisions(await api.listDocumentRevisions(selected.id));
-      props.onNotice('Versión conservada. El documento sigue editable.');
+      props.onNotice(t('ui.auto.142'));
     } catch (e) { props.onError(displayError(e)); }
   };
 
@@ -216,9 +210,9 @@ export function DocumentsView(props: DocumentsViewProps) {
 
   if (!work) return <div className="empty-state">
     <FileText size={38} />
-    <h1>Tu próxima idea,<br />con lugar para crecer.</h1>
-    <p>Creá una marca y un trabajo. Los documentos, las versiones y las decisiones se quedan con vos.</p>
-    <button className="primary" onClick={props.onStart}><Plus size={16} />{props.hasBrand ? 'Crear trabajo' : 'Crear mi primera marca'}</button>
+    <h1>{t('ui.auto.143')}<br />{t('ui.auto.144')}</h1>
+    <p>{t('ui.auto.145')}</p>
+    <button className="primary" onClick={props.onStart}><Plus size={16} />{props.hasBrand ? t('ui.auto.146') : t('ui.auto.147')}</button>
   </div>;
 
   const kindLabel = selected ? KIND_LABEL[selected.kind] : '';
@@ -232,17 +226,17 @@ export function DocumentsView(props: DocumentsViewProps) {
   return <div className={'documents' + (funnel ? ' funnel-mode' : '')}>
     {funnel
       ? <FunnelView documents={documents} selectedId={selected?.id ?? null} states={states} checking={checking} onRefresh={refreshStates} onSelect={id => { if (!saving) { props.onSelect(id); props.onView('brief'); } }} busy={props.busy} />
-      : <><DocumentList documents={documents} workId={work.id} selectedId={selected?.id ?? null} states={states} failed={failed} checking={checking} onRefresh={refreshStates} onSelect={id => { if (!saving) props.onSelect(id); }} onCreate={props.onCreate} onUseFolder={props.onUseFolder} folder={linked} untracked={props.untracked} onTrack={props.onTrack} busy={props.busy || saving} suggestion={suggestion} onImported={names => { void props.onDocumentsChanged(); props.onNotice(names.length === 1 ? `${names[0]} está en la carpeta del trabajo.` : `${names.length} archivos están en la carpeta del trabajo.`); }} />
+      : <><DocumentList documents={documents} workId={work.id} selectedId={selected?.id ?? null} states={states} failed={failed} checking={checking} onRefresh={refreshStates} onSelect={id => { if (!saving) props.onSelect(id); }} onCreate={props.onCreate} onUseFolder={props.onUseFolder} folder={linked} untracked={props.untracked} onTrack={props.onTrack} busy={props.busy || saving} suggestion={suggestion} onImported={names => { void props.onDocumentsChanged(); props.onNotice(names.length === 1 ? t('ui.auto.374', { p0: names[0] }) : t('ui.auto.375', { p0: names.length })); }} />
     <div className="doc-pane">
     {selected && <div className="document-toolbar">
-      <span><FileText size={16} />{selected.title}<small>{kindLabel} · {editing?.dirty ? 'Sin guardar' : selected.status === 'approved' ? 'Aprobado' : selected.status === 'review' ? 'En revisión' : 'Borrador'}</small></span>
+      <span><FileText size={16} />{selected.title}<small>{kindLabel} · {editing?.dirty ? t('ui.auto.148') : selected.status === 'approved' ? 'Aprobado' : selected.status === 'review' ? t('ui.auto.149') : 'Borrador'}</small></span>
       <div className="doc-actions">
-        <button className="primary" disabled={!editing?.dirty || saving || props.busy} onClick={() => void save()}>{saving ? <LoaderCircle className="spin" size={14} /> : <Save size={14} />}Guardar</button>
+        <button className="primary" disabled={!editing?.dirty || saving || props.busy} onClick={() => void save()}>{saving ? <LoaderCircle className="spin" size={14} /> : <Save size={14} />}{t('ui.auto.150')}</button>
         <button disabled={props.busy || saving} onClick={() => setMode(mode === 'edit' ? 'read' : 'edit')}>{mode === 'edit' ? 'Leer' : 'Editar'}</button>
-        <button aria-expanded={organizing} onClick={() => setOrganizing(o => !o)} disabled={props.busy}><SlidersHorizontal size={14} />Organizar</button>
-        <button disabled={props.busy || saving} onClick={() => void snapshot()}><Layers size={14} />Conservar versión</button>
-        <button disabled={props.busy} onClick={() => void openVersions()}><History size={14} />Versiones</button>
-        <button className="icon-button" title="Exportar este documento" disabled={props.busy} onClick={() => void api.exportDocument(selected.id).then(p => p && props.onNotice('Documento exportado')).catch(e => props.onError(displayError(e)))}><Download size={15} /></button>
+        <button aria-expanded={organizing} onClick={() => setOrganizing(o => !o)} disabled={props.busy}><SlidersHorizontal size={14} />{t('ui.auto.376')}</button>
+        <button disabled={props.busy || saving} onClick={() => void snapshot()}><Layers size={14} />{t('ui.auto.151')}</button>
+        <button disabled={props.busy} onClick={() => void openVersions()}><History size={14} />{t('ui.auto.377')}</button>
+        <button className="icon-button" title={t('ui.auto.152')} disabled={props.busy} onClick={() => void api.exportDocument(selected.id).then(p => p && props.onNotice(t('ui.auto.153'))).catch(e => props.onError(displayError(e)))}><Download size={15} /></button>
       </div>
     </div>}
 
@@ -250,46 +244,46 @@ export function DocumentsView(props: DocumentsViewProps) {
 
     {selected && selected.proposedFunnelStages.length > 0 && <div className="doc-banner proposal" role="status">
       <SlidersHorizontal size={14} />
-      <span>El agente propone para este documento: <strong>{selected.proposedFunnelStages.map(s => STAGE_LABEL[s]).join(' + ')}</strong>.</span>
-      <button className="primary" disabled={props.busy} onClick={() => void api.applyFunnelProposal(selected.id).then(props.onDocumentsChanged).then(() => props.onNotice('Etapas aplicadas.')).catch(e => props.onError(displayError(e)))}>Aplicar</button>
-      <button disabled={props.busy} onClick={() => void api.dismissFunnelProposal(selected.id).then(props.onDocumentsChanged).catch(e => props.onError(displayError(e)))}>Descartar</button>
+      <span>{t('ui.auto.154')} <strong>{selected.proposedFunnelStages.map(s => STAGE_LABEL[s]).join(' + ')}</strong>.</span>
+      <button className="primary" disabled={props.busy} onClick={() => void api.applyFunnelProposal(selected.id).then(props.onDocumentsChanged).then(() => props.onNotice('Etapas aplicadas.')).catch(e => props.onError(displayError(e)))}>{t('ui.auto.378')}</button>
+      <button disabled={props.busy} onClick={() => void api.dismissFunnelProposal(selected.id).then(props.onDocumentsChanged).catch(e => props.onError(displayError(e)))}>{t('ui.auto.379')}</button>
     </div>}
 
     {conflict && <div className="doc-conflict" role="alert">
-      <div className="doc-conflict-head"><AlertTriangle size={16} />Este documento cambió fuera del editor</div>
-      <p>Guardamos la versión del archivo para que no se pierda. Elegí cuál queda como texto actual; la otra sigue disponible en Versiones.</p>
+      <div className="doc-conflict-head"><AlertTriangle size={16} />{t('ui.auto.155')}</div>
+      <p>{t('ui.auto.156')}</p>
       <div className="revision-comparison">
-        <div><h4>TU VERSIÓN (EDITOR)</h4><pre>{conflict.mine}</pre></div>
-        <div><h4>VERSIÓN DEL ARCHIVO</h4><pre>{conflict.disk}</pre></div>
+        <div><h4>{t('ui.auto.157')}</h4><pre>{conflict.mine}</pre></div>
+        <div><h4>{t('ui.auto.158')}</h4><pre>{conflict.disk}</pre></div>
       </div>
       <div className="chat-card-actions">
-        <button className="primary" disabled={saving} onClick={() => void keepMine()}>Guardar la mía</button>
-        <button disabled={saving} onClick={() => void keepDisk()}>Quedarme con la del archivo</button>
+        <button className="primary" disabled={saving} onClick={() => void keepMine()}>{t('ui.auto.159')}</button>
+        <button disabled={saving} onClick={() => void keepDisk()}>{t('ui.auto.160')}</button>
       </div>
     </div>}
 
     {selected && props.editors[selected.fileName] && <div className="doc-banner editing" role="status" data-role={props.editors[selected.fileName].roleId}>
       <i className="doc-editing" data-role={props.editors[selected.fileName].roleId} />
-      <span><strong>{props.editors[selected.fileName].roleName}</strong> está escribiendo en este documento. Esperá a que termine antes de guardar, o tu versión va a entrar en conflicto.</span>
+      <span><strong>{props.editors[selected.fileName].roleName}</strong>  {t('ui.auto.161')}</span>
     </div>}
 
     {!conflict && external && <div className="doc-banner" role="status">
-      <RefreshCw size={14} /><span>El archivo cambió fuera de Latte. Tu borrador está intacto.</span>
-      <button onClick={() => void load(selected!.id)}>Ver la versión del archivo</button>
+      <RefreshCw size={14} /><span>{t('ui.auto.162')}</span>
+      <button onClick={() => void load(selected!.id)}>{t('ui.auto.163')}</button>
       <button onClick={() => setExternal(null)}>Seguir editando</button>
     </div>}
 
     {baseOutdated && selected?.baseDocumentId && <div className="doc-banner base" role="status">
-      <AlertTriangle size={14} /><span>Cambió el documento que este toma como base. Revisá si sigue vigente.</span>
-      <button onClick={() => props.onSelect(selected.baseDocumentId!)}>Ver la base</button>
-      <button onClick={() => void api.acknowledgeBase(selected.id).then(async () => { setBaseOutdated(false); await props.onDocumentsChanged(); props.onNotice('Referencia actualizada a la versión actual de la base.'); }).catch(e => props.onError(displayError(e)))}>Ya lo revisé</button>
+      <AlertTriangle size={14} /><span>{t('ui.auto.164')}</span>
+      <button onClick={() => props.onSelect(selected.baseDocumentId!)}>{t('ui.auto.165')}</button>
+      <button onClick={() => void api.acknowledgeBase(selected.id).then(async () => { setBaseOutdated(false); await props.onDocumentsChanged(); props.onNotice(t('ui.auto.166')); }).catch(e => props.onError(displayError(e)))}>{t('ui.auto.167')}</button>
     </div>}
 
     <div className="document-scroll">
       <div className="document-kicker">{props.brandName} / {work.title}{selected ? ` / ${kindLabel}` : ''}</div>
-      {loading && !editing && <p className="footnote"><LoaderCircle className="spin" size={13} /> Abriendo el documento…</p>}
-      {editing && mode === 'edit' && <textarea className="markdown-editor" aria-label="Editar documento en Markdown" value={editing.content} spellCheck={false} onChange={e => setEditing({ ...editing, content: e.target.value, dirty: true })} />}
-      {editing && mode === 'read' && <article className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{editing.content || '*Este documento está vacío. Tocá Editar para empezar.*'}</ReactMarkdown></article>}
+      {loading && !editing && <p className="footnote"><LoaderCircle className="spin" size={13} />  {t('ui.auto.168')}</p>}
+      {editing && mode === 'edit' && <textarea className="markdown-editor" aria-label={t('ui.auto.169')} value={editing.content} spellCheck={false} onChange={e => setEditing({ ...editing, content: e.target.value, dirty: true })} />}
+      {editing && mode === 'read' && <article className="markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{editing.content || t('ui.auto.170')}</ReactMarkdown></article>}
     </div>
 
     </div></>}
@@ -299,21 +293,21 @@ export function DocumentsView(props: DocumentsViewProps) {
         <div className="modal-head">
           <div>
             <div className="document-kicker">{kindLabel}</div>
-            <h2 id="versions-title">La historia de este documento.</h2>
+            <h2 id="versions-title">{t('ui.auto.171')}</h2>
           </div>
-          <button className="modal-close" aria-label="Cerrar" onClick={() => setShowVersions(false)}><X size={20} /></button>
+          <button className="modal-close" aria-label={t('ui.auto.001')} onClick={() => setShowVersions(false)}><X size={20} /></button>
         </div>
         <div className="modal-body">
-        <p className="intro">Versiones inmutables. Una escritura externa se marca como tal: Latte no adivina quién la hizo.</p>
+        <p className="intro">{t('ui.auto.172')}</p>
         <div className="revision-layout">
           <div className="revision-list">
             {revisions.map((r, i) => <button key={r.id} className={pickedRevision?.id === r.id ? 'selected-revision' : ''} onClick={() => setPicked(r)}>
-              <History size={15} /><span>Versión {revisions.length - i}<small>{date(r.createdAt)} · {r.source === 'external' ? 'cambio externo' : r.source === 'latte' ? 'referencia' : 'guardada acá'}</small></span>
+              <History size={15} /><span>{t('ui.auto.173')} {revisions.length - i}<small>{date(r.createdAt)} · {r.source === 'external' ? 'cambio externo' : r.source === 'latte' ? 'referencia' : t('ui.auto.174')}</small></span>
             </button>)}
-            {!revisions.length && <p>Sin versiones todavía. Usá «Conservar versión».</p>}
+            {!revisions.length && <p>{t('ui.auto.175')}</p>}
           </div>
           {pickedRevision && <div className="revision-comparison">
-            <div><h4>VERSIÓN CONSERVADA</h4><pre>{pickedRevision.content}</pre></div>
+            <div><h4>{t('ui.auto.176')}</h4><pre>{pickedRevision.content}</pre></div>
             <div><h4>TEXTO ACTUAL</h4><pre>{editing?.content ?? ''}</pre></div>
           </div>}
         </div>
@@ -339,29 +333,29 @@ export function NewDocumentDialog({ documents, busy, onCancel, onCreate }: {
     <section role="dialog" aria-modal="true" aria-labelledby="new-doc-title" className="modal roomy">
       <div className="modal-head">
         <div>
-          <div className="document-kicker">UN TRABAJO, VARIOS ENTREGABLES</div>
-          <h2 id="new-doc-title">Un documento nuevo.</h2>
+          <div className="document-kicker">{t('ui.auto.177')}</div>
+          <h2 id="new-doc-title">{t('ui.auto.178')}</h2>
         </div>
-        <button className="modal-close" aria-label="Cerrar" onClick={onCancel}><X size={20} /></button>
+        <button className="modal-close" aria-label={t('ui.auto.001')} onClick={onCancel}><X size={20} /></button>
       </div>
       <div className="modal-body">
-      <p className="intro">Cada documento tiene su archivo Markdown, sus versiones y su exportación. Ninguno es obligatorio.</p>
-      <div className="kind-list" role="radiogroup" aria-label="Tipo de documento">
+      <p className="intro">{t('ui.auto.179')}</p>
+      <div className="kind-list" role="radiogroup" aria-label={t('ui.auto.180')}>
         {NEW_KINDS.map(k => <button key={k} role="radio" aria-checked={kind === k} className={'kind-card' + (kind === k ? ' selected' : '')} onClick={() => setKind(k)}>
           <span><strong>{KIND_LABEL[k]}</strong><small>{KIND_HINT[k]}</small></span>{kind === k && <Check size={14} />}
         </button>)}
       </div>
-      <label className="field-label" htmlFor="doc-title">TÍTULO</label>
+      <label className="field-label" htmlFor="doc-title">{t('ui.auto.181')}</label>
       <input id="doc-title" maxLength={120} value={title} onChange={e => setTitle(e.target.value)} placeholder={`Ej. ${suggestion} de lanzamiento`} />
       {canDerive.length > 0 && <>
-        <label className="field-label" htmlFor="doc-base">¿SE APOYA EN OTRO DOCUMENTO?</label>
+        <label className="field-label" htmlFor="doc-base">{t('ui.auto.182')}</label>
         <select id="doc-base" value={base} onChange={e => setBase(e.target.value)}>
           <option value="">No, empieza solo</option>
           {documents.map(d => <option key={d.id} value={d.id}>{KIND_LABEL[d.kind]} · {d.title}</option>)}
         </select>
-        <p className="footnote">Latte guarda la versión exacta que tomó como base. Si esa base cambia después, este documento avisa que hay que revisarlo; no se regenera solo.</p>
+        <p className="footnote">{t('ui.auto.183')}</p>
       </>}
-      <button className="primary" disabled={busy || !title.trim()} onClick={() => void onCreate(kind, title.trim(), base || null)}><Plus size={15} />Crear documento</button>
+      <button className="primary" disabled={busy || !title.trim()} onClick={() => void onCreate(kind, title.trim(), base || null)}><Plus size={15} />{t('ui.auto.184')}</button>
       </div>
     </section>
   </div>;

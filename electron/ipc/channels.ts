@@ -6,6 +6,10 @@ import type { BackendApi } from '../services/latteService';
  * list; tests/backend/ipc.test.ts asserts they match.
  */
 export const API_METHODS = [
+  'getUiLocale',
+  'setUiLocale',
+  'getContentLocale',
+  'setContentLocale',
   'appInfo',
   'listBrands',
   'createBrand',
@@ -101,6 +105,10 @@ void assertAllMethodsListed;
 
 /** Maximum positional arguments per method; extra arguments are rejected. */
 export const API_ARITY: Record<ApiMethod, number> = {
+  getUiLocale: 0,
+  setUiLocale: 1,
+  getContentLocale: 0,
+  setContentLocale: 1,
   appInfo: 0,
   listBrands: 0,
   createBrand: 1,

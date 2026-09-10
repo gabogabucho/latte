@@ -18,6 +18,20 @@ describe('LatteService persistence flow', () => {
 
   afterEach(() => b.cleanup());
 
+  it('persists UI and content locales independently and pins new work output language', async () => {
+    expect(await b.service.getUiLocale()).toBe('es-AR');
+    await b.service.setUiLocale('en-US');
+    await b.service.setContentLocale('en-US');
+    expect(await b.service.getUiLocale()).toBe('en-US');
+    expect(await b.service.getContentLocale()).toBe('en-US');
+    const brand = await b.service.createBrand('Example');
+    const work = await b.service.createWork(brand.id, 'Launch');
+    expect(fs.readFileSync(path.join(workDirOf(b, brand.id, work.id), 'AGENTS.md'), 'utf8')).toContain('English (United States)');
+    await b.service.setContentLocale('es-AR');
+    await b.service.updateBrand(brand.id, 'Changed');
+    expect(fs.readFileSync(path.join(workDirOf(b, brand.id, work.id), 'AGENTS.md'), 'utf8')).toContain('English (United States)');
+  });
+
   it('creates brand, work, document, snapshots and decisions on real disk', async () => {
     const brand = await b.service.createBrand('  Casa   Prueba ');
     expect(brand.name).toBe('Casa Prueba');

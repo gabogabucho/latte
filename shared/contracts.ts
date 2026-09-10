@@ -1,4 +1,6 @@
 export type Provider = 'claude' | 'codex' | 'opencode';
+export type UiLocale = 'es-AR' | 'en-US';
+export type ContentLocale = UiLocale;
 export interface Brand { id: string; name: string; context: string; createdAt: string }
 export interface Work {
   id: string;
@@ -268,6 +270,10 @@ export interface ProviderInfo { id: string; name: string; connected: boolean; mo
 export interface ProviderOAuthStart { url: string; method: 'auto' | 'code'; instructions: string }
 
 export interface LatteAPI {
+  getUiLocale(): Promise<UiLocale>;
+  setUiLocale(locale: UiLocale): Promise<UiLocale>;
+  getContentLocale(): Promise<ContentLocale>;
+  setContentLocale(locale: ContentLocale): Promise<ContentLocale>;
   appInfo(): Promise<AppInfo>;
   listBrands(): Promise<Brand[]>;
   createBrand(name: string): Promise<Brand>;

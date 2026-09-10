@@ -185,6 +185,28 @@ export class LatteService implements BackendApi {
 
   // App ---------------------------------------------------------------------
 
+  async getUiLocale(): Promise<'es-AR' | 'en-US'> {
+    const locale = this.deps.repo.getMeta('ui_locale');
+    return locale === 'en-US' ? locale : 'es-AR';
+  }
+
+  async setUiLocale(locale: 'es-AR' | 'en-US'): Promise<'es-AR' | 'en-US'> {
+    if (locale !== 'es-AR' && locale !== 'en-US') throw new TypeError('Invalid UI locale');
+    this.deps.repo.setMeta('ui_locale', locale);
+    return locale;
+  }
+
+  async getContentLocale(): Promise<'es-AR' | 'en-US'> {
+    const locale = this.deps.repo.getMeta('content_locale');
+    return locale === 'en-US' ? locale : 'es-AR';
+  }
+
+  async setContentLocale(locale: 'es-AR' | 'en-US'): Promise<'es-AR' | 'en-US'> {
+    if (locale !== 'es-AR' && locale !== 'en-US') throw new TypeError('Invalid content locale');
+    this.deps.repo.setMeta('content_locale', locale);
+    return locale;
+  }
+
   /** Read-only facts for the Settings screen. No secrets, no credentials. */
   async appInfo(): Promise<AppInfo> {
     return {
@@ -231,6 +253,7 @@ export class LatteService implements BackendApi {
     const initialDocument = `# ${cleanTitle}\n\n`;
     const work: Work = { id: newId('wrk'), brandId: id, title: cleanTitle, brief: initialDocument, folder: null, updatedAt: this.clock() };
     this.deps.repo.insertWork(work);
+    this.deps.repo.setMeta(`work_content_locale:${work.id}`, await this.getContentLocale());
     this.deps.repo.insertDocument({
       id: briefDocumentId(work.id),
       workId: work.id,
@@ -872,7 +895,7 @@ export class LatteService implements BackendApi {
   /** Changes this conversation's model, resuming what was already said. */
   async setTeamMemberModel(memberId: string, model: string | null): Promise<MemberModelChange> {
     const member = this.deps.hub.getMember(requireId(memberId, 'memberId'));
-    if (model !== null && (typeof model !== 'string' || model.trim().length > 200 || /[\s ]/.test(model.trim()))) throw new ValidationError('ID de modelo inválido');
+    if (model !== null && (typeof model !== 'string' || model.trim().length > 200 || /[\s\\0]/.test(model.trim()))) throw new ValidationError('ID de modelo inválido');
     return this.deps.hub.setMemberModel(member.id, model, this.memberContext(member.workId));
   }
 
@@ -1259,6 +1282,8 @@ export class LatteService implements BackendApi {
       baseFileName: r.baseDocumentId ? byId.get(r.baseDocumentId)?.fileName ?? null : null,
     }));
     this.deps.files.ensureWork(brand.id, work.id, work.brief);
-    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, decisions, documents, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills(), team: this.deps.hub.listTeam(work.id).map((m) => ({ roleId: m.roleId, roleName: m.roleName, status: m.status })), available: this.deps.hub.listRoles().map((r) => ({ id: r.id, name: r.name, summary: r.summary })) }));
+    const storedLocale = this.deps.repo.getMeta(`work_content_locale:${work.id}`);
+    const outputLanguage = storedLocale === 'en-US' ? 'en-US' : 'es-AR';
+    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, decisions, documents, outputLanguage, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills(), team: this.deps.hub.listTeam(work.id).map((m) => ({ roleId: m.roleId, roleName: m.roleName, status: m.status })), available: this.deps.hub.listRoles().map((r) => ({ id: r.id, name: r.name, summary: r.summary })) }));
   }
 }

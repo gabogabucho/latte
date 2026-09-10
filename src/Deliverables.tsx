@@ -1,10 +1,11 @@
+import { currentLocale, translate as t } from './i18n';
 import { useEffect, useState } from 'react';
 import { ChevronDown, Copy, ExternalLink, FolderOpen, Package, RefreshCw } from 'lucide-react';
 import type { DeliverableListing } from '../shared/contracts';
 import { api, isDesktop } from './browser-api';
 
 // The day is enough to tell two versions of a deliverable apart in one line.
-const date = (value: string) => new Date(value).toLocaleDateString('es-AR', { dateStyle: 'short' });
+const date = (value: string) => new Date(value).toLocaleDateString(currentLocale(), { dateStyle: 'short' });
 const size = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 /**
@@ -53,18 +54,19 @@ export function Deliverables({ workId }: { workId: string }) {
     try { await run(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(''); }
   };
 
-  return <section className={'folder-contents deliverables' + (open ? ' open' : '')} aria-label="Entregables del trabajo">
+  return <section className={'folder-contents deliverables' + (open ? ' open' : '')} aria-label={t('ui.auto.108')}>
     <header>
       <button aria-expanded={open} onClick={() => setOpen(o => !o)}>
         <ChevronDown size={15} className={open ? 'rotated' : ''} />
-        Entregables <small>{loading && !listing ? '…' : files.length}</small>
+
+        {t('ui.auto.365')} <small>{loading && !listing ? '…' : files.length}</small>
       </button>
-      {open && <button className="icon-button" aria-label="Actualizar entregables" disabled={loading} onClick={() => { setNote(''); setRefresh(n => n + 1); }}><RefreshCw size={12} /></button>}
+      {open && <button className="icon-button" aria-label={t('ui.auto.109')} disabled={loading} onClick={() => { setNote(''); setRefresh(n => n + 1); }}><RefreshCw size={12} /></button>}
     </header>
     {open && <div className="folder-body">
       {error && <p role="alert" className="explorer-warning">{error}</p>}
       {note && <p className="footnote deliverable-note">{note}</p>}
-      {files.length === 0 && !loading && !error && <p className="stage-empty">Todavía no hay entregables. Tu agente deja acá los archivos finales —PDF, DOCX, XLSX, presentaciones, imágenes, HTML— en la carpeta <code>entregables/</code> del trabajo.</p>}
+      {files.length === 0 && !loading && !error && <p className="stage-empty">{t('ui.auto.110')} <code>{t('ui.auto.366')}</code>  {t('ui.auto.111')}</p>}
 
       {files.map(f => <div key={f.fileName} className="folder-row deliverable-row">
         <Package size={14} />
@@ -72,16 +74,16 @@ export function Deliverables({ workId }: { workId: string }) {
           <strong>{f.fileName}</strong>
           <small>{f.extension.toUpperCase()} · {size(f.bytes)} · {date(f.modifiedAt)}</small>
         </span>
-        <button className="icon-button" aria-label={`Abrir ${f.fileName}`} title="Abrir con la aplicación del sistema" disabled={busy === f.fileName} onClick={() => void act(f.fileName, () => api.openDeliverable(workId, f.fileName))}><ExternalLink size={13} /></button>
-        <button className="icon-button" aria-label={`Mostrar ${f.fileName} en la carpeta`} title="Mostrar en la carpeta" disabled={busy === f.fileName} onClick={() => void act(f.fileName, () => api.revealDeliverable(workId, f.fileName))}><FolderOpen size={13} /></button>
-        <button className="icon-button" aria-label={`Copiar ${f.fileName} a otra carpeta`} title="Guardar una copia en otra carpeta" disabled={busy === f.fileName} onClick={() => void act(f.fileName, async () => {
+        <button className="icon-button" aria-label={t('ui.auto.367', { p0: f.fileName })} title={t('ui.auto.112')} disabled={busy === f.fileName} onClick={() => void act(f.fileName, () => api.openDeliverable(workId, f.fileName))}><ExternalLink size={13} /></button>
+        <button className="icon-button" aria-label={t('ui.auto.368', { p0: f.fileName })} title={t('ui.auto.113')} disabled={busy === f.fileName} onClick={() => void act(f.fileName, () => api.revealDeliverable(workId, f.fileName))}><FolderOpen size={13} /></button>
+        <button className="icon-button" aria-label={t('ui.auto.369', { p0: f.fileName })} title={t('ui.auto.114')} disabled={busy === f.fileName} onClick={() => void act(f.fileName, async () => {
           const target = await api.copyDeliverable(workId, f.fileName);
           setNote(target ? `Copia guardada en ${target}. El original sigue en entregables/.` : '');
         })}><Copy size={13} /></button>
       </div>)}
 
-      {listing?.truncated && <p className="footnote">La carpeta tiene más entregables de los que entran en esta lista; se muestran los primeros.</p>}
-      {files.length > 0 && <p className="footnote">Latte no versiona ni edita estos archivos: los lista y te los entrega. Lo que cambia adentro lo maneja el agente o la aplicación con la que los abrís.</p>}
+      {listing?.truncated && <p className="footnote">{t('ui.auto.115')}</p>}
+      {files.length > 0 && <p className="footnote">{t('ui.auto.116')}</p>}
     </div>}
   </section>;
 }

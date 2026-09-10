@@ -1,3 +1,4 @@
+import { translate as t } from './i18n';
 import { FileText, RefreshCw } from 'lucide-react';
 import type { DocumentState, WorkDocument } from '../shared/contracts';
 import { groupByStage, reviewReasons, STAGES, STAGE_LABEL, STATUS_LABEL } from './document-organizer';
@@ -22,12 +23,12 @@ export function FunnelView({ documents, selectedId, states, checking, onRefresh,
   const groups = groupByStage(documents);
   const empty = STAGES.filter(s => groups[s].length === 0);
 
-  const card = (d: WorkDocument) => <button key={d.id} data-document-id={d.id} disabled={busy} className={'funnel-card' + (selectedId === d.id ? ' selected' : '')} onClick={() => onSelect(d.id)} aria-label={'Abrir documento: ' + d.title}>
+  const card = (d: WorkDocument) => <button key={d.id} data-document-id={d.id} disabled={busy} className={'funnel-card' + (selectedId === d.id ? ' selected' : '')} onClick={() => onSelect(d.id)} aria-label={t('ui.auto.124') + d.title}>
     <FileText size={14} />
     <span>
       <strong>{d.title}</strong>
       <small>{STATUS_LABEL[d.status]} · {d.fileName}</small>
-      {d.proposedFunnelStages.length > 0 && <em className="proposed">Propuesta: {d.proposedFunnelStages.map(s => STAGE_LABEL[s]).join(' + ')}</em>}
+      {d.proposedFunnelStages.length > 0 && <em className="proposed">{t('ui.auto.373')} {d.proposedFunnelStages.map(s => STAGE_LABEL[s]).join(' + ')}</em>}
       {reviewReasons(d, states[d.id]?.baseOutdated ?? false).map(reason => <em key={reason}>{reason}</em>)}
     </span>
   </button>;
@@ -35,16 +36,16 @@ export function FunnelView({ documents, selectedId, states, checking, onRefresh,
   return <div className="funnel-view">
     <header className="funnel-head">
       <div>
-        <span className="eyebrow">EMBUDO DE CAMPAÑA</span>
-        <h2>Dónde está parada cada pieza</h2>
+        <span className="eyebrow">{t('ui.auto.197')}</span>
+        <h2>{t('ui.auto.198')}</h2>
       </div>
-      <button className="icon-button" aria-label="Actualizar embudo" disabled={checking} onClick={onRefresh}><RefreshCw size={13} /></button>
+      <button className="icon-button" aria-label={t('ui.auto.199')} disabled={checking} onClick={onRefresh}><RefreshCw size={13} /></button>
     </header>
-    <p className="explorer-hint">Un documento puede participar en varias etapas: siempre es el mismo archivo. La clasificación es virtual y no mueve nada.</p>
+    <p className="explorer-hint">{t('ui.auto.200')}</p>
 
-    {groups.unclassified.length > 0 && <section className="funnel-block unclassified" aria-label="Sin clasificar">
-      <h3>Sin clasificar <small>{groups.unclassified.length}</small></h3>
-      <p className="stage-empty">Asignales una etapa desde Organizar, o pedile al agente que las proponga.</p>
+    {groups.unclassified.length > 0 && <section className="funnel-block unclassified" aria-label={t('ui.auto.201')}>
+      <h3>{t('ui.auto.201')} <small>{groups.unclassified.length}</small></h3>
+      <p className="stage-empty">{t('ui.auto.202')}</p>
       <div className="funnel-cards">{groups.unclassified.map(card)}</div>
     </section>}
 
@@ -53,10 +54,10 @@ export function FunnelView({ documents, selectedId, states, checking, onRefresh,
       <div className="funnel-cards">{groups[s].map(card)}</div>
     </section>)}
 
-    {empty.length > 0 && <section className="funnel-gaps" aria-label="Etapas vacías">
-      <h3>Etapas sin nada <small>{empty.length}</small></h3>
-      {empty.map(s => <div key={s} data-stage={s} className="funnel-gap"><span>{String(STAGES.indexOf(s) + 1).padStart(2, '0')} / {STAGE_LABEL[s]}</span><em>vacía</em></div>)}
-      <p className="footnote">Una etapa vacía es un hallazgo, no un detalle: es la parte del recorrido que hoy nadie está atendiendo.</p>
+    {empty.length > 0 && <section className="funnel-gaps" aria-label={t('ui.auto.203')}>
+      <h3>{t('ui.auto.204')} <small>{empty.length}</small></h3>
+      {empty.map(s => <div key={s} data-stage={s} className="funnel-gap"><span>{String(STAGES.indexOf(s) + 1).padStart(2, '0')} / {STAGE_LABEL[s]}</span><em>{t('ui.auto.205')}</em></div>)}
+      <p className="footnote">{t('ui.auto.206')}</p>
     </section>}
   </div>;
 }

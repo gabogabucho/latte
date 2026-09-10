@@ -45,12 +45,16 @@ function validateProfile(input:ProfileInput) {
 }
 const unavailable = async (): Promise<never> => { throw new Error('Los agentes reales están disponibles en la aplicación de escritorio. Esta vista es una previsualización local.'); };
 export const browserAPI: LatteAPI = {
+  getUiLocale: async () => localStorage.getItem('latte-ui-locale') === 'en-US' ? 'en-US' : 'es-AR',
+  setUiLocale: async locale => { localStorage.setItem('latte-ui-locale', locale); return locale; },
+  getContentLocale: async () => localStorage.getItem('latte-content-locale') === 'en-US' ? 'en-US' : 'es-AR',
+  setContentLocale: async locale => { localStorage.setItem('latte-content-locale', locale); return locale; },
   appInfo: async () => ({ dataDir: '', engine: 'localStorage (vista previa)', engineReason: 'La vista web no usa SQLite', pack: null, packRoles: 0 }),
   listBrands: async () => read().brands,
   createBrand: async name => change(s => { const b = { id: id(), name, context: '', createdAt: now() }; s.brands.push(b); return b; }),
   updateBrand: async (brandId, context) => change(s => { const b = s.brands.find(b => b.id === brandId)!; b.context = context; return b; }),
   listWorks: async brandId => read().works.filter(w => w.brandId === brandId),
-  createWork: async (brandId, title) => change(s => { const w: Work = { id: id(), brandId, title, brief: '# ' + title + '\n\n## Objetivo\n\n## Contexto\n\n## Próximos pasos\n', folder: null, updatedAt: now() }; s.works.push(w); return w; }),
+  createWork: async (brandId, title) => change(s => { const english = localStorage.getItem('latte-content-locale') === 'en-US'; const headings = english ? '\n\n## Goal\n\n## Context\n\n## Next steps\n' : '\n\n## Objetivo\n\n## Contexto\n\n## Próximos pasos\n'; const w: Work = { id: id(), brandId, title, brief: '# ' + title + headings, folder: null, updatedAt: now() }; s.works.push(w); return w; }),
   saveBrief: async (workId, brief, baseFingerprint) => browserAPI.saveDocument(previewDocId(workId),brief,baseFingerprint??null),
   listRevisions: async workId => read().revisions.filter(r=>r.workId===workId).reverse(),
   listDocuments: async workId => normalized().documents.filter(d=>d.workId===workId),

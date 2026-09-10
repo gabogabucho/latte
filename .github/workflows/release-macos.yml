@@ -1,0 +1,129 @@
+name: Release macOS
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::Tag is $tag but package.json is $pkg."
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck:all
+
+      - name: Tests
+        run: npm test
+
+      # A complete credential set signs with Developer ID and enables
+      # electron-builder notarization. With no secrets this remains an unsigned
+      # QA build. A partial set is an error rather than a misleading artifact.
+      - name: Configure optional Apple signing
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          values=("$MAC_CSC_LINK" "$MAC_CSC_KEY_PASSWORD" "$APPLE_ID_SECRET" "$APPLE_PASSWORD_SECRET" "$APPLE_TEAM_SECRET")
+          present=0
+          for value in "${values[@]}"; do [ -n "$value" ] && present=$((present + 1)); done
+          if [ "$present" -ne 0 ] && [ "$present" -ne 5 ]; then
+            echo "::error::Configure all five macOS signing/notarization secrets, or none of them."
+            exit 1
+          fi
+          if [ "$present" -eq 5 ]; then
+            echo "signed=true" >> "$GITHUB_ENV"
+            echo "CSC_LINK=$MAC_CSC_LINK" >> "$GITHUB_ENV"
+            echo "CSC_KEY_PASSWORD=$MAC_CSC_KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "APPLE_ID=$APPLE_ID_SECRET" >> "$GITHUB_ENV"
+            echo "APPLE_APP_SPECIFIC_PASSWORD=$APPLE_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_SECRET" >> "$GITHUB_ENV"
+          else
+            echo "signed=false" >> "$GITHUB_ENV"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "::warning::Producing unsigned, unnotarized QA artifacts. Do not publish them."
+          fi
+
+      # One invocation covers the x64/arm64 target matrix declared in
+      # electron-builder.yml, allowing builder to emit one coherent
+      # latest-mac.yml for both update ZIPs.
+      - name: Package DMG and ZIP for Intel and Apple Silicon
+        run: npm run pack:mac
+
+      - name: Validate artifacts and updater metadata
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          for arch in x64 arm64; do
+            test -s "release/Latte-${pkg}-mac-${arch}.dmg" || { echo "::error::Missing ${arch} DMG"; exit 1; }
+            test -s "release/Latte-${pkg}-mac-${arch}.zip" || { echo "::error::Missing ${arch} ZIP"; exit 1; }
+            grep -q "Latte-${pkg}-mac-${arch}.zip" release/latest-mac.yml || { echo "::error::latest-mac.yml does not reference ${arch} ZIP"; exit 1; }
+          done
+          grep -q "^version: ${pkg}$" release/latest-mac.yml || { echo "::error::Wrong version in latest-mac.yml"; exit 1; }
+          cat release/latest-mac.yml
+
+      - name: Validate signatures and notarization
+        if: env.signed == 'true'
+        run: |
+          for app_bundle in release/mac*/Latte.app; do
+            codesign --verify --deep --strict --verbose=2 "$app_bundle"
+            spctl --assess --type execute --verbose=2 "$app_bundle"
+          done
+          for dmg in release/*.dmg; do xcrun stapler validate "$dmg"; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: latte-macos-${{ github.sha }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/latest-mac.yml
+          retention-days: 14
+
+      - name: Create or update draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$signed" != "true" ]; then
+            echo "::error::Tagged macOS releases must be signed and notarized."
+            exit 1
+          fi
+          tag="$GITHUB_REF_NAME"
+          assets=(release/*.dmg release/*.zip release/latest-mac.yml)
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" "${assets[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --title "Latte ${tag#v}" \
+              --notes "Draft generated by macOS CI from \`$GITHUB_SHA\`. Both Intel and Apple Silicon artifacts are signed and notarized. Review release notes and test installation/update before publishing."
+          fi
