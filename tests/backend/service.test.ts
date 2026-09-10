@@ -249,7 +249,8 @@ describe('LatteService memory (Engram)', () => {
 
   it('scopes reads and saves to one project per brand and strips the banner', async () => {
     const runner = fakeRunner((file, args) => {
-      if (file === 'where.exe' || file === 'which') return { code: 0, stdout: 'C:\\tools\\engram.exe\n' };
+      if (file === 'where.exe') return { code: 0, stdout: 'C:\\tools\\engram.exe\n' };
+      if (file === 'which') return { code: 0, stdout: '/usr/bin/engram\n' };
       if (args[0] === 'context') {
         return { code: 0, stdout: 'Update available: 1.11.0 -> 1.20.0\nTo update:\n  go install x\n\n## Memory\n- [decision] Something\n' };
       }

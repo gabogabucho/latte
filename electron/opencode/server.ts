@@ -31,9 +31,9 @@ const URL_PATTERN = /https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+/;
  */
 export function resolveOpenCodeBinary(executable: string, platform: NodeJS.Platform = process.platform, exists: (p: string) => boolean = fs.existsSync): string {
   if (platform !== 'win32') return executable;
-  const ext = path.extname(executable).toLowerCase();
+  const ext = path.win32.extname(executable).toLowerCase();
   if (ext !== '.cmd' && ext !== '.bat') return executable;
-  const candidate = path.join(path.dirname(executable), 'node_modules', 'opencode-ai', 'bin', 'opencode.exe');
+  const candidate = path.win32.join(path.win32.dirname(executable), 'node_modules', 'opencode-ai', 'bin', 'opencode.exe');
   return exists(candidate) ? candidate : executable;
 }
 
