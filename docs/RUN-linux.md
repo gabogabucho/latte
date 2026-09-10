@@ -19,4 +19,4 @@ Máquina: Linux Mint 22.3. Node local sin cambios.
 | `LATTE_SMOKE_NO_INFERENCE=1 npx tsx scripts/smoke-opencode.ts` | 0 | `protocol-only: session created, no prompt sent` (chatId `ses_9cf97d8e45b53d797b25`, defaultModel `opencode-go/gpt-5.6-luna`) |
 | `npm run dev` (ventana, kill = Ctrl+C) | 143 (SIGTERM, cierre manual) | ventana abrió (log main+renderer+gpu, cerrada con kill). Sin fallo sandbox → no se añaden flags. Solo avisos GPU no fatales (MESA-INTEL Haswell Vulkan incomplete; `libva iHD_drv_video.so init failed`). |
 
-Salidas completas copiadas en `.hermes-T0-report.md` (mismo worktree).
+Salidas completas verificadas en la corrida local (no se versionan logs).
