@@ -7,7 +7,7 @@
 // opens a real member on the local runtime, drops a file in the work folder,
 // and replays the chat events a finished turn would send.
 //
-// Usage: node_modules/electron/dist/electron.exe scripts/visual-adopt.cjs
+// Usage: node_modules/electron/dist/electron scripts/visual-adopt.cjs (.exe en Windows)
 require('tsx/cjs');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');

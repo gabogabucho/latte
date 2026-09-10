@@ -1,6 +1,6 @@
 // Regression + screenshots for the Settings screen through Electron's real
 // sandboxed preload. Disposable data dir, no inference, no external calls.
-// Usage: node_modules/electron/dist/electron.exe scripts/visual-settings.cjs
+// Usage: node_modules/electron/dist/electron scripts/visual-settings.cjs (.exe en Windows)
 require('tsx/cjs');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');
