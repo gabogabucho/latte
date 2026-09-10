@@ -48,8 +48,9 @@ export function killTree(child: ChildProcess, platform: NodeJS.Platform = proces
     }
     return;
   }
-  try { child.kill('SIGTERM'); } catch { return; }
-  const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* gone */ } }, 3_000);
+  try { process.kill(-child.pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch { return; } }
+  const timer = setTimeout(() => { try { process.kill(-(child.pid as number), 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* gone */ } } }, 3_000);
+  if (typeof timer.unref === 'function') timer.unref();
   child.once('exit', () => clearTimeout(timer));
 }
 
@@ -111,7 +112,7 @@ export class OpenCodeServer {
       let output = '';
       let child: ChildProcess;
       try {
-        child = spawn(spec.file, spec.args, { cwd: this.options.cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        child = spawn(spec.file, spec.args, { cwd: this.options.cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], ...(this.platform !== 'win32' ? { detached: true } : {}) });
       } catch (error) {
         reject(new Error(`Could not start OpenCode: ${error instanceof Error ? error.message : String(error)}`));
         return;
