@@ -403,6 +403,12 @@ only the writing rules were kept and rewritten in Spanish, with attribution in
 the file. Skills ship **on**: quality that each person has to discover and
 switch on is quality almost nobody gets, so the switch exists to turn one off.
 
+The shipped **Sales Copywriter** profile is adapted from
+[sales-copywriter](https://github.com/treblahq/amplifiers/tree/main/skills/sales-copywriter)
+by Trebla (MIT). The procedural skill became a bounded Latte role that writes
+in the selected content language and adds evidence, authorization, UTF-8 and
+production-readiness gates.
+
 ### Providers (no terminal required)
 
 The **Proveedores de IA** screen (sidebar, or the gear icon in the agent

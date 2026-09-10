@@ -161,6 +161,8 @@ export function seedDemoIfEmpty(repo: LatteRepository, files: WorkspaceFiles, pa
       workId: work.id,
       text,
       createdAt,
+      rationale:'', alternativesRejected:[], evidenceRefs:[], status:'approved',
+      source:{chatId:null,messageId:null,memberId:null,roleId:null,runtime:null}, clientRequestId:null, fingerprint:'', decidedAt:createdAt,
     }));
     for (const decision of decisions) repo.insertDecision(decision);
 

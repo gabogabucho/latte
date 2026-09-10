@@ -125,7 +125,14 @@ export interface DocumentState { documentId: string; fingerprint: string; modifi
 export type SaveOutcome =
   | { status: 'saved'; document: WorkDocument; fingerprint: string; work: Work }
   | { status: 'conflict'; document: WorkDocument; disk: DocumentContent; keptRevision: Revision };
-export interface Decision { id: string; workId: string; text: string; createdAt: string }
+export type DecisionAuthorityMode = 'off' | 'suggest' | 'auto-record';
+export type DecisionStatus = 'pending' | 'approved' | 'rejected' | 'archived' | 'superseded';
+export interface DecisionSource { chatId: string | null; messageId: string | null; memberId: string | null; roleId: string | null; runtime: ChatRuntime | null }
+export interface Decision {
+  id: string; workId: string; text: string; rationale: string; alternativesRejected: string[]; evidenceRefs: string[];
+  status: DecisionStatus; source: DecisionSource; clientRequestId: string | null; fingerprint: string; createdAt: string; decidedAt: string | null;
+}
+export interface DecisionProposalInput { statement: string; rationale: string; alternativesRejected?: string[]; evidenceRefs?: string[]; clientRequestId: string }
 export interface AgentEvent { sessionId: string; type: 'output' | 'exit' | 'error'; data: string }
 export interface AgentSession { id: string; provider: Provider; workId: string }
 export interface RuntimeStatus { provider: Provider; available: boolean; detail: string }
@@ -344,6 +351,11 @@ export interface LatteAPI {
   useFolder(workId: string): Promise<FolderLinkResult | null>;
   listDecisions(workId: string): Promise<Decision[]>;
   addDecision(workId: string, text: string): Promise<Decision>;
+  getDecisionAuthority(workId: string): Promise<DecisionAuthorityMode>;
+  setDecisionAuthority(workId: string, mode: DecisionAuthorityMode): Promise<DecisionAuthorityMode>;
+  approveDecision(decisionId: string, editedStatement?: string | null): Promise<Decision>;
+  rejectDecision(decisionId: string): Promise<Decision>;
+  archiveDecision(decisionId: string): Promise<Decision>;
   runtimeStatus(): Promise<RuntimeStatus[]>;
   startAgent(workId: string, provider: Provider): Promise<AgentSession>;
   writeAgent(sessionId: string, data: string): Promise<void>;

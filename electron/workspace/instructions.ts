@@ -1,4 +1,4 @@
-import type { Brand, Decision, FunnelStage, Work } from '../../shared/contracts';
+import type { Brand, Decision, DecisionAuthorityMode, FunnelStage, Work } from '../../shared/contracts';
 import { WORK_FILES } from '../core/paths';
 
 export const MANAGED_MARKER = '<!-- latte:managed -->';
@@ -74,6 +74,7 @@ export interface InstructionsInput {
   available?: { id: string; name: string; summary: string }[];
   /** Language for human-facing output. Operational instructions remain canonical English. */
   outputLanguage?: 'es-AR' | 'en-US';
+  decisionAuthority?: DecisionAuthorityMode;
 }
 
 function section(title: string, body: string, empty: string): string {
@@ -112,7 +113,7 @@ export function renderInstructions(input: InstructionsInput): string {
     .filter((r) => !team.some((m) => m.roleId === r.id))
     .map((r) => `- \`${r.id}\` — ${r.name}: ${r.summary}`)
     .join('\n');
-  const decisionLines = decisions
+  const decisionLines = decisions.filter(d => d.status === 'approved')
     .map((d) => `- ${d.createdAt.slice(0, 10)} — ${d.text.trim().replace(/\s+/g, ' ')}`)
     .join('\n');
   const excerpt = work.brief.length > DOCUMENT_EXCERPT_CHARS
@@ -169,7 +170,9 @@ export function renderInstructions(input: InstructionsInput): string {
     `- \`./${WORK_FILES.claude}\` and \`./${WORK_FILES.agents}\` are managed by Latte. Do not edit them.`,
     `- \`./${WORK_FILES.metaDir}/\` holds immutable snapshots. Never modify or delete anything in it.`,
     '- Stay inside this directory. Do not touch other brands, other works or global tool configuration.',
-    '- When you take a decision that should stick, state it explicitly so the human can log it in Latte.',
+    input.decisionAuthority === 'off'
+      ? '- Decision suggestions are disabled for this work. Do not emit decision protocol blocks.'
+      : '- When the human explicitly agrees to a durable choice, invoke Latte\'s decision protocol by appending exactly one fenced `latte-decision` JSON block with: `statement`, `rationale`, optional `alternativesRejected` and `evidenceRefs`, and a stable unique `clientRequestId`. This is a structured tool fallback, not prose detection. Never emit it for facts, hypotheses, recommendations awaiting approval, summaries, temporary actions or technical permissions. Latte will either ask the human to approve it or record it according to the separate decision-authority setting.',
     `- The funnel stages are \`${FUNNEL_STAGES.join('`, `')}\`. You do not assign them; the human does, when they adopt the file. What you can do is propose one: begin a Markdown file you create with a front matter block — a line \`---\`, then \`funnel: ${FUNNEL_STAGES[2]}, ${FUNNEL_STAGES[3]}\`, then a line \`---\`. Latte reads it when the human adopts the file and takes it out of the deliverable. Name only the stages the piece really serves.`,
     '- Say plainly which stages have nothing in them. An empty stage is a finding, not a detail.',
     '- You share this folder with the team, but not their conversations: you cannot read what they said and you cannot write to them. What you can do is ask for one of them, and the human decides.',

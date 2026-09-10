@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import type { Brand, FunnelStage, ChatRuntime, Decision, Revision, Work } from '../../shared/contracts';
-import { NotFoundError } from '../core/errors';
+import type { Brand, FunnelStage, ChatRuntime, Decision, DecisionSource, DecisionStatus, Revision, Work } from '../../shared/contracts';
+import { NotFoundError, ValidationError } from '../core/errors';
 import type { SqlDriver, SqlRow } from './driver';
 import { SCHEMA_SQL, SCHEMA_VERSION } from './schema';
 
@@ -8,6 +8,7 @@ interface BrandRow extends SqlRow { id: string; name: string; context: string; c
 interface WorkRow extends SqlRow { id: string; brand_id: string; title: string; brief: string; dir: string | null; updated_at: string }
 interface RevisionRow extends SqlRow { id: string; work_id: string; document_id: string | null; source: string; content: string; created_at: string }
 interface DecisionRow extends SqlRow { id: string; work_id: string; text: string; created_at: string }
+interface DecisionProposalRow extends SqlRow { id:string; work_id:string; statement:string; rationale:string; alternatives:string; evidence:string; status:string; source_chat_id:string|null; source_message_id:string|null; source_member_id:string|null; source_role_id:string|null; source_runtime:string|null; client_request_id:string; fingerprint:string; created_at:string; decided_at:string|null }
 interface DocumentRow extends SqlRow { id: string; work_id: string; kind: string; title: string; file_name: string; status: string; funnel_stages: string; proposed_stages: string; base_doc_id: string | null; base_rev_id: string | null; base_print: string | null; last_print: string | null; created_at: string; updated_at: string }
 interface MemberRow extends SqlRow { id: string; work_id: string; role_id: string; role_name: string; initial: string; runtime: string; model: string | null; account_id: string | null; session_id: string; done: number; created_at: string; updated_at: string }
 
@@ -77,7 +78,10 @@ const toDocument = (r: DocumentRow): DocumentRecord => ({
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
-const toDecision = (r: DecisionRow): Decision => ({ id: r.id, workId: r.work_id, text: r.text, createdAt: r.created_at });
+const emptySource = (): DecisionSource => ({ chatId:null,messageId:null,memberId:null,roleId:null,runtime:null });
+const jsonStrings = (value:string):string[] => { try { const v:unknown=JSON.parse(value); return Array.isArray(v)?v.filter((x):x is string=>typeof x==='string'):[]; } catch { return []; } };
+const toDecision = (r: DecisionRow): Decision => ({ id:r.id,workId:r.work_id,text:r.text,rationale:'',alternativesRejected:[],evidenceRefs:[],status:'approved',source:emptySource(),clientRequestId:null,fingerprint:'',createdAt:r.created_at,decidedAt:r.created_at });
+const toProposal = (r:DecisionProposalRow):Decision => ({id:r.id,workId:r.work_id,text:r.statement,rationale:r.rationale,alternativesRejected:jsonStrings(r.alternatives),evidenceRefs:jsonStrings(r.evidence),status:r.status as DecisionStatus,source:{chatId:r.source_chat_id,messageId:r.source_message_id,memberId:r.source_member_id,roleId:r.source_role_id,runtime:(r.source_runtime==='claude'||r.source_runtime==='codex'||r.source_runtime==='opencode')?r.source_runtime:null},clientRequestId:r.client_request_id,fingerprint:r.fingerprint,createdAt:r.created_at,decidedAt:r.decided_at});
 const toMember = (r: MemberRow): TeamMemberRecord => ({
   id: r.id,
   workId: r.work_id,
@@ -412,15 +416,40 @@ export class LatteRepository {
   // Decisions ---------------------------------------------------------------
 
   listDecisions(workId: string): Decision[] {
-    return this.db
+    const legacy = this.db
       .all<DecisionRow>('SELECT * FROM decisions WHERE work_id = ? ORDER BY created_at ASC, id ASC', [workId])
       .map(toDecision);
+    const proposals=this.db.all<DecisionProposalRow>('SELECT * FROM decision_proposals WHERE work_id = ? ORDER BY created_at ASC, id ASC',[workId]).map(toProposal);
+    return [...legacy,...proposals].sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id));
   }
 
-  insertDecision(decision: Decision): Decision {
+  insertDecision(decision: Pick<Decision,'id'|'workId'|'text'|'createdAt'>): Decision {
     this.db.run('INSERT INTO decisions(id, work_id, text, created_at) VALUES (?, ?, ?, ?)', [
       decision.id, decision.workId, decision.text, decision.createdAt,
     ]);
+    return { ...decision,rationale:'',alternativesRejected:[],evidenceRefs:[],status:'approved',source:emptySource(),clientRequestId:null,fingerprint:'',decidedAt:decision.createdAt };
+  }
+
+  findDecisionRequest(workId:string,chatId:string,clientRequestId:string):Decision|null {
+    const row=this.db.get<DecisionProposalRow>('SELECT * FROM decision_proposals WHERE work_id=? AND source_chat_id=? AND client_request_id=?',[workId,chatId,clientRequestId]);
+    return row?toProposal(row):null;
+  }
+
+  insertDecisionProposal(decision:Decision):Decision {
+    this.db.transaction(()=>{
+      this.db.run('INSERT INTO decision_proposals(id,work_id,statement,rationale,alternatives,evidence,status,source_chat_id,source_message_id,source_member_id,source_role_id,source_runtime,client_request_id,fingerprint,created_at,decided_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[decision.id,decision.workId,decision.text,decision.rationale,JSON.stringify(decision.alternativesRejected),JSON.stringify(decision.evidenceRefs),decision.status,decision.source.chatId,decision.source.messageId,decision.source.memberId,decision.source.roleId,decision.source.runtime,decision.clientRequestId,decision.fingerprint,decision.createdAt,decision.decidedAt]);
+      this.db.run('INSERT INTO decision_events(id,decision_id,action,actor,detail,created_at) VALUES (?,?,?,?,?,?)',[`evt_${decision.id.slice(4)}`,decision.id,'proposed','agent','',decision.createdAt]);
+      if(decision.status==='approved') this.db.run('INSERT INTO decision_events(id,decision_id,action,actor,detail,created_at) VALUES (?,?,?,?,?,?)',[`evt_auto_${decision.id.slice(4)}`,decision.id,'approved','authority:auto-record','',decision.createdAt]);
+    });
     return decision;
+  }
+
+  getDecision(id:string):Decision {
+    const row=this.db.get<DecisionProposalRow>('SELECT * FROM decision_proposals WHERE id=?',[id]);
+    if(!row) throw new NotFoundError('Decision',id); return toProposal(row);
+  }
+
+  transitionDecision(id:string,status:DecisionStatus,statement:string|null,at:string,actor='human'):Decision {
+    return this.db.transaction(()=>{ const before=this.getDecision(id); if(before.status===status)return before; const allowed=(before.status==='pending'&&(status==='approved'||status==='rejected'))||(before.status==='approved'&&status==='archived'); if(!allowed)throw new ValidationError(`Decision cannot transition from ${before.status} to ${status}`); const text=statement??before.text; this.db.run('UPDATE decision_proposals SET status=?, statement=?, decided_at=? WHERE id=?',[status,text,at,id]); this.db.run('INSERT INTO decision_events(id,decision_id,action,actor,detail,created_at) VALUES (?,?,?,?,?,?)',[`evt_${createHash('sha1').update(`${id}\0${status}\0${at}`).digest('hex').slice(0,20)}`,id,status,actor,statement&&statement!==before.text?'statement edited':'',at]); return this.getDecision(id); });
   }
 }

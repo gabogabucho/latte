@@ -51,6 +51,7 @@ const METHODS = [
   'useFolder',
   'listDecisions',
   'addDecision',
+  'getDecisionAuthority','setDecisionAuthority','approveDecision','rejectDecision','archiveDecision',
   'runtimeStatus',
   'startAgent',
   'writeAgent',

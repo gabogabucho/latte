@@ -96,7 +96,9 @@ function MessageView({ message, roleName, onSaveAsDocument, untracked, onAdoptFi
     return <div className="chat-message user"><div className="chat-role">{t('ui.auto.356')}</div><div className="chat-bubble">{text}</div></div>;
   }
   // An answer worth keeping should not stay trapped in the conversation.
-  const text = message.parts.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('\n\n').trim();
+  // Decision protocol blocks are a machine channel, not conversation content.
+  // Keeping them out of the transcript avoids turning an audit feature into UI noise.
+  const text = message.parts.filter(p => p.type === 'text').map(p => (p as { text: string }).text).join('\n\n').replace(/```latte-decision\s*\r?\n[\s\S]*?```/g,'').trim();
   const worthKeeping = message.completed && !message.error && text.length > 400;
   // If the agent already wrote a file, saying so with its own button is what
   // stops the work from ending with two copies of one deliverable. Two named

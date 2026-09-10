@@ -75,6 +75,22 @@ CREATE TABLE IF NOT EXISTS decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_decisions_work ON decisions(work_id, created_at);
 
+-- Agent suggestions are first-class and auditable. The legacy decisions table
+-- remains untouched so existing databases migrate without rewriting history.
+CREATE TABLE IF NOT EXISTS decision_proposals (
+  id TEXT PRIMARY KEY, work_id TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+  statement TEXT NOT NULL, rationale TEXT NOT NULL DEFAULT '', alternatives TEXT NOT NULL DEFAULT '[]', evidence TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL, source_chat_id TEXT, source_message_id TEXT, source_member_id TEXT, source_role_id TEXT, source_runtime TEXT,
+  client_request_id TEXT NOT NULL, fingerprint TEXT NOT NULL, created_at TEXT NOT NULL, decided_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_decision_request ON decision_proposals(work_id, source_chat_id, client_request_id);
+CREATE INDEX IF NOT EXISTS idx_decision_proposals_work ON decision_proposals(work_id, created_at);
+CREATE TABLE IF NOT EXISTS decision_events (
+  id TEXT PRIMARY KEY, decision_id TEXT NOT NULL REFERENCES decision_proposals(id) ON DELETE CASCADE,
+  action TEXT NOT NULL, actor TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_decision_events_decision ON decision_events(decision_id, created_at);
+
 CREATE TABLE IF NOT EXISTS team_members (
   id         TEXT PRIMARY KEY,
   work_id    TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
@@ -97,4 +113,4 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `;
 
-export const SCHEMA_VERSION = '6';
+export const SCHEMA_VERSION = '7';

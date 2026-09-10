@@ -21,6 +21,9 @@ import type {
   ChatRuntimeStatus,
   ChatSession,
   Decision,
+  DecisionAuthorityMode,
+  DecisionProposalInput,
+  DecisionSource,
   DocumentContent,
   FolderLinkResult,
   DocumentKind,
@@ -47,6 +50,7 @@ import type {
 } from '../../shared/contracts';
 import nodeFs from 'node:fs';
 import nodePath from 'node:path';
+import { createHash } from 'node:crypto';
 import { writeFileAtomic } from '../core/atomicFile';
 import { UnavailableError, ValidationError } from '../core/errors';
 import { newId, nowIso, slugify } from '../core/ids';
@@ -67,6 +71,11 @@ import { renderDocumentTemplate } from '../workspace/templates';
 import { DeliverableFiles } from '../workspace/deliverables';
 import { documentFileName, fingerprintOf, type DocumentOnDisk, type WorkspaceFiles } from '../workspace/workspace';
 import { LIMITS, requireId, requireInt, requireLabel, requireRequestId, requireText } from './validation';
+
+/** Stable content identity; request identity handles retries, this flags similar proposals without merging them. */
+export function decisionFingerprint(statement:string):string {
+  return createHash('sha256').update(statement.normalize('NFC').trim().replace(/\s+/gu,' ').toLocaleLowerCase('und'),'utf8').digest('hex').slice(0,24);
+}
 
 /** Everything the renderer can call, minus the event subscriptions (wired in the preload). */
 /**
@@ -796,11 +805,30 @@ export class LatteService implements BackendApi {
   async addDecision(workId: string, text: string): Promise<Decision> {
     const cleanText = requireText(text, 'Decision', LIMITS.decision).trim();
     const work = this.deps.repo.getWork(requireId(workId, 'workId'));
-    const decision: Decision = { id: newId('dec'), workId: work.id, text: cleanText, createdAt: this.clock() };
+    const decision: Decision = { id: newId('dec'), workId: work.id, text: cleanText, rationale:'', alternativesRejected:[], evidenceRefs:[], status:'approved', source:{chatId:null,messageId:null,memberId:null,roleId:null,runtime:null}, clientRequestId:null, fingerprint:decisionFingerprint(cleanText), createdAt: this.clock(), decidedAt:this.clock() };
     this.deps.repo.insertDecision(decision);
     this.deps.repo.touchWork(work.id, decision.createdAt);
     return decision;
   }
+
+  async getDecisionAuthority(workId:string):Promise<DecisionAuthorityMode> { const id=requireId(workId,'workId'); this.deps.repo.getWork(id); const raw=this.deps.repo.getMeta('decision_authority:'+id); return raw==='off'||raw==='auto-record'?raw:'suggest'; }
+  async setDecisionAuthority(workId:string,mode:DecisionAuthorityMode):Promise<DecisionAuthorityMode> { const id=requireId(workId,'workId'); this.deps.repo.getWork(id); if(mode!=='off'&&mode!=='suggest'&&mode!=='auto-record') throw new ValidationError('Invalid decision authority'); this.deps.repo.setMeta('decision_authority:'+id,mode); return mode; }
+
+  /** Structured fallback used by every runtime. It never infers decisions from prose. */
+  async proposeDecisionFromAgent(chatId:string,messageId:string,input:DecisionProposalInput):Promise<Decision|null> {
+    const member=this.deps.repo.findMember(requireId(chatId,'chatId')); if(!member) throw new ValidationError('Unknown decision source');
+    const rawMode=this.deps.repo.getMeta('decision_authority:'+member.workId); const mode:DecisionAuthorityMode=rawMode==='off'||rawMode==='auto-record'?rawMode:'suggest'; if(mode==='off') return null;
+    const request=requireRequestId(input.clientRequestId); const existing=this.deps.repo.findDecisionRequest(member.workId,chatId,request); if(existing) return existing;
+    const statement=requireText(input.statement,'Decision statement',LIMITS.decision).trim().normalize('NFC');
+    const rationale=typeof input.rationale==='string'?input.rationale.trim().normalize('NFC').slice(0,LIMITS.decision):'';
+    const list=(v:unknown)=>Array.isArray(v)?v.filter((x):x is string=>typeof x==='string').slice(0,20).map(x=>x.trim().normalize('NFC').slice(0,500)).filter(Boolean):[];
+    const now=this.clock(); const source:DecisionSource={chatId,messageId:requireRequestId(messageId),memberId:member.id,roleId:member.roleId,runtime:member.runtime};
+    const decision:Decision={id:newId('dec'),workId:member.workId,text:statement,rationale,alternativesRejected:list(input.alternativesRejected),evidenceRefs:list(input.evidenceRefs),status:mode==='auto-record'?'approved':'pending',source,clientRequestId:request,fingerprint:decisionFingerprint(statement),createdAt:now,decidedAt:mode==='auto-record'?now:null};
+    this.deps.repo.insertDecisionProposal(decision); this.deps.repo.touchWork(member.workId,now); return decision;
+  }
+  async approveDecision(id:string,edited:string|null=null):Promise<Decision>{ const clean=edited==null?null:requireText(edited,'Decision',LIMITS.decision).trim().normalize('NFC'); return this.deps.repo.transitionDecision(requireId(id,'decisionId'),'approved',clean,this.clock()); }
+  async rejectDecision(id:string):Promise<Decision>{ return this.deps.repo.transitionDecision(requireId(id,'decisionId'),'rejected',null,this.clock()); }
+  async archiveDecision(id:string):Promise<Decision>{ return this.deps.repo.transitionDecision(requireId(id,'decisionId'),'archived',null,this.clock()); }
 
   // Agents ------------------------------------------------------------------
 
@@ -1284,6 +1312,7 @@ export class LatteService implements BackendApi {
     this.deps.files.ensureWork(brand.id, work.id, work.brief);
     const storedLocale = this.deps.repo.getMeta(`work_content_locale:${work.id}`);
     const outputLanguage = storedLocale === 'en-US' ? 'en-US' : 'es-AR';
-    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, decisions, documents, outputLanguage, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills(), team: this.deps.hub.listTeam(work.id).map((m) => ({ roleId: m.roleId, roleName: m.roleName, status: m.status })), available: this.deps.hub.listRoles().map((r) => ({ id: r.id, name: r.name, summary: r.summary })) }));
+    const decisionAuthority=(this.deps.repo.getMeta('decision_authority:'+work.id) as DecisionAuthorityMode|null)??'suggest';
+    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, decisions, documents, outputLanguage, decisionAuthority, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills(), team: this.deps.hub.listTeam(work.id).map((m) => ({ roleId: m.roleId, roleName: m.roleName, status: m.status })), available: this.deps.hub.listRoles().map((r) => ({ id: r.id, name: r.name, summary: r.summary })) }));
   }
 }

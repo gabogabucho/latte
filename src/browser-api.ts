@@ -36,6 +36,7 @@ const shippedRoles = [
  {id:'researcher',name:'Researcher',initial:'R',summary:'Contrasta evidencia y fuentes.',builtin:false},
  {id:'analyst',name:'Analyst',initial:'A',summary:'Interpreta datos y explicita límites.',builtin:false},
  {id:'paid-media',name:'Paid Media',initial:'P',summary:'Analizá campañas, inversión y resultados con evidencia; priorizá acciones sin modificar cuentas por tu cuenta.',builtin:false},
+ {id:'sales-copywriter',name:'Sales Copywriter',initial:'C',summary:'Convertí briefs en copy de venta listo para usar, con una promesa defendible, prueba real y un CTA claro.',builtin:false},
  {id:'reviewer',name:'Reviewer',initial:'V',summary:'Revisa entregables contra el brief.',builtin:false},
 ];
 const builtinProfiles:AgentProfile[]=shippedRoles.map(r=>({...r,soul:r.summary,skills:'',source:'builtin',directory:null,fingerprint:'builtin-'+r.id}));
@@ -90,7 +91,12 @@ listHandoffs:async()=>[],dismissHandoff:unavailable,listSkills:async()=>[],setSk
   useFolder: unavailable,
   snapshot: async workId => change(s => { const r: Revision = { id: id(), workId, documentId: previewDocId(workId), source: 'human', content: s.works.find(w => w.id === workId)!.brief, createdAt: now() }; s.revisions.push(r); return r; }),
   listDecisions: async workId => read().decisions.filter(d => d.workId === workId),
-  addDecision: async (workId, text) => change(s => { const d = { id: id(), workId, text, createdAt: now() }; s.decisions.push(d); return d; }),
+  addDecision: async (workId, text) => change(s => { const createdAt=now(); const d:Decision = { id:id(),workId,text,rationale:'',alternativesRejected:[],evidenceRefs:[],status:'approved',source:{chatId:null,messageId:null,memberId:null,roleId:null,runtime:null},clientRequestId:null,fingerprint:'',createdAt,decidedAt:createdAt }; s.decisions.push(d); return d; }),
+  getDecisionAuthority:async workId=>(localStorage.getItem('latte:decision-authority:'+workId) as 'off'|'suggest'|'auto-record'|null)??'suggest',
+  setDecisionAuthority:async(workId,mode)=>{localStorage.setItem('latte:decision-authority:'+workId,mode);return mode;},
+  approveDecision:async(decisionId,edited)=>change(s=>{const d=s.decisions.find(x=>x.id===decisionId)!;d.status='approved';if(edited)d.text=edited;d.decidedAt=now();return d;}),
+  rejectDecision:async decisionId=>change(s=>{const d=s.decisions.find(x=>x.id===decisionId)!;d.status='rejected';d.decidedAt=now();return d;}),
+  archiveDecision:async decisionId=>change(s=>{const d=s.decisions.find(x=>x.id===decisionId)!;d.status='archived';d.decidedAt=now();return d;}),
   runtimeStatus: async () => ['claude', 'codex', 'opencode'].map(provider => ({ provider: provider as 'claude' | 'codex' | 'opencode', available: false, detail: 'Requiere escritorio' })),
   startAgent: unavailable, writeAgent: unavailable, resizeAgent: unavailable, stopAgent: unavailable,
   onAgentEvent: () => () => {},
