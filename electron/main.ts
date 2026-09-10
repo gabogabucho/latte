@@ -3,6 +3,7 @@ import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
 import type { AgentEvent, ChatEvent, InstallOutcome, UpdateState } from '../shared/contracts';
 import { createBackend, type Backend } from './bootstrap';
 import { errorMessage } from './core/errors';
+import { ensureUserBinPath } from './core/linuxPath';
 import {
   AGENT_EVENT_CHANNEL,
   CHAT_EVENT_CHANNEL,
@@ -50,7 +51,9 @@ if (!app.requestSingleInstanceLock()) {
   // Only one Latte at a time: they would share the same data directory.
   // Say so, or this looks like "the app simply did not open".
   console.error('[latte] Ya hay una ventana de Latte abierta. Se trae al frente esa y esta instancia se cierra.');
-  console.error('[latte] Si no la ves, cerrá el proceso electron.exe desde el Administrador de tareas y volvé a intentar.');
+  if (process.platform === 'linux') console.error('[latte] Si no la ves, buscá el proceso con `pgrep -af electron` y terminalo (`pkill -f "electron ."`) y volvé a intentar.');
+  else if (process.platform === 'darwin') console.error('[latte] Si no la ves, buscá el proceso Latte en el Monitor de Actividad y terminalo, y volvé a intentar.');
+  else console.error('[latte] Si no la ves, cerrá el proceso electron.exe desde el Administrador de tareas y volvé a intentar.');
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -64,6 +67,12 @@ if (!app.requestSingleInstanceLock()) {
 
 async function start(): Promise<void> {
   await app.whenReady();
+
+  const binPath = ensureUserBinPath(process.env, process.platform);
+  if (binPath.added.length > 0) {
+    process.env.PATH = binPath.env.PATH;
+    console.log(`[latte] PATH extendido con: ${binPath.added.join(', ')}`);
+  }
 
   const dataDir = process.env.LATTE_DATA_DIR ?? path.join(app.getPath('userData'), 'data');
   try {
