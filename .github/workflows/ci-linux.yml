@@ -1,0 +1,33 @@
+name: CI Linux
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck:all
+
+      - name: Tests
+        run: npm test
+
+      - name: Build web
+        run: npm run build
+
+      - name: Smoke opencode (sin inferencia)
+        env:
+          LATTE_SMOKE_NO_INFERENCE: '1'
+        run: npx tsx scripts/smoke-opencode.ts
