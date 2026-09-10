@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RuntimeDetector } from '../../electron/runtime/detect';
+import { spawnSpecFor } from '../../electron/runtime/commandRunner';
+import { resolveOpenCodeBinary } from '../../electron/opencode/server';
+import { resolveCodexBinary } from '../../electron/agents/codex/appServer';
 import { PROVIDERS, isProvider } from '../../electron/runtime/providers';
 import { fakeRunner } from './helpers';
 
@@ -75,5 +78,34 @@ describe('RuntimeDetector', () => {
     const runner = fakeRunner(() => ({ code: null, timedOut: true, error: 'ETIMEDOUT' }));
     const detector = new RuntimeDetector({ runner, terminalAvailability: () => ({ available: true }), platform: 'linux', env: {} });
     expect((await detector.status()).every((s) => !s.available)).toBe(true);
+  });
+
+  it('keeps POSIX paths with spaces intact from which output', async () => {
+    const runner = fakeRunner((file, args) => {
+      if (file === 'which') return { code: 0, stdout: '/opt/my tools/claude\n' };
+      expect(file).toBe('/opt/my tools/claude');
+      expect(args).toEqual(['--version']);
+      return { code: 0, stdout: '2.1.0 (Claude Code)\n' };
+    });
+    const detector = new RuntimeDetector({ runner, terminalAvailability: () => ({ available: true }), platform: 'linux', env: {} });
+    expect((await detector.resolve('claude'))?.executable).toBe('/opt/my tools/claude');
+    const [claude] = await detector.status();
+    expect(claude.available).toBe(true);
+    expect(claude.detail).toContain('/opt/my tools/claude');
+  });
+
+  it('spawnSpecFor passes the executable through untouched on POSIX', () => {
+    expect(spawnSpecFor('/opt/my tools/claude', ['--version'], 'linux')).toEqual({ file: '/opt/my tools/claude', args: ['--version'] });
+    expect(spawnSpecFor('/x/foo.cmd', ['serve'], 'linux')).toEqual({ file: '/x/foo.cmd', args: ['serve'] });
+    expect(spawnSpecFor('/x/foo.cmd', ['serve'], 'darwin')).toEqual({ file: '/x/foo.cmd', args: ['serve'] });
+  });
+
+  it('binary resolvers are no-ops outside win32', () => {
+    const failExists = (_p: string): boolean => { throw new Error('exists must not be called on POSIX'); };
+    const failReaddir = (_p: string): string[] => { throw new Error('readdir must not be called on POSIX'); };
+    expect(resolveOpenCodeBinary('/x/opencode.cmd', 'linux', failExists)).toBe('/x/opencode.cmd');
+    expect(resolveOpenCodeBinary('/x/opencode.cmd', 'darwin', failExists)).toBe('/x/opencode.cmd');
+    expect(resolveCodexBinary('/x/codex.cmd', 'linux', failExists, failReaddir)).toBe('/x/codex.cmd');
+    expect(resolveCodexBinary('/x/codex.cmd', 'darwin', failExists, failReaddir)).toBe('/x/codex.cmd');
   });
 });
