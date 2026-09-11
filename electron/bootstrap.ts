@@ -109,6 +109,9 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
    */
   const emitChat = (event: ChatEvent): void => {
     const forward = options.emitChat ?? (() => {});
+    // An adapter counts only the process it runs; the member's lifetime total
+    // is persisted, so the hub replaces it before the interface sees it.
+    if (event.type === 'usage') { forward(hub.recordUsage(event)); return; }
     if (event.type === 'message' && event.message.role === 'assistant' && event.message.completed) {
       for (const proposal of decisionProtocolBlocks(event.message.parts.filter(p=>p.type==='text').map(p=>(p as {text:string}).text).join('\n'))) {
         void service.proposeDecisionFromAgent(event.chatId,event.message.id,proposal).catch(error=>options.log?.(`[latte] decision proposal failed: ${error instanceof Error?error.message:String(error)}`));

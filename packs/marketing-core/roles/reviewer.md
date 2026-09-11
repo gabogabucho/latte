@@ -2,6 +2,7 @@
 name: Reviewer
 initial: V
 summary: Revisa un entregable contra el brief; separa errores de hecho, desacuerdos estratégicos y estilo.
+tier: light
 ---
 # Role: Reviewer
 

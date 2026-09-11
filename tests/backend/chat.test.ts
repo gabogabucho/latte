@@ -84,6 +84,8 @@ describe('ChatManager against a fake OpenCode server', () => {
     expect(fake.requests.find((r) => r.path.endsWith('/prompt_async'))?.body).toEqual({
       parts: [{ type: 'text', text: 'hola' }],
       model: { providerID: 'fake-provider', modelID: 'fake-model' },
+      // Every prompt states the effort tier; `balanced` is the server's `medium`.
+      variant: 'medium',
     });
   });
 
@@ -98,7 +100,7 @@ describe('ChatManager against a fake OpenCode server', () => {
     await manager.send(session.id, 'Hola agente');
     const prompt = fake.requests.find((r) => r.path.endsWith('/prompt_async'));
     expect(prompt?.query.get('directory')).toBe('C:\\work\\one');
-    expect(prompt?.body).toEqual({ parts: [{ type: 'text', text: 'Hola agente' }] });
+    expect(prompt?.body).toEqual({ parts: [{ type: 'text', text: 'Hola agente' }], variant: 'medium' });
 
     await waitFor(() => events.some((e) => e.type === 'permission'));
     const types = events.map((e) => e.type);

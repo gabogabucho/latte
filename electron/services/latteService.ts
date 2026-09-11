@@ -30,6 +30,7 @@ import type {
   DocumentKind,
   DocumentState,
   DocumentStatus,
+  EffortTier,
   LatteAPI,
   McpRuntimeTools,
   McpServerInput,
@@ -62,12 +63,13 @@ import { AccountStore } from '../agents/accounts';
 import { isAccountRuntime, isChatRuntime, type AgentHub, type MemberContext } from '../agents/hub';
 import type { McpCatalog } from '../agents/mcp';
 import { RoleCatalog } from '../agents/roles';
+import { isEffortTier } from '../agents/tiers';
 import type { ChatManager } from '../opencode/chatManager';
 import { RuntimeDetector } from '../runtime/detect';
 import { assertProvider } from '../runtime/providers';
 import { TerminalManager } from '../runtime/terminalManager';
 import { briefDocumentId, type DocumentRecord, type LatteRepository } from '../storage/repository';
-import { isManagedFile, renderInstructions, renderOutcomeContext, showsCurrentOutcome, type InstructionPack, type PackSkill } from '../workspace/instructions';
+import { isManagedFile, renderInstructionBundle, renderOutcomeContext, showsCurrentOutcome, type InstructionPack, type PackSkill } from '../workspace/instructions';
 import { checkFolder, contains, importFileName, kindFromFileName, readFunnelProposal, readHandoff, scanFolder, titleFromFileName } from '../workspace/linkFolder';
 import { renderDocumentTemplate } from '../workspace/templates';
 import { openItems, renderContinuation } from '../workspace/continuation';
@@ -166,9 +168,9 @@ function requireProviderId(value: unknown): string {
 }
 
 /** Advanced overrides for a new member; every field is optional and strictly typed. */
-function validateMemberOptions(options: unknown): { runtime: ChatRuntime | null; model: string | null; accountId: string | null; continuedFrom: string | null } {
+function validateMemberOptions(options: unknown): { runtime: ChatRuntime | null; model: string | null; accountId: string | null; continuedFrom: string | null; tier: EffortTier | null } {
   if (typeof options !== 'object' || options === null || Array.isArray(options)) throw new TypeError('Invalid options');
-  const { runtime, model, accountId, continuedFrom } = options as Record<string, unknown>;
+  const { runtime, model, accountId, continuedFrom, tier } = options as Record<string, unknown>;
   const cleanRuntime = runtime === undefined || runtime === null ? null : runtime;
   if (cleanRuntime !== null && !isChatRuntime(cleanRuntime)) throw new TypeError('Unknown runtime');
   const cleanModel = model === undefined || model === null ? null : model;
@@ -177,7 +179,11 @@ function validateMemberOptions(options: unknown): { runtime: ChatRuntime | null;
   if (cleanAccount !== null && !AccountStore.isValidId(cleanAccount)) throw new TypeError('Invalid account id');
   const cleanOrigin = continuedFrom === undefined || continuedFrom === null ? null : continuedFrom;
   if (cleanOrigin !== null && !isValidId(cleanOrigin)) throw new TypeError('Invalid member id');
-  return { runtime: cleanRuntime, model: cleanModel as string | null, accountId: cleanAccount as string | null, continuedFrom: cleanOrigin as string | null };
+  // Absent means "whatever the role says"; a word that is not a tier is a bug
+  // in the caller, not something to silently round to the default.
+  const cleanTier = tier === undefined || tier === null ? null : tier;
+  if (cleanTier !== null && !isEffortTier(cleanTier)) throw new TypeError('Invalid effort tier');
+  return { runtime: cleanRuntime, model: cleanModel as string | null, accountId: cleanAccount as string | null, continuedFrom: cleanOrigin as string | null, tier: cleanTier };
 }
 
 /**
@@ -1036,6 +1042,13 @@ export class LatteService implements BackendApi {
     return this.deps.hub.setMemberModel(member.id, model, this.memberContext(member.workId));
   }
 
+  /** Changes how hard this conversation works per answer, resuming what was already said. */
+  async setTeamMemberTier(memberId: string, tier: EffortTier): Promise<MemberModelChange> {
+    const member = this.deps.hub.getMember(requireId(memberId, 'memberId'));
+    if (!isEffortTier(tier)) throw new ValidationError('Nivel de esfuerzo inválido');
+    return this.deps.hub.setMemberTier(member.id, tier, this.memberContext(member.workId));
+  }
+
   async removeTeamMember(memberId: string): Promise<void> {
     this.deps.hub.removeMember(requireId(memberId, 'memberId'));
   }
@@ -1458,6 +1471,7 @@ export class LatteService implements BackendApi {
     const storedLocale = this.deps.repo.getMeta(`work_content_locale:${work.id}`);
     const outputLanguage = storedLocale === 'en-US' ? 'en-US' : 'es-AR';
     const decisionAuthority=(this.deps.repo.getMeta('decision_authority:'+work.id) as DecisionAuthorityMode|null)??'suggest';
-    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, resultExists: this.resultExists(work), decisions, documents, outputLanguage, decisionAuthority, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills(), team: this.deps.hub.listTeam(work.id).map((m) => ({ roleId: m.roleId, roleName: m.roleName, status: m.status })), available: this.deps.hub.listRoles().map((r) => ({ id: r.id, name: r.name, summary: r.summary })) }));
+    const bundle = renderInstructionBundle({ brand, work, resultExists: this.resultExists(work), decisions, documents, outputLanguage, decisionAuthority, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills(), team: this.deps.hub.listTeam(work.id).map((m) => ({ roleId: m.roleId, roleName: m.roleName, status: m.status })), available: this.deps.hub.listRoles().map((r) => ({ id: r.id, name: r.name, summary: r.summary })) });
+    this.deps.files.writeInstructions(brand.id, work.id, bundle.text, bundle.files);
   }
 }

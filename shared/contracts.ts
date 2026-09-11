@@ -203,8 +203,44 @@ export interface ChatSession { id: string; workId: string; provider: ChatRuntime
 
 // --- Team: roles with a preset personality, one conversation each ---------------
 
-/** A preset personality a team member opens with. Shipped by the discipline pack; `assistant` is the neutral default. */
-export interface AgentRole { id: string; name: string; initial: string; summary: string; builtin: boolean }
+/**
+ * How hard a member works on each answer. A plain choice for the human, never
+ * a model ID: each runtime translates it into its own model and reasoning
+ * effort (Claude Code: `--model` + `--effort`; Codex: reasoning effort;
+ * OpenCode: variant when the server supports one). `light` answers fast and
+ * spends little of the plan; `deep` thinks longer and spends more. A member
+ * with an explicit `model` keeps that model and only takes the effort.
+ */
+export type EffortTier = 'light' | 'balanced' | 'deep';
+export const EFFORT_TIERS: readonly EffortTier[] = ['light', 'balanced', 'deep'];
+export const DEFAULT_EFFORT_TIER: EffortTier = 'balanced';
+
+/**
+ * What a conversation has consumed, in the runtime's own numbers. Latte never
+ * estimates from text length: every field comes from what the runtime
+ * reported, so a zero means "nothing yet", not "unknown". `costUsd` is null
+ * when the runtime gave none (subscriptions usually don't).
+ */
+export interface ChatUsage {
+  /** Fresh input tokens the model read (not served from cache). */
+  inputTokens: number;
+  /** Tokens the model generated: the visible answer plus reasoning when the runtime counts it. */
+  outputTokens: number;
+  /** Input tokens served from the prompt cache. Cheap: this is what keeps a long conversation affordable. */
+  cacheReadTokens: number;
+  /** Input tokens written to the prompt cache. */
+  cacheWriteTokens: number;
+  /** Turns counted so far. */
+  turns: number;
+  /** Cost the runtime itself estimated, in USD. Null when it did not say. */
+  costUsd: number | null;
+  /** Size of what the model re-reads on each new message, after the last turn. Null until a turn reports it. */
+  contextTokens: number | null;
+}
+export const EMPTY_USAGE: ChatUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turns: 0, costUsd: null, contextTokens: null };
+
+/** A preset personality a team member opens with. Shipped by the discipline pack; `assistant` is the neutral default. `tier` is the effort it opens with unless the human picks another. */
+export interface AgentRole { id: string; name: string; initial: string; summary: string; builtin: boolean; tier: EffortTier }
 export interface AgentProfile extends AgentRole { soul: string; skills: string; source: 'builtin' | 'custom'; directory: string | null; fingerprint: string; /** Invalid disk entries are visible but must not be edited or cloned. */ error?: string }
 export interface ProfileInput { id: string; name: string; initial: string; summary: string; soul: string; skills: string }
 /** working = answering now · idle = open and waiting · paused = closed, resumable · ended = finished by the user (can be reopened). */
@@ -221,13 +257,17 @@ export interface TeamMember {
   accountId: string | null;
   label: string;
   status: TeamMemberStatus;
+  /** How hard this member works per answer. Starts as the role's default; the human can change it any time. */
+  tier: EffortTier;
+  /** Everything this member consumed across all its sessions, as the runtimes reported it. Never estimated. */
+  usage: ChatUsage;
   /** Member of the same work this one took over from ("continuar con otro agente"); null when opened from scratch. A reference only: the origin is never changed. */
   continuedFrom: string | null;
   createdAt: string;
   updatedAt: string;
 }
-/** Advanced overrides when adding a member; empty = the primary agent. `continuedFrom` names the member of the same work it continues. */
-export interface TeamMemberOptions { runtime?: ChatRuntime | null; model?: string | null; accountId?: string | null; continuedFrom?: string | null }
+/** Advanced overrides when adding a member; empty = the primary agent. `continuedFrom` names the member of the same work it continues. `tier` overrides the role's default effort. */
+export interface TeamMemberOptions { runtime?: ChatRuntime | null; model?: string | null; accountId?: string | null; continuedFrom?: string | null; tier?: EffortTier | null }
 /**
  * What a new member needs to continue another one's work, assembled by Latte
  * from its own records: no model summarises anything. The human edits it
@@ -288,6 +328,12 @@ export type ChatEvent =
   | { chatId: string; type: 'question'; request: ChatQuestion }
   | { chatId: string; type: 'question-resolved'; requestId: string }
   | { chatId: string; type: 'error'; message: string }
+  /**
+   * The runtime reported what a turn consumed. `turn` is that turn alone;
+   * `total` is the member's lifetime consumption after adding it, as persisted
+   * by Latte, so the UI never sums anything itself.
+   */
+  | { chatId: string; type: 'usage'; turn: ChatUsage; total: ChatUsage }
   | { chatId: string; type: 'closed'; reason: string };
 export type PermissionReply = 'once' | 'always' | 'reject';
 export interface ChatRuntimeStatus { available: boolean; detail: string; version: string | null; models: string[]; defaultModel: string | null }
@@ -473,6 +519,12 @@ export interface LatteAPI {
    * never claims a history it does not have. `null` means the runtime's default.
    */
   setTeamMemberModel(memberId: string, model: string | null): Promise<MemberModelChange>;
+  /**
+   * Changes how hard one conversation works per answer. Same mechanics as
+   * changing the model: the runtime restarts underneath and the conversation
+   * is resumed when the runtime allows it.
+   */
+  setTeamMemberTier(memberId: string, tier: EffortTier): Promise<MemberModelChange>;
   // Updates
   /** Asks the update server whether there is a newer version. Never installs anything. */
   checkForUpdate(): Promise<UpdateState>;

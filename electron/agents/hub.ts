@@ -1,4 +1,4 @@
-import type { AgentProfile, ProfileInput } from '../../shared/contracts';
+import { DEFAULT_EFFORT_TIER, EMPTY_USAGE, type AgentProfile, type ProfileInput } from '../../shared/contracts';
 import type {
   AccountLoginStart,
   AgentAccount,
@@ -6,10 +6,12 @@ import type {
   AgentModelList,
   AgentRole,
   AgentRuntimeInfo,
+  ChatEvent,
   ChatMessage,
   ChatRuntime,
   ChatRuntimeStatus,
   ChatSession,
+  EffortTier,
   PermissionReply,
   PrimaryAgent,
   TeamMember,
@@ -79,6 +81,8 @@ export interface AddMemberInput extends MemberContext {
   accountId?: string | null;
   /** Member of the same work this one continues; validated by the service. */
   continuedFrom?: string | null;
+  /** Effort override; absent or null means the role's own default. */
+  tier?: EffortTier | null;
 }
 
 const PRIMARY_KEY = 'primary_agent';
@@ -272,6 +276,10 @@ export class AgentHub {
       sessionId: '',
       done: false,
       continuedFrom: input.continuedFrom ?? null,
+      // The role knows what its work usually needs; the human can override it
+      // when adding the member, and change it later from the conversation.
+      tier: input.tier ?? role.tier,
+      usage: EMPTY_USAGE,
       createdAt: now,
       updatedAt: now,
     };
@@ -365,6 +373,55 @@ export class AgentHub {
     }
   }
 
+  /**
+   * Changes how hard a member works, with the same mechanics as changing its
+   * model: no runtime takes this in place either — Claude Code reads `--effort`
+   * as a process argument and Codex takes it when a turn starts — so the
+   * runtime is stopped and started again on the same conversation, and
+   * `resumed` says whether that actually worked.
+   */
+  async setMemberTier(memberId: string, tier: EffortTier, context: MemberContext): Promise<{ member: TeamMember; session: ChatSession | null; resumed: boolean }> {
+    const record = this.deps.repo.getMember(memberId);
+    const previous = record.tier ?? DEFAULT_EFFORT_TIER;
+    const live = Boolean(this.liveSession(memberId));
+    if (tier === previous) return { member: this.describe(record), session: this.liveSession(memberId), resumed: live };
+    // Same conversation, so the same outcome it opened with, whatever the work says now.
+    const reopen: MemberContext = live ? { ...context, outcomeContext: this.openedOutcome.get(memberId) ?? null } : context;
+    if (live) this.stop(memberId);
+    this.deps.repo.setMemberTier(memberId, tier, this.clock());
+    const updated = this.deps.repo.getMember(memberId);
+    // A paused conversation is not woken up to change a setting: the next time
+    // it opens it will already be working at the new effort.
+    if (!live) return { member: this.describe(updated), session: null, resumed: false };
+    try {
+      const session = await this.open(updated, reopen);
+      return { member: this.describe(this.deps.repo.getMember(memberId)), session, resumed: session.resumed };
+    } catch (error) {
+      // The runtime refused the effort (an old CLI, a model without it). The
+      // previous tier is put back and the conversation reopened, because a
+      // member left closed on a setting that does not work is the worst of both.
+      this.deps.repo.setMemberTier(memberId, previous, this.clock());
+      try { await this.open(this.deps.repo.getMember(memberId), reopen); } catch { /* reported through the original error */ }
+      throw error;
+    }
+  }
+
+  /**
+   * A turn's consumption, as the runtime measured it, added to what this
+   * member has spent in its whole life.
+   *
+   * An adapter can only count the process it is running, and a member outlives
+   * many of those: pausing, changing model, restarting the app. So the number
+   * the interface shows comes from the database, and the adapter's own running
+   * total is replaced here before the event leaves for the renderer. A usage
+   * event for something that is not a member (a chat the hub does not own)
+   * passes through untouched rather than inventing a row.
+   */
+  recordUsage(event: Extract<ChatEvent, { type: 'usage' }>): ChatEvent {
+    if (!this.deps.repo.findMember(event.chatId)) return event;
+    return { ...event, total: this.deps.repo.addMemberUsage(event.chatId, event.turn, this.clock()) };
+  }
+
   removeMember(memberId: string): void {
     this.deps.repo.getMember(memberId);
     this.stop(memberId);
@@ -391,6 +448,7 @@ export class AgentHub {
       instructions: [this.deps.roles.promptFor(record.roleId), outcome].filter(Boolean).join('\n\n---\n\n'),
       previousSessionId: record.sessionId || null,
       model: record.model,
+      tier: record.tier ?? DEFAULT_EFFORT_TIER,
       accountId: record.accountId,
       label,
       extraEnv: context.extraEnv,
@@ -428,6 +486,8 @@ export class AgentHub {
       accountId: record.accountId,
       label: this.labelFor(record.runtime, record.model, record.accountId),
       status,
+      tier: record.tier ?? DEFAULT_EFFORT_TIER,
+      usage: record.usage ?? EMPTY_USAGE,
       continuedFrom: record.continuedFrom ?? null,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,

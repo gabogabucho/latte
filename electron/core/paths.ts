@@ -34,6 +34,10 @@ export const WORK_FILES = {
   metaDir: '.latte',
   snapshotsDir: 'snapshots',
   readme: 'README.md',
+  /** Full copies of sections the instruction files had to truncate (brand context, decisions). */
+  contextDir: 'context',
+  /** Full bodies of skills the instruction files reference by pointer instead of inlining. */
+  skillsDir: 'skills',
 } as const;
 
 export class LattePaths {

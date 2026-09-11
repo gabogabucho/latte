@@ -2,13 +2,15 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ChatEvent, ChatMessage, ChatPart, PermissionReply } from '../../../shared/contracts';
+import { DEFAULT_EFFORT_TIER, EMPTY_USAGE, type ChatEvent, type ChatMessage, type ChatPart, type ChatUsage, type PermissionReply } from '../../../shared/contracts';
 import { writeFileAtomic } from '../../core/atomicFile';
 import { NotFoundError, UnavailableError, ValidationError } from '../../core/errors';
 import { newId } from '../../core/ids';
+import { addUsage, tokenCount } from '../../core/usage';
 import { killTree } from '../../opencode/server';
 import { spawnSpecFor } from '../../runtime/commandRunner';
 import { scrubEnv } from '../../runtime/terminalManager';
+import { claudeArgsForTier } from '../tiers';
 import type { TranscriptStore } from '../transcripts';
 import { sessionFrom, type AdapterStartInput, type AdapterStartResult, type RuntimeAdapter } from '../types';
 
@@ -69,6 +71,14 @@ interface LiveChat {
    * restored one that happens to share the id.
    */
   epoch: string;
+  /** What this process has consumed since it started. The lifetime total is the hub's job. */
+  usage: ChatUsage;
+  /**
+   * Last `total_cost_usd` this process reported. The CLI prices the whole
+   * process on every result, so a turn costs the difference; without this the
+   * second turn would be charged for the first one again.
+   */
+  costSoFar: number | null;
 }
 
 const MESSAGE_LIMIT = 400;
@@ -132,7 +142,8 @@ export class ClaudeChatAdapter implements RuntimeAdapter {
     const args = [...CLAUDE_HEADLESS_ARGS];
     if (input.trustedFolder) args.push('--allowedTools', ...FOLDER_TOOLS);
     if (input.previousSessionId) args.push('--resume', input.previousSessionId);
-    if (input.model) args.push('--model', input.model);
+    // The tier decides the model when the human did not, and the effort always.
+    args.push(...claudeArgsForTier(input.tier ?? DEFAULT_EFFORT_TIER, input.model ?? null, runtime.version));
     const instructions = input.instructions?.trim() ?? '';
     if (instructions) {
       // The role personality is appended to Claude's own system prompt. A file
@@ -169,6 +180,8 @@ export class ClaudeChatAdapter implements RuntimeAdapter {
       restored: 0,
       restoredIds: new Set(),
       epoch: randomUUID().slice(0, 8),
+      usage: EMPTY_USAGE,
+      costSoFar: null,
     };
     // Resuming: put the earlier turns back on screen before the first new one.
     if (input.previousSessionId && this.deps.transcripts) {
@@ -424,6 +437,7 @@ export class ClaudeChatAdapter implements RuntimeAdapter {
             this.deps.emit({ chatId, type: 'message', message: completed });
           }
         }
+        this.reportUsage(live, msg);
         if (msg.is_error === true) this.deps.emit({ chatId, type: 'error', message: str(msg.result, 'Claude Code reported an error') });
         this.deps.emit({ chatId, type: 'status', status: 'idle', detail: '' });
         return;
@@ -431,6 +445,43 @@ export class ClaudeChatAdapter implements RuntimeAdapter {
       default:
         return;
     }
+  }
+
+  /**
+   * What the turn that just ended actually consumed, as the CLI counted it.
+   *
+   * The `result` message carries `usage` with Anthropic's own four numbers
+   * plus `total_cost_usd` for the whole process. Latte adds nothing of its
+   * own: no estimate from text length, no guess when a field is missing. A
+   * result without `usage` (an early abort, an old CLI) reports nothing rather
+   * than reporting zeros, which would read as "this turn was free".
+   */
+  private reportUsage(live: LiveChat, msg: Record<string, unknown>): void {
+    const raw = isRecord(msg.usage) ? msg.usage : null;
+    if (!raw) return;
+    const inputTokens = tokenCount(raw.input_tokens);
+    const outputTokens = tokenCount(raw.output_tokens);
+    const cacheReadTokens = tokenCount(raw.cache_read_input_tokens);
+    const cacheWriteTokens = tokenCount(raw.cache_creation_input_tokens);
+    const reported = typeof msg.total_cost_usd === 'number' && Number.isFinite(msg.total_cost_usd) ? msg.total_cost_usd : null;
+    // The cost of this turn is what the process total grew by. A total that
+    // went backwards (a CLI that restarts its own counter) is not a refund.
+    const delta = reported === null ? null : reported - (live.costSoFar ?? 0);
+    if (reported !== null) live.costSoFar = reported;
+    const turn: ChatUsage = {
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+      turns: 1,
+      costUsd: delta !== null && delta > 0 ? delta : null,
+      // What the model re-read to answer: fresh input plus everything the
+      // cache handed it. This is the number that says why a long conversation
+      // gets expensive even when the answers stay short.
+      contextTokens: inputTokens + cacheReadTokens + cacheWriteTokens,
+    };
+    live.usage = addUsage(live.usage, turn);
+    this.deps.emit({ chatId: live.chatId, type: 'usage', turn, total: live.usage });
   }
 
   private handleStreamEvent(live: LiveChat, event: Record<string, unknown>): void {

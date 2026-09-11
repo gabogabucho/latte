@@ -27,6 +27,11 @@ jobs:
       - name: Build web
         run: npm run build
 
+      # El smoke levanta `opencode serve` de verdad; un runner limpio no lo
+      # trae. Instalarlo acá mantiene la prueba real en vez de saltearla.
+      - name: Instalar OpenCode para el smoke
+        run: npm install -g opencode-ai
+
       - name: Smoke opencode (sin inferencia)
         env:
           LATTE_SMOKE_NO_INFERENCE: '1'

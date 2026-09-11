@@ -1,4 +1,4 @@
-import type { Brand, Decision, DecisionAuthorityMode, FunnelStage, Work } from '../../shared/contracts';
+import type { Brand, Decision, DecisionAuthorityMode, EffortTier, FunnelStage, Work } from '../../shared/contracts';
 import { WORK_FILES } from '../core/paths';
 import { DELIVERABLES_DIR } from './deliverables';
 
@@ -111,6 +111,11 @@ export interface PackRole {
   name: string;
   initial: string;
   summary: string;
+  /**
+   * Effort this role opens with, from its `tier:` front matter. A role that
+   * mostly gathers and checks opens light; one that decides opens deep.
+   */
+  tier: EffortTier;
   /** Appended to the runtime's system prompt for that member only. */
   instructions: string;
 }
@@ -180,15 +185,59 @@ function section(title: string, body: string, empty: string): string {
   return `## ${title}\n\n${text.length > 0 ? text : `_${empty}_`}\n`;
 }
 
+/** How much brand context is inlined before the rest moves to a side file. */
+export const BRAND_CONTEXT_CHARS = 6_000;
+/** Floor brand context is squeezed to when the whole file still exceeds INSTRUCTIONS_MAX_CHARS. */
+const BRAND_CONTEXT_CHARS_FLOOR = 2_000;
+
+/** How many of the most recent approved decisions are inlined before older ones move to a side file. */
+export const DECISIONS_INLINE_MAX = 15;
+/** Floor the inline decision count is squeezed to when the whole file still exceeds INSTRUCTIONS_MAX_CHARS. */
+const DECISIONS_INLINE_FLOOR = 5;
+
 /**
- * The context a CLI agent sees when launched inside a work directory.
- * Claude Code reads CLAUDE.md, Codex and OpenCode read AGENTS.md; both get the
- * same rendered text. Global agent configuration is never touched.
- *
- * Order: discipline pack (how to work) -> brand -> document -> decisions -> rules.
+ * Hard ceiling on the rendered instruction file. CLAUDE.md/AGENTS.md and the
+ * pack's base prompt are both re-sent on every turn (the runtime prompt-caches
+ * both of them); this bounds the fixed per-message cost the instruction file
+ * itself adds, on top of whatever the pack and brief already cost.
  */
-export function renderInstructions(input: InstructionsInput): string {
+export const INSTRUCTIONS_MAX_CHARS = 20_000;
+
+/** A file Latte writes next to CLAUDE.md/AGENTS.md to hold what an inlined section had to cut. */
+export interface RenderedInstructionFile {
+  /** Relative to the work directory, e.g. `.latte/context/brand.md`. */
+  path: string;
+  content: string;
+}
+
+/** What renderInstructions renders, plus the side files its pointers refer to. */
+export interface InstructionBundle {
+  text: string;
+  files: RenderedInstructionFile[];
+}
+
+const SIDE_FILES = {
+  brandContext: `${WORK_FILES.metaDir}/${WORK_FILES.contextDir}/brand.md`,
+  decisions: `${WORK_FILES.metaDir}/${WORK_FILES.contextDir}/decisions.md`,
+  skill: (id: string) => `${WORK_FILES.metaDir}/${WORK_FILES.skillsDir}/${id}.md`,
+};
+
+function decisionLine(d: Decision): string {
+  return `- ${d.createdAt.slice(0, 10)} — ${d.text.trim().replace(/\s+/g, ' ')}`;
+}
+
+/**
+ * Builds the instruction text for one specific set of section ceilings.
+ * Pulled out of renderInstructionBundle so the hard-cap fallback can re-render
+ * with tighter ceilings without duplicating the whole layout.
+ */
+function renderCore(
+  input: InstructionsInput,
+  decisionsInlineMax: number,
+  brandContextChars: number,
+): { text: string; files: RenderedInstructionFile[]; brandTruncated: boolean; decisionsTruncated: boolean } {
   const { brand, work, decisions, memory, pack, memoryProject } = input;
+  const files: RenderedInstructionFile[] = [];
   const documentLines = (input.documents ?? [])
     .map((d) => {
       const status = d.status === 'draft' ? d.kind : `${d.kind}, ${d.status}`;
@@ -211,9 +260,34 @@ export function renderInstructions(input: InstructionsInput): string {
     .filter((r) => !team.some((m) => m.roleId === r.id))
     .map((r) => `- \`${r.id}\` — ${r.name}: ${r.summary}`)
     .join('\n');
-  const decisionLines = decisions.filter(d => d.status === 'approved')
-    .map((d) => `- ${d.createdAt.slice(0, 10)} — ${d.text.trim().replace(/\s+/g, ' ')}`)
-    .join('\n');
+
+  // Decisions: only the most recent N ride the prompt forever; the rest are one
+  // pointer line away in a side file that always holds the complete log.
+  const approvedDecisions = decisions.filter((d) => d.status === 'approved');
+  const decisionOverflow = Math.max(0, approvedDecisions.length - decisionsInlineMax);
+  const decisionsTruncated = decisionOverflow > 0;
+  const inlinedDecisions = decisionsTruncated ? approvedDecisions.slice(decisionOverflow) : approvedDecisions;
+  const decisionLines = [
+    ...inlinedDecisions.map(decisionLine),
+    ...(decisionsTruncated ? [`- ${decisionOverflow} earlier decisions are recorded in ./${SIDE_FILES.decisions}.`] : []),
+  ].join('\n');
+  if (decisionsTruncated) {
+    files.push({
+      path: SIDE_FILES.decisions,
+      content: `# Decisions already taken — ${brand.name} · ${work.title}\n\n${approvedDecisions.map(decisionLine).join('\n')}\n`,
+    });
+  }
+
+  // Brand context: same excerpt-plus-pointer pattern as the brief below, so a
+  // brand written as a small book never becomes the biggest thing in the file.
+  const brandTruncated = brand.context.length > brandContextChars;
+  const brandExcerpt = brandTruncated
+    ? `${brand.context.slice(0, brandContextChars)}\n\n_[… truncated; read ./${SIDE_FILES.brandContext} for the full text]_`
+    : brand.context;
+  if (brandTruncated) {
+    files.push({ path: SIDE_FILES.brandContext, content: `# Brand context — ${brand.name}\n\n${brand.context.trim()}\n` });
+  }
+
   const excerpt = work.brief.length > DOCUMENT_EXCERPT_CHARS
     ? `${work.brief.slice(0, DOCUMENT_EXCERPT_CHARS)}\n\n_[… truncated; read ./${WORK_FILES.brief} for the full text]_`
     : work.brief;
@@ -235,7 +309,7 @@ export function renderInstructions(input: InstructionsInput): string {
   }
 
   parts.push(
-    section('Brand context', brand.context, 'No brand context yet. Ask before assuming positioning, tone or audience.'),
+    section('Brand context', brandExcerpt, 'No brand context yet. Ask before assuming positioning, tone or audience.'),
     section('Tracked deliverables of this work', documentLines, `Only ./${WORK_FILES.brief} is tracked so far.`),
     section('Funnel coverage of this work', coverageLines, 'Nothing is tracked yet, so the funnel is empty.'),
     section(`The brief (current state of ./${WORK_FILES.brief})`, excerpt, 'The brief is still empty. Ask the human what the deliverable should be.'),
@@ -252,11 +326,19 @@ export function renderInstructions(input: InstructionsInput): string {
     parts.push(section('Memory from previous sessions', memory, ''));
   }
 
-  // Skills ride the instruction file, not the per-request prompt: the base
-  // prompt is charged on every message and stays under its own budget.
+  // Skills travel through the instruction file as a pointer, not a body: like
+  // the pack's base prompt, this file is re-sent on every turn and prompt-cached
+  // by the runtime, so a skill's full text lives in its own side file instead of
+  // being repriced on every message it never changes.
   for (const skill of input.skills ?? []) {
-    if (skill.body.trim().length === 0) continue;
-    parts.push(`<!-- latte:skill ${skill.id} -->`, section(skill.name, skill.body.trim(), ''));
+    const body = skill.body.trim();
+    if (body.length === 0) continue;
+    const skillPath = SIDE_FILES.skill(skill.id);
+    parts.push(
+      `<!-- latte:skill ${skill.id} -->`,
+      section(skill.name, `Before writing final copy for the human, read ./${skillPath} and follow it.`, ''),
+    );
+    files.push({ path: skillPath, content: `# ${skill.name}\n\n${body}\n` });
   }
 
   parts.push(
@@ -294,7 +376,62 @@ export function renderInstructions(input: InstructionsInput): string {
   }
   parts.push('');
 
-  return parts.join('\n');
+  return { text: parts.join('\n'), files, brandTruncated, decisionsTruncated };
+}
+
+/**
+ * The context a CLI agent sees when launched inside a work directory, plus
+ * the side files a truncated section or an enabled skill points to. Claude
+ * Code reads CLAUDE.md, Codex and OpenCode read AGENTS.md; both get the same
+ * rendered text and the same side files.
+ *
+ * Order: discipline pack (how to work) -> brand -> document -> decisions -> rules.
+ * If the rendered text still exceeds INSTRUCTIONS_MAX_CHARS, sections are
+ * squeezed further — decisions first, then brand context — and a footer says
+ * so. The pack body, the brief excerpt, the team/roles sections and the
+ * Working rules are never trimmed.
+ */
+export function renderInstructionBundle(input: InstructionsInput): InstructionBundle {
+  // The footer itself takes room: budget for its longest possible wording (both
+  // pointers) so the cap check accounts for it instead of the footer quietly
+  // pushing the final text back over INSTRUCTIONS_MAX_CHARS.
+  const footerReserve = compactedFooter(['decisions', 'brand']).length;
+  const fits = (text: string) => text.length + footerReserve <= INSTRUCTIONS_MAX_CHARS;
+
+  let rendered = renderCore(input, DECISIONS_INLINE_MAX, BRAND_CONTEXT_CHARS);
+  const overCap = !fits(rendered.text);
+  if (overCap) {
+    rendered = renderCore(input, DECISIONS_INLINE_FLOOR, BRAND_CONTEXT_CHARS);
+  }
+  if (overCap && !fits(rendered.text)) {
+    rendered = renderCore(input, DECISIONS_INLINE_FLOOR, BRAND_CONTEXT_CHARS_FLOOR);
+  }
+  if (!overCap) return { text: rendered.text, files: rendered.files };
+
+  const cut: Array<'decisions' | 'brand'> = [];
+  if (rendered.decisionsTruncated) cut.push('decisions');
+  if (rendered.brandTruncated) cut.push('brand');
+  // Nothing left we're allowed to trim actually shrank: no honest pointer to add.
+  if (cut.length === 0) return { text: rendered.text, files: rendered.files };
+
+  return { text: `${rendered.text}\n${compactedFooter(cut)}`, files: rendered.files };
+}
+
+/** The footer appended when the hard cap forced sections below their normal ceiling. */
+function compactedFooter(cut: Array<'decisions' | 'brand'>): string {
+  const pointers = cut.map((c) => c === 'decisions'
+    ? `the full decision log in ./${SIDE_FILES.decisions}`
+    : `the full brand context in ./${SIDE_FILES.brandContext}`);
+  return section(
+    'This file was compacted',
+    `Latte shortened this file to stay closer to its ${INSTRUCTIONS_MAX_CHARS}-character budget, since it is re-sent on every turn. Read ${pointers.join(' and ')} for what does not fit here.`,
+    '',
+  );
+}
+
+/** Text-only form of renderInstructionBundle, for callers that never write the side files. */
+export function renderInstructions(input: InstructionsInput): string {
+  return renderInstructionBundle(input).text;
 }
 
 export function isManagedFile(content: string | null): boolean {

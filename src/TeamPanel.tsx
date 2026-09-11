@@ -1,12 +1,13 @@
-import { translate as t } from './i18n';
+import { currentLocale, translate as t } from './i18n';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Check, CircleAlert, CircleCheck, FolderCheck, FolderLock, Forward, LoaderCircle, MessageSquare, MessageSquarePlus, Pause, Play, Plug, Plus, Settings2, Trash2, UserPlus, X, Zap } from 'lucide-react';
-import type { AgentModelList, AgentRole, WorkPermissionMode, ChatRuntime, ChatSession, HandoffRequest, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
+import { DEFAULT_EFFORT_TIER, EFFORT_TIERS, type AgentModelList, type AgentRole, type WorkPermissionMode, type ChatRuntime, type ChatSession, type EffortTier, type HandoffRequest, type TeamMember, type TeamMemberOptions, type TeamMemberStatus, type Work } from '../shared/contracts';
 import { api, chatStore } from './browser-api';
 import { ChatPane } from './ChatPane';
 import { useChatState } from './chat-store';
 import { canChangePermission } from './permission-ux';
 import { continuationModel, continuationOptions, type ContinuationTarget } from './provider-models';
+import { contextWeight, describeUsage, formatTokens, totalTokens } from './usage-format';
 
 /** A runtime the user can pick for a new member instead of the primary agent. */
 export interface RuntimeChoice { key: string; label: string; runtime: ChatRuntime; accountId: string | null }
@@ -49,6 +50,8 @@ export interface TeamPanelProps {
   onRecheck: () => void;
   /** Changes the model of one conversation; the runtime restarts and resumes underneath. */
   onModel: (memberId: string, model: string | null) => void;
+  /** Changes how hard one conversation works per answer; same mechanics as onModel. */
+  onTier: (memberId: string, tier: EffortTier) => void;
   onError: (message: string) => void;
   /** Turns an answer into a document of the work. */
   onSaveAsDocument?: (text: string) => void;
@@ -85,6 +88,7 @@ export function TeamPanel(props: TeamPanelProps) {
   // The first team is the empty state itself; after that, adding is a dialog.
   const firstTeam = team.length === 0 && Boolean(work);
   const showPicker = adding || firstTeam;
+  const workTotal = useTeamUsageTotal(team);
 
   return <div className="team">
     {work && props.handoffs.map(handoff => <div key={handoff.fileName} className="doc-banner handoff" role="status">
@@ -99,10 +103,12 @@ export function TeamPanel(props: TeamPanelProps) {
           {team.map(member => <MemberTab key={member.id} member={member} chat={chats[member.id] ?? null} selected={member.id === selectedId} busy={busy} onSelect={() => props.onSelect(member.id)} />)}
         </div>
         {activity && <span className={'team-activity' + (activity.needsAttention ? ' attention' : '')} role="status" title={activity.detail}>{activity.label}</span>}
+        {workTotal > 0 && <span className="team-usage-total" title={t('usage.help')}>{t('usage.workTotal', { tokens: formatTokens(workTotal, currentLocale()) })}</span>}
         <button className="team-tab-add" aria-label={t('ui.auto.269')} title={t('ui.auto.269')} disabled={busy || !isDesktop} onClick={() => setAdding(true)}><UserPlus size={15} /></button>
         <button className="team-tab-add" aria-label="Proveedores de IA" title="Agentes y proveedores" onClick={props.onProviders}><Settings2 size={15} /></button>
         {selected && <div className="team-tab-actions">
           <ModelPicker member={selected} busy={busy} onModel={props.onModel} />
+          <TierPicker tier={selected.tier} busy={busy} compact onChange={tier => props.onTier(selected.id, tier)} />
           <button className="icon-button" aria-label={t('continue.action')} title={t('continue.actionHelp')} disabled={busy || !isDesktop} onClick={() => setContinuing(selected.id)}><Forward size={13} /></button>
           {selectedLive && <button className="icon-button" aria-label={t('ui.auto.087')} title={t('ui.auto.270')} disabled={busy} onClick={() => void props.onPause(selected.id)}><Pause size={13} /></button>}
           {selectedStatus !== 'ended' && <button className="icon-button" aria-label="Marcar como finalizado" title={t('ui.auto.271')} disabled={busy} onClick={() => void props.onFinish(selected.id)}><CircleCheck size={13} /></button>}
@@ -110,6 +116,7 @@ export function TeamPanel(props: TeamPanelProps) {
           <button className="icon-button" aria-label={t('ui.auto.274')} title={t('ui.auto.274')} disabled={busy} onClick={() => { if (window.confirm(t('ui.auto.402', { p0: selected.roleName }))) void props.onRemove(selected.id); }}><Trash2 size={13} /></button>
         </div>}
       </div>
+      {selected && <MemberUsage member={selected} />}
     </>}
     {firstTeam && <RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} checking={props.checking} busy={busy} isDesktop={isDesktop} canCancel={team.length > 0} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} />}
     {adding && !firstTeam && <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget && !busy) setAdding(false); }}>
@@ -154,6 +161,35 @@ function useTeamActivity(team: TeamMember[], chats: Record<string, ChatSession>)
     attention > 0 ? t('team.activity.attention', { count: attention }) : null,
   ].filter((part): part is string => part !== null);
   return { label: parts.join(' · '), detail: t('team.activity.detail', { parts: parts.join(', ') }), needsAttention: attention > 0 };
+}
+
+/**
+ * How much this work's whole team has spent, live. Reads the chat store
+ * directly (not `member.usage`) so a turn that just finished shows up without
+ * waiting for the team roster to reload.
+ */
+function useTeamUsageTotal(team: TeamMember[]): number {
+  return useSyncExternalStore(chatStore.subscribe, () => {
+    let sum = 0;
+    for (const member of team) sum += totalTokens(chatStore.get(member.id).usage);
+    return sum;
+  }, () => 0);
+}
+
+/**
+ * What the selected member has spent, in plain language and never the word
+ * "tokens". Nothing renders before the first turn: there is nothing honest to
+ * report yet.
+ */
+function MemberUsage({ member }: { member: TeamMember }) {
+  const state = useChatState(chatStore, member.id);
+  const line = describeUsage(state.usage, currentLocale());
+  if (!line) return null;
+  const heavy = contextWeight(state.usage.contextTokens) === 'heavy';
+  return <p className="team-usage" title={t('usage.help')}>
+    <span>{t('usage.label')}: {line}</span>
+    {heavy && <span className="team-usage-hint">{t('usage.heavyHint')}</span>}
+  </p>;
 }
 
 /**
@@ -259,12 +295,16 @@ function RolePicker({ roles, choices, primaryLabel, primaryDetail, primaryReady,
   const [roleId, setRoleId] = useState(roles[0]?.id ?? 'assistant');
   const [choice, setChoice] = useState('primary');
   const [opening, setOpening] = useState(false);
+  // Follows the picked role's own default effort; picking another role resets it,
+  // same as the role determines the starting point rather than carrying a stale choice.
+  const [tier, setTier] = useState<EffortTier>(() => roles.find(r => r.id === roleId)?.tier ?? DEFAULT_EFFORT_TIER);
+  useEffect(() => { setTier(roles.find(r => r.id === roleId)?.tier ?? DEFAULT_EFFORT_TIER); }, [roleId, roles]);
   const picked = choices.find(c => c.key === choice) ?? null;
   const ready = choice === 'primary' ? primaryReady : Boolean(picked);
   const add = async () => {
     if (!ready || opening) return;
     setOpening(true);
-    try { await onAdd(roleId, picked ? { runtime: picked.runtime, accountId: picked.accountId, model: null } : null); } finally { setOpening(false); }
+    try { await onAdd(roleId, picked ? { runtime: picked.runtime, accountId: picked.accountId, model: null, tier } : { tier }); } finally { setOpening(false); }
   };
   return <div className="role-picker">
     <div className="role-picker-head"><span className="field-label">{canCancel ? t('ui.auto.290') : t('ui.auto.291')}</span>{canCancel && <button className="icon-button" aria-label={t('ui.auto.241')} onClick={onCancel}><X size={15} /></button>}</div>
@@ -272,6 +312,7 @@ function RolePicker({ roles, choices, primaryLabel, primaryDetail, primaryReady,
     <div className="role-list" role="radiogroup" aria-label="Rol">
       {roles.map(role => <button key={role.id} role="radio" aria-checked={roleId === role.id} className={'role-card' + (roleId === role.id ? ' selected' : '')} onClick={() => setRoleId(role.id)}><span className="team-avatar" data-role={role.id} aria-hidden="true">{role.initial}</span><span><strong>{role.name}</strong><small>{role.summary}</small></span>{roleId === role.id && <Check size={14} />}</button>)}
     </div>
+    <TierPicker tier={tier} busy={busy || opening} onChange={setTier} />
     <label className="field-label" htmlFor="member-runtime">{t('ui.auto.293')}</label>
     {/*
       Detecting the runtimes means running their CLIs, and that costs seconds.
@@ -481,4 +522,35 @@ function ModelPicker({ member, busy, onModel }: { member: TeamMember; busy: bool
       ? [...groups.entries()].map(([group, items]) => group ? <optgroup key={group} label={group}>{items.map(option)}</optgroup> : items.map(option))
       : models.map(option)}
   </select>;
+}
+
+const tierLabel = (tier: EffortTier) => t(`effort.tier.${tier}.label` as 'effort.tier.light.label');
+const tierHelp = (tier: EffortTier) => t(`effort.tier.${tier}.help` as 'effort.tier.light.help');
+
+/**
+ * How hard a member works per answer, in words a marketer chooses by outcome,
+ * never by model name or reasoning-effort level. `compact` drops the help
+ * caption under each option (kept on the `title`) for the tight space next to
+ * the model picker; the roomier "Sumar un rol" dialog shows it in full.
+ */
+function TierPicker({ tier, busy, compact, onChange }: { tier: EffortTier; busy: boolean; compact?: boolean; onChange: (tier: EffortTier) => void }) {
+  return <div className={'effort-picker' + (compact ? ' compact' : '')} role="radiogroup" aria-label={t('effort.group')}>
+    {!compact && <span className="field-label">{t('effort.group')}</span>}
+    <div className="effort-options">
+      {EFFORT_TIERS.map(value => <button
+        key={value}
+        type="button"
+        role="radio"
+        aria-checked={tier === value}
+        aria-label={t('effort.select', { tier: tierLabel(value) })}
+        title={tierHelp(value)}
+        className={tier === value ? 'selected' : ''}
+        disabled={busy}
+        onClick={() => onChange(value)}
+      >
+        <strong>{tierLabel(value)}</strong>
+        {!compact && <small>{tierHelp(value)}</small>}
+      </button>)}
+    </div>
+  </div>;
 }

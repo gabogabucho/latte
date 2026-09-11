@@ -89,10 +89,12 @@ export class OpenCodeClient {
     return this.request('GET', `/session/${encodeURIComponent(sessionId)}/message`, { directory }) as Promise<OcMessageWithParts[]>;
   }
 
-  promptAsync(sessionId: string, directory: string, text: string, model?: { providerID: string; modelID: string } | null, system?: string | null): Promise<unknown> {
+  /** `variant` is how the server names reasoning effort on a prompt; omitted, the model's own default stands. */
+  promptAsync(sessionId: string, directory: string, text: string, model?: { providerID: string; modelID: string } | null, system?: string | null, variant?: string | null): Promise<unknown> {
     const body: Record<string, unknown> = { parts: [{ type: 'text', text }] };
     if (model) body.model = model;
     if (system) body.system = system;
+    if (variant) body.variant = variant;
     return this.request('POST', `/session/${encodeURIComponent(sessionId)}/prompt_async`, { directory }, body);
   }
 

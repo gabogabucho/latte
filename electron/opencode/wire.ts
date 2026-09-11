@@ -26,6 +26,11 @@ export interface OcOtherPart { id: string; sessionID: string; messageID: string;
 export type OcPart = OcTextPart | OcReasoningPart | OcToolPart | OcOtherPart;
 
 export interface OcMessageError { name?: string; data?: { message?: string; providerID?: string } }
+/**
+ * What an assistant message consumed, as the server counts it. `reasoning` is
+ * a breakdown of `output`, not an extra amount, so it is never added on top.
+ */
+export interface OcTokens { total?: number; input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } }
 export interface OcMessage {
   id: string;
   sessionID: string;
@@ -34,6 +39,9 @@ export interface OcMessage {
   error?: OcMessageError;
   modelID?: string;
   providerID?: string;
+  /** Assistant messages only: the price the server itself computed, in USD. */
+  cost?: number;
+  tokens?: OcTokens;
 }
 
 export interface OcMessageWithParts { info: OcMessage; parts: OcPart[] }

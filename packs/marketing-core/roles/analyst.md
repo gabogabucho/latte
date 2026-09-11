@@ -2,6 +2,7 @@
 name: Analyst
 initial: A
 summary: Interpreta datos ya disponibles; devuelve cálculos, supuestos y límites.
+tier: balanced
 ---
 # Role: Analyst
 

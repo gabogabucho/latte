@@ -1,5 +1,5 @@
 import { ProfileStore, profileFingerprint } from './profiles';
-import type { AgentRole, AgentProfile, ProfileInput } from '../../shared/contracts';
+import { DEFAULT_EFFORT_TIER, type AgentRole, type AgentProfile, type ProfileInput } from '../../shared/contracts';
 import type { InstructionPack, PackRole } from '../workspace/instructions';
 
 export const ASSISTANT_ROLE_ID = 'assistant';
@@ -10,6 +10,9 @@ const ASSISTANT: PackRole = {
   name: 'Asistente',
   initial: 'A',
   summary: 'Trabaja el brief con vos sin un rol fijo. Es el punto de partida.',
+  // The starting point has no specialty, so it takes the middle: neither the
+  // cheapest answer nor the slowest one for someone who is still framing.
+  tier: DEFAULT_EFFORT_TIER,
   instructions: '',
 };
 
@@ -36,11 +39,13 @@ export class RoleCatalog {
   list(): AgentRole[] {
     let custom: AgentProfile[] = [];
     try { custom = this.profiles?.list(false) ?? []; } catch { /* Settings reports unsafe/corrupt storage; builtins remain usable. */ }
-    return [...this.roles, ...custom.filter(p => !this.roles.some(r => r.id === p.id))].map((r) => ({ id: r.id, name: r.name, initial: r.initial, summary: r.summary, builtin: r.id === ASSISTANT_ROLE_ID }));
+    // A profile the human wrote carries no tier of its own: it opens at the
+    // default and the human moves it from the conversation if it needs more.
+    return [...this.roles, ...custom.filter(p => !this.roles.some(r => r.id === p.id))].map((r) => ({ id: r.id, name: r.name, initial: r.initial, summary: r.summary, builtin: r.id === ASSISTANT_ROLE_ID, tier: 'tier' in r ? r.tier : DEFAULT_EFFORT_TIER }));
   }
 
   listProfiles(): AgentProfile[] {
-    return [...this.roles.map(r => ({ id: r.id, name: r.name, initial: r.initial, summary: r.summary, builtin: r.id === ASSISTANT_ROLE_ID, source: 'builtin' as const, directory: null, soul: r.instructions, skills: '', fingerprint: profileFingerprint([r.id, r.instructions]) })), ...(this.profiles?.listReported() ?? []).filter(p => !this.roles.some(r => r.id === p.id))];
+    return [...this.roles.map(r => ({ id: r.id, name: r.name, initial: r.initial, summary: r.summary, builtin: r.id === ASSISTANT_ROLE_ID, tier: r.tier, source: 'builtin' as const, directory: null, soul: r.instructions, skills: '', fingerprint: profileFingerprint([r.id, r.instructions]) })), ...(this.profiles?.listReported() ?? []).filter(p => !this.roles.some(r => r.id === p.id))];
   }
 
   saveProfile(input: ProfileInput, expectedFingerprint: string | null): AgentProfile {
@@ -53,7 +58,7 @@ export class RoleCatalog {
     if (builtin) return builtin;
     if (!this.profiles || !this.profiles.has(id)) return null;
     const custom = this.profiles.read(id);
-    return { id: custom.id, name: custom.name, initial: custom.initial, summary: custom.summary, instructions: [custom.soul, custom.skills].filter(Boolean).join('\n\n---\n\n') };
+    return { id: custom.id, name: custom.name, initial: custom.initial, summary: custom.summary, tier: custom.tier, instructions: [custom.soul, custom.skills].filter(Boolean).join('\n\n---\n\n') };
   }
 
   /**

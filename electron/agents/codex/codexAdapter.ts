@@ -1,10 +1,12 @@
 import type { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import type { AccountLoginStart, AgentModel, ChatEvent, ChatMessage, ChatPart, PermissionReply } from '../../../shared/contracts';
+import { DEFAULT_EFFORT_TIER, EMPTY_USAGE, type AccountLoginStart, type AgentModel, type ChatEvent, type ChatMessage, type ChatPart, type ChatUsage, type EffortTier, type PermissionReply } from '../../../shared/contracts';
 import { NotFoundError, UnavailableError, ValidationError } from '../../core/errors';
 import { newId } from '../../core/ids';
+import { addUsage, tokenCount } from '../../core/usage';
 import { scrubEnv } from '../../runtime/terminalManager';
 import { SYSTEM_ACCOUNT_ID } from '../accounts';
+import { codexEffortForTier } from '../tiers';
 import { sessionFrom, type AdapterStartInput, type AdapterStartResult, type RuntimeAdapter } from '../types';
 import { CodexAppServer, isRecord } from './appServer';
 
@@ -42,6 +44,18 @@ interface LiveChat {
   order: string[];
   pending: Map<string, PendingRequest>;
   busy: boolean;
+  /** Effort this member works at; sent on every turn because the server is shared. */
+  tier: EffortTier;
+  /** What this chat has consumed since it opened; the lifetime total is the hub's job. */
+  usage: ChatUsage;
+  /**
+   * The thread total the last notification reported. Codex reports running
+   * totals per thread, so a turn is the difference; without this every
+   * notification would charge the whole thread again.
+   */
+  usageSoFar: { input: number; cachedInput: number; cacheWrite: number; output: number } | null;
+  /** Turn the token counter was last attributed to, so one turn counts once. */
+  usageTurnId: string | null;
 }
 
 const MESSAGE_LIMIT = 400;
@@ -121,7 +135,7 @@ export class CodexChatAdapter implements RuntimeAdapter {
       if (!thread || typeof thread.id !== 'string') throw new UnavailableError('Codex returned no thread id');
       threadId = thread.id;
     }
-    const live: LiveChat = { chatId, workId: input.workId, accountId, threadId, directory: input.directory, turnId: null, assistantId: null, messages: new Map(), order: [], pending: new Map(), busy: false };
+    const live: LiveChat = { chatId, workId: input.workId, accountId, threadId, directory: input.directory, turnId: null, assistantId: null, messages: new Map(), order: [], pending: new Map(), busy: false, tier: input.tier ?? DEFAULT_EFFORT_TIER, usage: EMPTY_USAGE, usageSoFar: null, usageTurnId: null };
     this.chats.set(chatId, live);
     this.byThread.set(threadId, chatId);
     if (resumed) await this.loadHistory(live, server);
@@ -147,7 +161,10 @@ export class CodexChatAdapter implements RuntimeAdapter {
     live.assistantId = null;
     this.deps.emit({ chatId, type: 'status', status: 'busy', detail: '' });
     try {
-      const result = await server.request('turn/start', { threadId: live.threadId, input: [{ type: 'text', text }] });
+      // `effort` rides on every turn, not on the thread: one app-server serves
+      // every member of an account, so a server-wide setting would put one
+      // member's tier on all of them.
+      const result = await server.request('turn/start', { threadId: live.threadId, input: [{ type: 'text', text }], effort: codexEffortForTier(live.tier) });
       const turn = isRecord(result) && isRecord(result.turn) ? result.turn : null;
       live.turnId = turn && typeof turn.id === 'string' ? turn.id : null;
     } catch (error) {
@@ -356,6 +373,10 @@ export class CodexChatAdapter implements RuntimeAdapter {
         this.updateTool(live, itemId, (part) => ({ ...part, output: clip(part.output + delta) }));
         return;
       }
+      case 'thread/tokenUsage/updated': {
+        this.reportUsage(live, params);
+        return;
+      }
       case 'turn/completed': {
         const turn = isRecord(params.turn) ? params.turn : null;
         const status = turn ? String(turn.status) : 'completed';
@@ -389,6 +410,53 @@ export class CodexChatAdapter implements RuntimeAdapter {
       default:
         return;
     }
+  }
+
+  /**
+   * What Codex reports it consumed, from `thread/tokenUsage/updated`.
+   *
+   * The notification carries running totals for the thread (`total`) and the
+   * last model request (`last`), and it fires once per request — a single turn
+   * that calls three tools fires three times. So a turn is the growth of the
+   * thread total, and the turn counter only moves the first time a given
+   * `turnId` is seen. Anything else would either double-count the tokens or
+   * count one conversation turn as several.
+   *
+   * Codex reports no price: `costUsd` stays null instead of Latte inventing
+   * one from a rate card that would be wrong the week it changes.
+   */
+  private reportUsage(live: LiveChat, params: Record<string, unknown>): void {
+    const usage = isRecord(params.tokenUsage) ? params.tokenUsage : null;
+    const total = usage && isRecord(usage.total) ? usage.total : null;
+    if (!total) return;
+    // `inputTokens` counts cached tokens too (Codex derives its own
+    // "non-cached input" by subtracting), so the fresh part is the difference.
+    const next = {
+      input: tokenCount(total.inputTokens),
+      cachedInput: tokenCount(total.cachedInputTokens),
+      cacheWrite: tokenCount(total.cacheWriteInputTokens),
+      output: tokenCount(total.outputTokens),
+    };
+    const previous = live.usageSoFar ?? { input: 0, cachedInput: 0, cacheWrite: 0, output: 0 };
+    live.usageSoFar = next;
+    const turnId = typeof params.turnId === 'string' ? params.turnId : null;
+    const firstOfTurn = turnId !== null && turnId !== live.usageTurnId;
+    if (firstOfTurn) live.usageTurnId = turnId;
+    const grewInput = Math.max(0, next.input - previous.input);
+    const grewCacheRead = Math.max(0, next.cachedInput - previous.cachedInput);
+    const last = usage && isRecord(usage.last) ? usage.last : null;
+    const turn: ChatUsage = {
+      inputTokens: Math.max(0, grewInput - grewCacheRead),
+      outputTokens: Math.max(0, next.output - previous.output),
+      cacheReadTokens: grewCacheRead,
+      cacheWriteTokens: Math.max(0, next.cacheWrite - previous.cacheWrite),
+      turns: firstOfTurn ? 1 : 0,
+      costUsd: null,
+      // The last request's whole input is the context as it stands now.
+      contextTokens: last ? tokenCount(last.inputTokens) + tokenCount(last.cacheWriteInputTokens) : null,
+    };
+    live.usage = addUsage(live.usage, turn);
+    this.deps.emit({ chatId: live.chatId, type: 'usage', turn, total: live.usage });
   }
 
   private onServerRequest(method: string, params: Record<string, unknown>, respond: (result: unknown) => void, fail: (message: string) => void): boolean {

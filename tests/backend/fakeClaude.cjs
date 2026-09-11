@@ -40,8 +40,23 @@ function replyThinkingThenText(text) {
   return id;
 }
 
+// The real CLI prices the whole PROCESS on every result and counts tokens per
+// turn, so the second result here reports 0.02 for two turns that cost 0.01
+// each. Latte has to read that as a delta, not as a second full charge.
+let turns = 0;
 function finish(resultText, isError) {
-  out({ type: 'result', subtype: isError ? 'error_during_execution' : 'success', is_error: Boolean(isError), result: resultText, session_id: sessionId, total_cost_usd: 0.01 });
+  turns += 1;
+  out({
+    type: 'result',
+    subtype: isError ? 'error_during_execution' : 'success',
+    is_error: Boolean(isError),
+    result: resultText,
+    session_id: sessionId,
+    num_turns: turns,
+    total_cost_usd: Number((0.01 * turns).toFixed(4)),
+    usage: { input_tokens: 120, output_tokens: 45, cache_read_input_tokens: 900, cache_creation_input_tokens: 30 },
+    modelUsage: { [model]: { inputTokens: 120, outputTokens: 45, costUSD: 0.01 } },
+  });
 }
 
 const rl = readline.createInterface({ input: process.stdin });

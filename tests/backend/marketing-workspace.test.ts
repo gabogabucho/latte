@@ -214,7 +214,7 @@ it('dismissing a proposal leaves the stages the document already had', async () 
   } finally { b.cleanup(); }
 });
 
-it('ships the writing skill on, and the switch takes it out of the instruction file', async () => {
+it('ships the writing skill on by pointer, and the switch takes it out of the instruction file and its side file', async () => {
   const b = await makeBackend();
   try {
     const skills = await b.service.listSkills();
@@ -222,13 +222,20 @@ it('ships the writing skill on, and the switch takes it out of the instruction f
 
     const brand = await b.service.createBrand('Bruma');
     const work = await b.service.createWork(brand.id, 'Suscripcion');
-    const claudeFile = path.join(b.dir, 'brands', brand.id, 'works', work.id, 'CLAUDE.md');
+    const workDir = path.join(b.dir, 'brands', brand.id, 'works', work.id);
+    const claudeFile = path.join(workDir, 'CLAUDE.md');
+    const skillSideFile = path.join(workDir, '.latte', 'skills', 'writing.md');
     const withSkill = fs.readFileSync(claudeFile, 'utf8');
     expect(withSkill).toContain('latte:skill writing');
     expect(withSkill).toContain('Escritura sin relleno');
-    expect(withSkill).toContain('Prueba de portabilidad');
-    // Attribution travels with the text: the source is MIT and asks for it.
-    expect(withSkill).toContain('no-ai-slop');
+    // The body itself no longer rides the instruction file: only a pointer to it does.
+    expect(withSkill).not.toContain('Prueba de portabilidad');
+    expect(withSkill).toContain('read ./.latte/skills/writing.md and follow it');
+
+    // The full body, attribution included, lives in the side file instead.
+    const sideBody = fs.readFileSync(skillSideFile, 'utf8');
+    expect(sideBody).toContain('Prueba de portabilidad');
+    expect(sideBody).toContain('no-ai-slop');
 
     const off = await b.service.setSkillEnabled('writing', false);
     expect(off[0].enabled).toBe(false);
@@ -237,6 +244,8 @@ it('ships the writing skill on, and the switch takes it out of the instruction f
     expect(without).not.toContain('latte:skill writing');
     // Turning a skill off never touches the rest of the context.
     expect(without).toContain('Tracked deliverables of this work');
+    // And it cleans up the side file it is no longer pointing to.
+    expect(fs.existsSync(skillSideFile)).toBe(false);
 
     await expect(b.service.setSkillEnabled('no-existe', true)).rejects.toThrow(/no viene con Latte/);
   } finally { b.cleanup(); }

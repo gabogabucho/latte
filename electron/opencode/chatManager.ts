@@ -1,7 +1,9 @@
-import type { ChatEvent, ChatMessage, ChatPart, ChatRuntimeStatus, ChatSession, PermissionReply, ProviderAuthMethod, ProviderInfo, ProviderOAuthStart } from '../../shared/contracts';
+import { DEFAULT_EFFORT_TIER, EMPTY_USAGE, type ChatEvent, type ChatMessage, type ChatPart, type ChatRuntimeStatus, type ChatSession, type ChatUsage, type PermissionReply, type ProviderAuthMethod, type ProviderInfo, type ProviderOAuthStart } from '../../shared/contracts';
+import { opencodeVariantForTier } from '../agents/tiers';
 import { sessionFrom, type AdapterStartInput, type AdapterStartResult, type RuntimeAdapter } from '../agents/types';
 import { NotFoundError, UnavailableError, ValidationError } from '../core/errors';
 import { newId } from '../core/ids';
+import { addUsage, tokenCount } from '../core/usage';
 import { OpenCodeClient, OpenCodeHttpError } from './client';
 import { OpenCodeServer, type OpenCodeEndpoint } from './server';
 import { describeMessageError, translateMessage, translatePart, translatePermission, translateQuestion, translateStatus } from './translate';
@@ -52,6 +54,12 @@ interface LiveChat {
   /** Permission / question request ids currently waiting on this chat. */
   pendingPermissions: Set<string>;
   pendingQuestions: Set<string>;
+  /** Reasoning effort sent with every prompt; null when the tier maps to nothing the server takes. */
+  variant: string | null;
+  /** What this chat has consumed since it opened; the lifetime total is the hub's job. */
+  usage: ChatUsage;
+  /** Assistant messages already counted. `message.updated` repeats, a turn does not. */
+  usageSeen: Set<string>;
 }
 
 const MESSAGE_LIMIT = 400;
@@ -224,7 +232,7 @@ export class ChatManager implements RuntimeAdapter {
     const label = input.label ?? `OpenCode · ${chosenModel ?? 'modelo por defecto'}`;
     const session: ChatSession = { ...sessionFrom({ ...input, label }, 'opencode', chosenModel, null, label, resumed), id: chatId };
     const instructions = input.instructions?.trim() ?? '';
-    const live: LiveChat = { session, ocSessionId, directory: input.directory, model, system: instructions || null, busy: false, messages: new Map(), order: [], pendingPermissions: new Set(), pendingQuestions: new Set() };
+    const live: LiveChat = { session, ocSessionId, directory: input.directory, model, system: instructions || null, busy: false, messages: new Map(), order: [], pendingPermissions: new Set(), pendingQuestions: new Set(), variant: opencodeVariantForTier(input.tier ?? DEFAULT_EFFORT_TIER), usage: EMPTY_USAGE, usageSeen: new Set() };
     this.chats.set(session.id, live);
     this.byOcSession.set(ocSessionId, session.id);
 
@@ -269,7 +277,7 @@ export class ChatManager implements RuntimeAdapter {
     const live = this.require(chatId);
     const client = this.requireClient();
     try {
-      await client.promptAsync(live.ocSessionId, live.directory, text, live.model, live.system);
+      await client.promptAsync(live.ocSessionId, live.directory, text, live.model, live.system, live.variant);
       live.busy = true;
     } catch (error) {
       throw new UnavailableError(`Could not send the message: ${describe(error)}`);
@@ -431,6 +439,7 @@ export class ChatManager implements RuntimeAdapter {
         if (existing) translated.parts = existing.parts;
         this.upsertMessage(live, translated);
         this.deps.emit({ chatId, type: 'message', message: translated });
+        this.reportUsage(live, props.info);
         return;
       }
       case 'message.part.updated': {
@@ -490,6 +499,40 @@ export class ChatManager implements RuntimeAdapter {
       default:
         return;
     }
+  }
+
+  /**
+   * What an assistant message consumed, as the server counted it.
+   *
+   * The numbers only settle when the message is finished, and
+   * `message.updated` fires several times per message, so the count is taken
+   * once, on the first finished copy. `reasoning` is a breakdown of `output`
+   * in the SDK the server uses, so adding it would charge those tokens twice.
+   */
+  private reportUsage(live: LiveChat, info: Record<string, unknown>): void {
+    const id = typeof info.id === 'string' ? info.id : '';
+    if (!id || info.role !== 'assistant' || live.usageSeen.has(id)) return;
+    const time = isRecord(info.time) ? info.time : null;
+    if (!time || typeof time.completed !== 'number') return;
+    const tokens = isRecord(info.tokens) ? info.tokens : null;
+    if (!tokens) return;
+    live.usageSeen.add(id);
+    const cache = isRecord(tokens.cache) ? tokens.cache : {};
+    const inputTokens = tokenCount(tokens.input);
+    const cacheReadTokens = tokenCount(cache.read);
+    const cacheWriteTokens = tokenCount(cache.write);
+    const cost = typeof info.cost === 'number' && Number.isFinite(info.cost) && info.cost > 0 ? info.cost : null;
+    const turn: ChatUsage = {
+      inputTokens,
+      outputTokens: tokenCount(tokens.output),
+      cacheReadTokens,
+      cacheWriteTokens,
+      turns: 1,
+      costUsd: cost,
+      contextTokens: inputTokens + cacheReadTokens + cacheWriteTokens,
+    };
+    live.usage = addUsage(live.usage, turn);
+    this.deps.emit({ chatId: live.session.id, type: 'usage', turn, total: live.usage });
   }
 
   private upsertMessage(live: LiveChat, message: ChatMessage): void {

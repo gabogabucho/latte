@@ -248,7 +248,8 @@ describe('ClaudeChatAdapter against a fake Claude Code', () => {
     const { session, runtimeSessionId } = await adapter.start({ workId: 'wrk_1', directory: dir, title: 't', label: 'Claude · agencia', accountId: 'acc_0123456789abcdef', previousSessionId: 'sess-old', model: 'opus', extraEnv: { ENGRAM_PROJECT: 'latte-brd_1' } });
     expect(session.resumed).toBe(true);
     expect(runtimeSessionId).toBe('sess-old');
-    expect(spawned[0].args).toEqual([...CLAUDE_HEADLESS_ARGS, '--resume', 'sess-old', '--model', 'opus']);
+    // The model the human chose survives; the tier only adds the effort next to it.
+    expect(spawned[0].args).toEqual([...CLAUDE_HEADLESS_ARGS, '--resume', 'sess-old', '--model', 'opus', '--effort', 'high']);
     expect(spawned[0].env.CLAUDE_CONFIG_DIR).toBe('C:\\managed\\acc_0123456789abcdef');
     expect(spawned[0].env.ENGRAM_PROJECT).toBe('latte-brd_1');
     expect(spawned[0].env.CLAUDECODE).toBeUndefined();
