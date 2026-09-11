@@ -7,13 +7,27 @@
 - Al menos un CLI de agente en PATH: `claude`, `codex` u `opencode`
   (Latte antepone `~/.local/bin` y `/usr/local/bin` a PATH al arrancar;
   si tu CLI vive en otro lado, exportalo antes de abrir Latte)
-- Para ejecutar el AppImage: `libfuse2t64` (`sudo apt install libfuse2t64`)
-  — en Ubuntu 24.04 / Mint 22 el paquete NO se llama `libfuse2`
+
+El `.deb` no requiere FUSE. El AppImage suele abrir sin instalar paquetes
+adicionales; no instales FUSE preventivamente.
 
 ## Correr
 
 `npm run dev` (desarrollo) · `npm run build && npm start` (renderer compilado).
 `npm run pack:linux` → `release/` (AppImage + deb).
+
+### Si el AppImage muestra un error de FUSE
+
+FUSE es solo una solución de diagnóstico para ese error, no un requisito
+general de Latte ni del `.deb`. En Ubuntu 24.04 y Linux Mint 22, instalá el
+paquete compatible:
+
+```bash
+sudo apt install libfuse2t64
+```
+
+El nombre puede variar en otras distribuciones y versiones; usá el paquete
+FUSE 2 de tu sistema.
 
 ## Baseline 2026-09-10
 
@@ -49,8 +63,10 @@ Ojo con los sufijos de arquitectura: AppImage usa `x86_64`, deb usa `amd64`.
 
 ## Actualizaciones
 
-- AppImage: electron-updater avisa cuando hay versión nueva.
-- `.deb`: sin auto-update; reinstalar desde la release.
+- AppImage: electron-updater avisa cuando hay una versión nueva, la descarga
+  cuando la aceptás y reinicia para instalarla cuando vos lo decidís.
+- `.deb`: no usa electron-updater; descargá e instalá el paquete nuevo desde
+  cada release.
 
 ## Limitaciones conocidas
 
