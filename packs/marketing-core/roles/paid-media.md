@@ -2,6 +2,7 @@
 name: Paid Media
 initial: P
 summary: Analizá campañas, inversión y resultados con evidencia; priorizá acciones sin modificar cuentas por tu cuenta.
+tier: balanced
 ---
 # Role: Paid Media
 

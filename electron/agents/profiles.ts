@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import type { AgentProfile, ProfileInput } from '../../shared/contracts';
+import { DEFAULT_EFFORT_TIER, type AgentProfile, type ProfileInput } from '../../shared/contracts';
 import { writeFileAtomic } from '../core/atomicFile';
 
 const FILES = ['profile.json', 'SOUL.md', 'SKILL.md'] as const;
@@ -51,7 +51,9 @@ export class ProfileStore {
       if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) throw new TypeError('Invalid profile metadata');
       const input = { ...metadata, soul: parts[1], skills: parts[2] } as ProfileInput;
       validate(input); if (input.id !== id) throw new TypeError('Profile id does not match directory');
-      return { id, name: input.name, initial: input.initial, summary: input.summary, soul: input.soul, skills: input.skills, builtin: false, source: 'custom', directory, fingerprint: profileFingerprint(parts) };
+      // A profile the human wrote declares no effort of its own: it opens at the
+      // default tier, and the human moves that member from its conversation.
+      return { id, name: input.name, initial: input.initial, summary: input.summary, tier: DEFAULT_EFFORT_TIER, soul: input.soul, skills: input.skills, builtin: false, source: 'custom', directory, fingerprint: profileFingerprint(parts) };
     } catch (error) { throw new TypeError(`Invalid profile ${id}: ${error instanceof Error ? error.message : String(error)}`); }
   }
   list(strict = true): AgentProfile[] {
@@ -68,7 +70,7 @@ export class ProfileStore {
   listReported(): AgentProfile[] {
     const diagnostic = (id: string, directory: string, error: unknown): AgentProfile => ({
       id, name: id === '__profile-storage-error' ? 'Profile storage error' : id, initial: '!', summary: 'Repair the profile files externally, then reload.',
-      soul: '', skills: '', builtin: false, source: 'custom', directory, fingerprint: '', error: error instanceof Error ? error.message : String(error),
+      tier: DEFAULT_EFFORT_TIER, soul: '', skills: '', builtin: false, source: 'custom', directory, fingerprint: '', error: error instanceof Error ? error.message : String(error),
     });
     try {
       this.safe(this.root);

@@ -2,6 +2,7 @@
 name: Researcher
 initial: R
 summary: Reúne y contrasta evidencia; devuelve fuentes, hallazgos y grado de certeza.
+tier: light
 ---
 # Role: Researcher
 

@@ -107,6 +107,13 @@ CREATE TABLE IF NOT EXISTS team_members (
   -- Member of the same work this one continues. A plain reference, not a key:
   -- removing the origin later leaves the continuation standing.
   continued_from TEXT,
+  -- How hard this member works per answer. Latte's own word, translated by
+  -- each adapter; an older build simply never writes it and gets the default.
+  tier TEXT NOT NULL DEFAULT 'balanced',
+  -- Everything this member consumed, as the runtimes reported it. A whole
+  -- ChatUsage as JSON, because it is read and written as one thing and no
+  -- query ever needs a single field of it. NULL = nothing measured yet.
+  usage_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -120,9 +127,11 @@ CREATE TABLE IF NOT EXISTS meta (
 
 /**
  * Not bumped for works.expected_output / works.result_path (nor for
- * team_members.continued_from) on purpose: nullable columns an older build
- * simply ignores. A bump would make that older build refuse the database as
- * "newer" (see isNewerSchema), which is the opposite of backward compatible.
+ * team_members.continued_from, tier and usage_json) on purpose: columns an
+ * older build simply ignores, because every insert names its columns and the
+ * two new ones are nullable or defaulted. A bump would make that older build
+ * refuse the database as "newer" (see isNewerSchema), which is the opposite of
+ * backward compatible.
  * The outcome columns are added by migrate(), the same path for a new database
  * and an existing one, so the works table above stays exactly what schema 7
  * defines.

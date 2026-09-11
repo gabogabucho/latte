@@ -75,6 +75,7 @@ rl.on('line', (line) => {
       notify('item/completed', { threadId, turnId, item: userItem, completedAtMs: Date.now() });
       const record = threads.get(threadId);
       if (record) record.turns.push({ id: turnId, items: [userItem] });
+      if (record) record.effort = params.effort;
       const finish = (agentText, status) => {
         const agentId = `item_${++counter}`;
         notify('item/started', { threadId, turnId, item: { id: agentId, type: 'agentMessage', text: '' }, startedAtMs: Date.now() });
@@ -83,6 +84,14 @@ rl.on('line', (line) => {
         notify('item/agentMessage/delta', { threadId, turnId, itemId: agentId, delta: agentText.slice(half) });
         notify('item/completed', { threadId, turnId, item: { id: agentId, type: 'agentMessage', text: agentText }, completedAtMs: Date.now() });
         if (record) record.turns[record.turns.length - 1].items.push({ id: agentId, type: 'agentMessage', text: agentText });
+        // The real app-server reports RUNNING TOTALS per thread and fires once
+        // per model request, so a turn is the growth of these numbers.
+        if (record) {
+          record.usage = record.usage || { inputTokens: 0, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0 };
+          const last = { inputTokens: 1000, cachedInputTokens: 800, cacheWriteInputTokens: 50, outputTokens: 60, reasoningOutputTokens: 20, totalTokens: 1060 };
+          for (const key of Object.keys(last)) record.usage[key] += last[key];
+          notify('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { last, total: { ...record.usage }, modelContextWindow: 272000 } });
+        }
         notify('turn/completed', { threadId, turn: { id: turnId, status, items: [], error: status === 'failed' ? { message: 'Simulated failure' } : null } });
       };
       if (/run/i.test(text)) {
@@ -116,6 +125,8 @@ rl.on('line', (line) => {
         threads.get(threadId).slowTurn = turnId;
         return; // waits for turn/interrupt
       }
+      // Lets a test see the reasoning effort the turn was actually started with.
+      if (/effort/i.test(text)) { finish(`EFFORT ${params.effort || 'none'}`, 'completed'); return; }
       if (/fail/i.test(text)) { finish('', 'failed'); return; }
       finish(`Echo: ${text}${record && record.dev ? ` [dev: ${record.dev}]` : ''}`, 'completed');
       return;

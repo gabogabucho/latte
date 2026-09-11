@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { asEffortTier } from '../agents/tiers';
 import type { InstructionPack, PackRole, PackSkill } from './instructions';
 
 interface PackManifest {
@@ -47,8 +48,9 @@ export function loadInstructionPack(packsDir: string, id = 'marketing-core'): In
 
 /**
  * Roles live in packs/<id>/roles/<roleId>.md: a small front matter block
- * (name, initial, summary) followed by the instructions. A broken role file
- * is skipped; it never takes the whole pack down.
+ * (name, initial, summary, and an optional tier) followed by the
+ * instructions. A broken role file is skipped; it never takes the whole pack
+ * down.
  */
 function loadRoles(dir: string, declared: unknown): PackRole[] {
   if (!Array.isArray(declared)) return [];
@@ -122,6 +124,9 @@ export function parseRole(id: string, raw: string): PackRole | null {
     name,
     initial: (meta.initial || name).slice(0, 1).toUpperCase(),
     summary: (meta.summary ?? '').slice(0, 200),
+    // Optional, and never a reason to drop a role: a pack written before tiers
+    // existed, or one with a typo in the value, opens at the default effort.
+    tier: asEffortTier(meta.tier),
     instructions,
   };
 }

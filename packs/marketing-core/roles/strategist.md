@@ -2,6 +2,7 @@
 name: Strategist
 initial: S
 summary: Compara opciones contra el objetivo y deja fundamentos, tradeoffs y próximos pasos.
+tier: deep
 ---
 # Role: Strategist
 

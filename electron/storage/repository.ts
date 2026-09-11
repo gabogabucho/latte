@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
-import type { Brand, FunnelStage, ChatRuntime, Decision, DecisionSource, DecisionStatus, Revision, Work } from '../../shared/contracts';
+import { DEFAULT_EFFORT_TIER, EFFORT_TIERS, EMPTY_USAGE, type Brand, type FunnelStage, type ChatRuntime, type ChatUsage, type Decision, type DecisionSource, type DecisionStatus, type EffortTier, type Revision, type Work } from '../../shared/contracts';
 import { NotFoundError, ValidationError } from '../core/errors';
+import { addUsage, parseUsage, serializeUsage } from '../core/usage';
 import type { SqlDriver, SqlRow } from './driver';
 import { SCHEMA_SQL, SCHEMA_VERSION } from './schema';
 
@@ -10,7 +11,7 @@ interface RevisionRow extends SqlRow { id: string; work_id: string; document_id:
 interface DecisionRow extends SqlRow { id: string; work_id: string; text: string; created_at: string }
 interface DecisionProposalRow extends SqlRow { id:string; work_id:string; statement:string; rationale:string; alternatives:string; evidence:string; status:string; source_chat_id:string|null; source_message_id:string|null; source_member_id:string|null; source_role_id:string|null; source_runtime:string|null; client_request_id:string; fingerprint:string; created_at:string; decided_at:string|null }
 interface DocumentRow extends SqlRow { id: string; work_id: string; kind: string; title: string; file_name: string; status: string; funnel_stages: string; proposed_stages: string; base_doc_id: string | null; base_rev_id: string | null; base_print: string | null; last_print: string | null; created_at: string; updated_at: string }
-interface MemberRow extends SqlRow { id: string; work_id: string; role_id: string; role_name: string; initial: string; runtime: string; model: string | null; account_id: string | null; session_id: string; done: number; continued_from: string | null; created_at: string; updated_at: string }
+interface MemberRow extends SqlRow { id: string; work_id: string; role_id: string; role_name: string; initial: string; runtime: string; model: string | null; account_id: string | null; session_id: string; done: number; continued_from: string | null; tier: string | null; usage_json: string | null; created_at: string; updated_at: string }
 
 /** Persisted part of a tracked document. Titles and status are UI-facing; the file name is Latte-generated. */
 export interface DocumentRecord {
@@ -47,6 +48,10 @@ export interface TeamMemberRecord {
   done: boolean;
   /** Member this one continues. Optional on insert: most members start from scratch. */
   continuedFrom?: string | null;
+  /** Effort tier. Optional on insert: an omitted one means the default, like the column's. */
+  tier?: EffortTier;
+  /** Lifetime consumption. Optional on insert: a new member has consumed nothing. */
+  usage?: ChatUsage;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,6 +101,10 @@ const toMember = (r: MemberRow): TeamMemberRecord => ({
   sessionId: r.session_id,
   done: r.done === 1,
   continuedFrom: r.continued_from ?? null,
+  // A tier nobody recognises (a hand-edited row, a build ahead of this one)
+  // reads as the default rather than propagating an unknown word upwards.
+  tier: (EFFORT_TIERS as readonly string[]).includes(r.tier ?? '') ? (r.tier as EffortTier) : DEFAULT_EFFORT_TIER,
+  usage: parseUsage(r.usage_json),
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -158,6 +167,11 @@ export class LatteRepository {
     // so, like proposed_stages, it needs no schema version of its own.
     const memberColumns = this.db.all<{ name: string }>("SELECT name FROM pragma_table_info('team_members')").map((c) => c.name);
     if (memberColumns.length > 0 && !memberColumns.includes('continued_from')) this.db.run('ALTER TABLE team_members ADD COLUMN continued_from TEXT');
+    // Effort tier and lifetime usage. Same reasoning as continued_from: an
+    // existing row reads as the default tier and as "nothing measured yet",
+    // which is exactly true — Latte never invents consumption it did not see.
+    if (memberColumns.length > 0 && !memberColumns.includes('tier')) this.db.run("ALTER TABLE team_members ADD COLUMN tier TEXT NOT NULL DEFAULT 'balanced'");
+    if (memberColumns.length > 0 && !memberColumns.includes('usage_json')) this.db.run('ALTER TABLE team_members ADD COLUMN usage_json TEXT');
     // v1/v2 kept one runtime session per work in chat_sessions. v3 models a
     // team: every conversation is a member with a role. Old sessions become
     // "assistant" members so nothing already resumable is lost.
@@ -407,11 +421,13 @@ export class LatteRepository {
   }
 
   insertMember(member: TeamMemberRecord): TeamMemberRecord {
+    const tier = member.tier ?? DEFAULT_EFFORT_TIER;
+    const usage = member.usage ?? EMPTY_USAGE;
     this.db.run(
-      'INSERT INTO team_members(id, work_id, role_id, role_name, initial, runtime, model, account_id, session_id, done, continued_from, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [member.id, member.workId, member.roleId, member.roleName, member.initial, member.runtime, member.model, member.accountId, member.sessionId, member.done ? 1 : 0, member.continuedFrom ?? null, member.createdAt, member.updatedAt],
+      'INSERT INTO team_members(id, work_id, role_id, role_name, initial, runtime, model, account_id, session_id, done, continued_from, tier, usage_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [member.id, member.workId, member.roleId, member.roleName, member.initial, member.runtime, member.model, member.accountId, member.sessionId, member.done ? 1 : 0, member.continuedFrom ?? null, tier, serializeUsage(usage), member.createdAt, member.updatedAt],
     );
-    return { ...member, continuedFrom: member.continuedFrom ?? null };
+    return { ...member, continuedFrom: member.continuedFrom ?? null, tier, usage };
   }
 
   /** Runtime-native session/thread id learned at start or, for Claude, with the first reply. */
@@ -422,6 +438,28 @@ export class LatteRepository {
   /** The model a member's conversation runs on. Empty string means the runtime's default. */
   setMemberModel(id: string, model: string | null, updatedAt: string): void {
     this.db.run('UPDATE team_members SET model = ?, updated_at = ? WHERE id = ?', [model, updatedAt, id]);
+  }
+
+  /** How hard a member works per answer. The runtime is restarted by the hub, not here. */
+  setMemberTier(id: string, tier: EffortTier, updatedAt: string): void {
+    this.db.run('UPDATE team_members SET tier = ?, updated_at = ? WHERE id = ?', [tier, updatedAt, id]);
+  }
+
+  /**
+   * Adds one measured turn to what this member has consumed in its whole life,
+   * and answers with the new total.
+   *
+   * Read-modify-write in one place, so the caller cannot forget to add before
+   * it writes. It is safe here because the main process is the only writer and
+   * SQL calls in it are synchronous: no two turns interleave between the read
+   * and the write.
+   */
+  addMemberUsage(id: string, turn: ChatUsage, updatedAt: string): ChatUsage {
+    const row = this.db.get<MemberRow>('SELECT * FROM team_members WHERE id = ?', [id]);
+    if (!row) throw new NotFoundError('Team member', id);
+    const total = addUsage(parseUsage(row.usage_json), turn);
+    this.db.run('UPDATE team_members SET usage_json = ?, updated_at = ? WHERE id = ?', [serializeUsage(total), updatedAt, id]);
+    return total;
   }
 
   setMemberDone(id: string, done: boolean, updatedAt: string): void {

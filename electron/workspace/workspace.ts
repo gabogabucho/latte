@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import path from 'node:path';
 import { ensureDir, readTextIfExists, writeFileAtomic, writeImmutableFile } from '../core/atomicFile';
 import { compactTimestamp } from '../core/ids';
-import { LattePaths, WORK_FILES } from '../core/paths';
-import { isManagedFile } from './instructions';
+import { LattePaths, WORK_FILES, safeJoin } from '../core/paths';
+import { isManagedFile, type RenderedInstructionFile } from './instructions';
+
+/** The only two directories side files (truncated sections, skill bodies) ever live under. */
+const SIDE_FILE_DIRS = [WORK_FILES.contextDir, WORK_FILES.skillsDir];
 
 const WORK_README = `# Latte work directory
 
@@ -113,8 +117,18 @@ export class WorkspaceFiles {
    * Writes the managed instruction files. If a user replaced one of them with
    * their own (no managed marker), it is left alone and reported: we never
    * overwrite files we do not own.
+   *
+   * `files` are the side files a truncated section or an enabled skill points
+   * to (see instructions.ts); they always live under .latte/ and are written
+   * (and stale ones removed) regardless of whether CLAUDE.md/AGENTS.md
+   * themselves were skipped.
    */
-  writeInstructions(brandId: string, workId: string, rendered: string): { written: string[]; skipped: string[] } {
+  writeInstructions(
+    brandId: string,
+    workId: string,
+    rendered: string,
+    files: RenderedInstructionFile[] = [],
+  ): { written: string[]; skipped: string[] } {
     const written: string[] = [];
     const skipped: string[] = [];
     for (const name of [WORK_FILES.claude, WORK_FILES.agents]) {
@@ -127,7 +141,33 @@ export class WorkspaceFiles {
       if (existing !== rendered) writeFileAtomic(file, rendered);
       written.push(name);
     }
+    this.syncSideFiles(brandId, workId, files);
     return { written, skipped };
+  }
+
+  /**
+   * Latte owns .latte/context and .latte/skills entirely: every call writes
+   * the current side files and removes whatever it left there before that no
+   * longer applies (a decision log back under the inline ceiling, a skill
+   * turned off).
+   */
+  private syncSideFiles(brandId: string, workId: string, files: RenderedInstructionFile[]): void {
+    const root = this.paths.workDir(brandId, workId);
+    const wanted = new Map(files.map((f) => [safeJoin(root, ...f.path.split('/')), f.content]));
+    for (const dirName of SIDE_FILE_DIRS) {
+      const dir = safeJoin(root, WORK_FILES.metaDir, dirName);
+      let existing: string[];
+      try {
+        existing = fs.readdirSync(dir);
+      } catch {
+        continue; // nothing written there yet
+      }
+      for (const entry of existing) {
+        const absolute = path.join(dir, entry);
+        if (!wanted.has(absolute)) fs.rmSync(absolute, { force: true });
+      }
+    }
+    for (const [absolute, content] of wanted) writeFileAtomic(absolute, content);
   }
 
   writeSnapshot(brandId: string, workId: string, revisionId: string, createdAt: string, content: string): string {

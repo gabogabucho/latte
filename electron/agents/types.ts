@@ -1,4 +1,4 @@
-import type { ChatMessage, ChatRuntime, ChatSession, PermissionReply } from '../../shared/contracts';
+import type { ChatMessage, ChatRuntime, ChatSession, EffortTier, PermissionReply } from '../../shared/contracts';
 
 export interface AdapterStartInput {
   workId: string;
@@ -16,6 +16,11 @@ export interface AdapterStartInput {
   previousSessionId?: string | null;
   /** Runtime-specific model id; null = runtime default. */
   model?: string | null;
+  /**
+   * How hard this member works per answer, in Latte's own words. The adapter
+   * translates it through agents/tiers.ts; absent means the default tier.
+   */
+  tier?: EffortTier;
   /** Latte-managed account (Claude Code / Codex); null = system profile / not applicable. */
   accountId?: string | null;
   /** Human label shown in the chat header. */

@@ -517,6 +517,21 @@ html,body,#root{height:100%;overflow:hidden}
 .permission-modes button.selected{border-color:var(--accent);background:rgba(200,140,80,.1)}
 .permission-modes strong{display:block;font-size:11px;font-weight:550}
 .permission-modes small{display:block;font-size:10px;line-height:1.6;color:var(--muted);margin-top:3px}
+/* Consumo: nunca más peso visual que el resto del footer del equipo. */
+.team-usage-total{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px;flex-shrink:1}
+.team-usage{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 8px;margin:2px 0 8px 4px;font-size:10px;color:var(--muted)}
+.team-usage-hint{color:#d99a6c}
+/* Esfuerzo: el mismo lenguaje visual que los permisos, en tres opciones. */
+.effort-picker{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.effort-options{display:flex;gap:6px}
+.effort-options button{flex:1;display:block;text-align:left;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:none;min-width:0}
+.effort-options button.selected{border-color:var(--accent);background:rgba(200,140,80,.1)}
+.effort-options strong{display:block;font-size:11px;font-weight:550}
+.effort-options small{display:block;font-size:10px;line-height:1.6;color:var(--muted);margin-top:3px}
+.effort-picker.compact{flex-direction:row;align-items:center;gap:0;margin:0}
+.effort-picker.compact .effort-options{gap:2px}
+.effort-picker.compact .effort-options button{padding:5px 7px;border-radius:5px;flex:none}
+.effort-picker.compact .effort-options strong{font-size:9px;font-weight:600}
 .permission-warning,.permission-preview{margin:0 8px 8px!important;padding:7px 8px;border-radius:5px;background:rgba(200,140,80,.1)}
 .permission-warning{margin:0 8px 8px;font-size:10px;line-height:1.6;color:#d99a6c}
 .modal.continuation{width:760px}
