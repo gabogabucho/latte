@@ -15,6 +15,8 @@ export interface OpenCodeServerOptions {
   platform?: NodeJS.Platform;
   startupTimeoutMs?: number;
   log?: (line: string) => void;
+  /** Injectable process launcher for bounded tests. */
+  spawnImpl?: typeof spawn;
 }
 
 export interface OpenCodeEndpoint {
@@ -96,7 +98,7 @@ export class OpenCodeServer {
       let output = '';
       let child: ChildProcess;
       try {
-        child = spawnInOwnProcessGroup(spawn, spec.file, spec.args, { cwd: this.options.cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }, this.platform);
+        child = spawnInOwnProcessGroup(this.options.spawnImpl ?? spawn, spec.file, spec.args, { cwd: this.options.cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }, this.platform);
       } catch (error) {
         reject(new Error(`Could not start OpenCode: ${error instanceof Error ? error.message : String(error)}`));
         return;

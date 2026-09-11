@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { killProcessTree, spawnInOwnProcessGroup } from '../../electron/core/processTree';
+import { OpenCodeServer } from '../../electron/opencode/server';
 
 function fakeChild(pid = 4242) {
   return {
@@ -51,6 +52,29 @@ describe('process tree ownership', () => {
     const calledOptions = spawnSpy.mock.calls[0][2] as SpawnOptions;
     expect(calledOptions).toMatchObject(options);
     expect(calledOptions.detached).toBe(detached);
+  });
+});
+
+describe('OpenCodeServer process ownership', () => {
+  it.each([
+    ['linux', true],
+    ['win32', undefined],
+  ] as const)('launches through the shared process-group wrapper on %s', async (platform, detached) => {
+    let options: Parameters<typeof spawn>[2];
+    const server = new OpenCodeServer({
+      executable: '/definitely/missing/opencode',
+      cwd: process.cwd(),
+      env: {},
+      platform,
+      startupTimeoutMs: 100,
+      spawnImpl: ((...args: Parameters<typeof spawn>) => {
+        options = args[2];
+        throw new Error('spawn captured');
+      }) as unknown as typeof spawn,
+    });
+
+    await expect(server.ensure()).rejects.toThrow(/spawn captured/);
+    expect(options!.detached).toBe(detached);
   });
 });
 
