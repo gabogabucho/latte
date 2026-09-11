@@ -1,11 +1,13 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { ChatEvent, ChatMessage, Decision } from '../../shared/contracts';
+import type { ChatEvent, ChatMessage, Decision, Work } from '../../shared/contracts';
 import { TranscriptStore } from '../../electron/agents/transcripts';
 import { openDriver } from '../../electron/storage/openDriver';
 import { LatteRepository } from '../../electron/storage/repository';
 import { SCHEMA_VERSION } from '../../electron/storage/schema';
 import { briefObjective, openItems, relevantMessages, renderContinuation, type ContinuationInput } from '../../electron/workspace/continuation';
+import { DELIVERABLES_DIR } from '../../electron/workspace/deliverables';
 import { fakeRunner, makeBackend, makeTempDir, removeDir, type TestBackend } from './helpers';
 import { startFakeOpenCode, type FakeOpenCode } from './fakeOpenCode';
 
@@ -37,6 +39,7 @@ function input(overrides: Partial<ContinuationInput> = {}): ContinuationInput {
     ownFolder: false,
     source: { memberId: 'mem_src', roleName: 'Strategist', label: 'Claude Code · Cuenta A', runtime: 'claude', working: false },
     brief: '# Lanzamiento\n\n## Objetivo\nVender la colección de otoño.\n',
+    outcome: { expectedOutput: null, resultPath: null, resultExists: false },
     decisions: [decision('dec_1', 'Elegimos Instagram.', 'approved', 'Ahí está la audiencia.')],
     documents: [{ fileName: 'brief.md', title: 'Lanzamiento', kind: 'brief', status: 'draft', baseFileName: null, baseOutdated: false, proposalPending: false, openItems: [] }],
     deliverables: [],
@@ -132,6 +135,48 @@ describe('hand-over renderer', () => {
     expect(text).toContain('(chosen by the human)');
     expect(text).toContain('Strategist is still answering in its own conversation');
   });
+
+  it('leaves the outcome out when the human set none, so the hand-over reads as before', () => {
+    const text = renderContinuation(input());
+    expect(renderContinuation(input({ outcome: { expectedOutput: '   ', resultPath: null, resultExists: false } }))).toBe(text);
+    expect(text).not.toContain('## Resultado esperado');
+    expect(renderContinuation(input({ locale: 'en-US' }))).not.toContain('## Expected output');
+  });
+
+  it('carries the closing contract, with a linked result that is in the folder', () => {
+    const text = renderContinuation(input({ outcome: { expectedOutput: 'La propuesta en PDF y un Word editable.', resultPath: 'propuesta.pdf', resultExists: true } }));
+    expect(text).toContain('## Resultado esperado (lo que cierra el trabajo)\n\nLa propuesta en PDF y un Word editable.\n');
+    expect(text).toContain('- Se pidió como PDF y DOCX: el trabajo cierra con un .pdf real y un .docx real en `./entregables/`, no con Markdown renombrado ni con el contenido en el chat.');
+    expect(text).toContain('- Entregable vinculado como resultado: `./entregables/propuesta.pdf` (está en la carpeta; una versión nueva va en un archivo nuevo al lado).');
+    expect(text).not.toContain('ya no está en la carpeta');
+    // The goal first, then what closes it, then what was already decided.
+    expect(text.indexOf('## Brief y objetivo')).toBeLessThan(text.indexOf('## Resultado esperado'));
+    expect(text.indexOf('## Resultado esperado')).toBeLessThan(text.indexOf('## Decisiones aprobadas'));
+  });
+
+  it('says when the linked result left the folder, and when nothing is linked yet', () => {
+    const gone = renderContinuation(input({ outcome: { expectedOutput: 'Tres posteos para Instagram', resultPath: 'posteos.pdf', resultExists: false } }));
+    expect(gone).toContain('- Entregable vinculado como resultado: `./entregables/posteos.pdf`, pero ya no está en la carpeta: avisalo antes de apoyarte en él.');
+    expect(gone).not.toContain('(está en la carpeta');
+    // Formats come from what the human asked for, not from the linked file's extension.
+    expect(gone).not.toContain('Se pidió como');
+    expect(renderContinuation(input({ outcome: { expectedOutput: 'Tres posteos para Instagram', resultPath: null, resultExists: false } }))).toContain('- Todavía no hay un entregable vinculado como resultado.');
+    // A link with no written expected output still closes on that file.
+    const onlyLink = renderContinuation(input({ outcome: { expectedOutput: null, resultPath: 'propuesta.pdf', resultExists: true } }));
+    expect(onlyLink).toContain('_Todavía no está escrito: preguntá cuál es el resultado concreto sólo si eso te bloquea._');
+    expect(onlyLink).toContain('`./entregables/propuesta.pdf` (está en la carpeta;');
+  });
+
+  it('states the closing contract in English for an English work', () => {
+    const outcome = { expectedOutput: 'A two-page PDF proposal.', resultPath: 'proposal.pdf', resultExists: true };
+    const present = renderContinuation(input({ locale: 'en-US', outcome }));
+    expect(present).toContain('## Expected output (what closes this work)\n\nA two-page PDF proposal.\n');
+    expect(present).toContain('- Asked for as PDF: the work closes with a real .pdf file in `./entregables/`, not with renamed Markdown or the content pasted in the chat.');
+    expect(present).toContain('- Result linked by the human: `./entregables/proposal.pdf` (in the folder; a new version goes in a new file next to it).');
+    expect(present).not.toContain('Resultado esperado');
+    expect(renderContinuation(input({ locale: 'en-US', outcome: { ...outcome, resultExists: false } }))).toContain('- Result linked by the human: `./entregables/proposal.pdf`, but it is no longer in the folder: say so before building on it.');
+    expect(renderContinuation(input({ locale: 'en-US', outcome: { ...outcome, resultPath: null, resultExists: false } }))).toContain('- No file has been linked as the result yet.');
+  });
 });
 
 describe('Continuar con otro agente, through the service', () => {
@@ -190,6 +235,8 @@ describe('Continuar con otro agente, through the service', () => {
     expect(text).toContain('- `./brief.md`: [ ] Incorporar entrevistas reales');
     // Files are named, never pasted.
     expect(text).not.toContain('contenido-del-documento');
+    // No outcome set: no closing-contract section.
+    expect(text).not.toContain('## Resultado esperado');
     expect(text).toContain('> **Persona:**\n> Armá la estrategia de lanzamiento');
     expect(text).toContain('> **Strategist:** (todavía la está escribiendo)\n> Hello');
     expect(text).toContain('- Strategist todavía está respondiendo en su conversación');
@@ -247,6 +294,60 @@ describe('Continuar con otro agente, through the service', () => {
     expect(draft.text).toContain('OpenCode guarda su historial adentro de la conversación: este traspaso no incluye mensajes.');
     expect((await b.service.listTeam(work.id))[0].status).toBe('paused');
     expect(b.repo.getMember(source.id)).toEqual(before);
+  });
+
+  function writeDeliverable(work: Work, name: string): string {
+    const dir = path.join(b.files.workDir(work.brandId, work.id), DELIVERABLES_DIR);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, '%PDF-1.4');
+    return file;
+  }
+
+  /** The system prompt each turn of this member carried (OpenCode sends it with every turn). */
+  const systemsOf = (memberId: string): string[] => {
+    const sessionId = b.repo.getMember(memberId).sessionId;
+    return fake.requests.filter((r) => r.path === `/session/${sessionId}/prompt_async`).map((r) => String((r.body as { system?: string } | null)?.system ?? ''));
+  };
+
+  it('hands over the closing contract with a linked result that is there, and adds nothing to the prompt', async () => {
+    const brand = await b.service.createBrand('Casa Oliva');
+    const work = await b.service.createWork(brand.id, 'Propuesta');
+    writeDeliverable(work, 'propuesta.pdf');
+    await b.service.updateWork(work.id, { expectedOutput: 'La propuesta en PDF para el cliente.', resultPath: 'propuesta.pdf' });
+    // Nobody is live yet, so the shared files are written with the outcome when the source opens.
+    const source = await b.service.addTeamMember(work.id, 'strategist');
+
+    const { text } = await b.service.draftContinuation(source.id);
+    expect(text).toContain('## Resultado esperado (lo que cierra el trabajo)\n\nLa propuesta en PDF para el cliente.\n');
+    expect(text).toContain('- Se pidió como PDF: el trabajo cierra con un .pdf real en `./entregables/`');
+    expect(text).toContain('- Entregable vinculado como resultado: `./entregables/propuesta.pdf` (está en la carpeta;');
+
+    const next = await b.service.addTeamMember(work.id, 'reviewer', { continuedFrom: source.id });
+    await b.service.sendChat(next.id, text);
+    const sessionId = b.repo.getMember(next.id).sessionId;
+    const first = fake.requests.filter((r) => r.path === `/session/${sessionId}/prompt_async`).at(-1);
+    // The contract reaches the new member once, in its first message...
+    expect((first?.body as { parts?: Array<{ text?: string }> }).parts?.[0]?.text).toBe(text);
+    // ...and not again in its prompt: the frozen shared files already state it, so the prompt is what it always was.
+    expect(systemsOf(next.id).at(-1)).not.toContain('## Expected output');
+    expect(systemsOf(next.id).at(-1)).not.toContain('La propuesta en PDF para el cliente.');
+  });
+
+  it('says the linked result left the folder, without recreating the folder or dropping the link', async () => {
+    const brand = await b.service.createBrand('Casa Oliva');
+    const work = await b.service.createWork(brand.id, 'Propuesta');
+    const folder = path.dirname(writeDeliverable(work, 'propuesta.pdf'));
+    await b.service.updateWork(work.id, { expectedOutput: 'La propuesta en PDF para el cliente.', resultPath: 'propuesta.pdf' });
+    const source = await b.service.addTeamMember(work.id, 'strategist');
+    fs.rmSync(folder, { recursive: true });
+
+    const { text } = await b.service.draftContinuation(source.id);
+    expect(text).toContain('- Entregable vinculado como resultado: `./entregables/propuesta.pdf`, pero ya no está en la carpeta: avisalo antes de apoyarte en él.');
+    expect(text).not.toContain('(está en la carpeta');
+    // Drafting is a read: ./entregables/ is not created to look inside, and the pointer stays.
+    expect(fs.existsSync(folder)).toBe(false);
+    expect((await b.service.listWorks(brand.id))[0].resultPath).toBe('propuesta.pdf');
   });
 });
 

@@ -1,5 +1,7 @@
 import type { ChatMessage, ChatRuntime, Decision } from '../../shared/contracts';
 import { WORK_FILES } from '../core/paths';
+import { DELIVERABLES_DIR } from './deliverables';
+import { requestedFormats } from './instructions';
 
 /**
  * Every cap keeps the hand-over a map of the work, never a second copy of it:
@@ -35,6 +37,11 @@ export interface ContinuationInput {
   source: { memberId: string; roleName: string; label: string; runtime: ChatRuntime; working: boolean };
   /** Current content of the brief document. */
   brief: string;
+  /**
+   * What closes the work, as the work holds it now. `resultExists` is read
+   * from ./entregables/ when the hand-over is drafted, never stored.
+   */
+  outcome: { expectedOutput: string | null; resultPath: string | null; resultExists: boolean };
   decisions: Decision[];
   documents: ContinuationDocument[];
   /** File names inside ./entregables/. */
@@ -63,6 +70,12 @@ const COPY = {
     objective: 'Brief y objetivo',
     noObjective: 'El brief todavía no dice cuál es el objetivo: preguntalo antes de avanzar.',
     fullBrief: (file: string) => `Brief completo: \`./${file}\`.`,
+    outcome: 'Resultado esperado (lo que cierra el trabajo)',
+    noExpected: '_Todavía no está escrito: preguntá cuál es el resultado concreto sólo si eso te bloquea._',
+    formats: (labels: string[], dir: string) => `Se pidió como ${labels.join(' y ')}: el trabajo cierra con ${labels.map((l) => `un .${l.toLowerCase()} real`).join(' y ')} en \`./${dir}/\`, no con Markdown renombrado ni con el contenido en el chat.`,
+    linked: (dir: string, file: string) => `Entregable vinculado como resultado: \`./${dir}/${file}\` (está en la carpeta; una versión nueva va en un archivo nuevo al lado).`,
+    linkedMissing: (dir: string, file: string) => `Entregable vinculado como resultado: \`./${dir}/${file}\`, pero ya no está en la carpeta: avisalo antes de apoyarte en él.`,
+    notLinked: 'Todavía no hay un entregable vinculado como resultado.',
     decisions: 'Decisiones aprobadas (no las reabras)',
     noDecisions: 'Todavía no hay decisiones aprobadas.',
     because: 'por qué',
@@ -101,6 +114,12 @@ const COPY = {
     objective: 'Brief and goal',
     noObjective: 'The brief does not state a goal yet: ask before moving on.',
     fullBrief: (file: string) => `Full brief: \`./${file}\`.`,
+    outcome: 'Expected output (what closes this work)',
+    noExpected: '_Not written yet: ask what the concrete result should be only if that blocks you._',
+    formats: (labels: string[], dir: string) => `Asked for as ${labels.join(' and ')}: the work closes with a real ${labels.map((l) => `.${l.toLowerCase()}`).join(' and a real ')} file in \`./${dir}/\`, not with renamed Markdown or the content pasted in the chat.`,
+    linked: (dir: string, file: string) => `Result linked by the human: \`./${dir}/${file}\` (in the folder; a new version goes in a new file next to it).`,
+    linkedMissing: (dir: string, file: string) => `Result linked by the human: \`./${dir}/${file}\`, but it is no longer in the folder: say so before building on it.`,
+    notLinked: 'No file has been linked as the result yet.',
     decisions: 'Approved decisions (do not reopen them)',
     noDecisions: 'No decisions have been approved yet.',
     because: 'why',
@@ -218,6 +237,28 @@ function capped(lines: string[], max: number, more: (n: number) => string): stri
 }
 
 /**
+ * What closes the work, so the hand-over stands on its own wherever it is
+ * pasted: the expected output, the real files it asks for and the linked
+ * result with whether it is still in the folder. No section when the human set
+ * no outcome, so such a hand-over reads exactly as before.
+ *
+ * It rides this first message only. The new member's own prompt stays what
+ * memberContext decides (the outcome only when frozen shared files do not say
+ * it), so the hand-over adds nothing that is paid again on every turn.
+ */
+function outcomeSection(c: (typeof COPY)[ContinuationLocale], outcome: ContinuationInput['outcome']): string[] {
+  // Not clipped: it is the contract itself, and updateWork already bounds it.
+  const expected = (outcome.expectedOutput ?? '').replace(/\r\n/g, '\n').trim();
+  const result = outcome.resultPath ?? null;
+  if (!expected && !result) return [];
+  const lines = [`## ${c.outcome}`, '', expected || c.noExpected, ''];
+  const formats = requestedFormats(expected);
+  if (formats.length > 0) lines.push(`- ${c.formats(formats, DELIVERABLES_DIR)}`);
+  lines.push(`- ${!result ? c.notLinked : outcome.resultExists ? c.linked(DELIVERABLES_DIR, result) : c.linkedMissing(DELIVERABLES_DIR, result)}`, '');
+  return lines;
+}
+
+/**
  * The hand-over a new member receives as its first message. Deterministic:
  * the same records always produce the same text, and nothing in it was
  * written by a model. The human reads and edits it before it is sent.
@@ -237,6 +278,7 @@ export function renderContinuation(input: ContinuationInput): string {
 
   const objective = briefObjective(input.brief);
   out.push(`## ${c.objective}`, '', objective || c.noObjective, '', c.fullBrief(WORK_FILES.brief), '');
+  out.push(...outcomeSection(c, input.outcome));
 
   const approved = input.decisions.filter((d) => d.status === 'approved').map((d) => {
     const why = d.rationale.trim() ? ` (${c.because}: ${clip(d.rationale, CAPS.line)})` : '';

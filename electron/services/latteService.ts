@@ -971,10 +971,11 @@ export class LatteService implements BackendApi {
 
   /**
    * The hand-over for continuing a member's work with another agent or
-   * account, assembled from what Latte already keeps: the brief, the decision
-   * log, the tracked documents, the folder and whatever the runtime exposes of
-   * the conversation. No model summarises anything, so the same records give
-   * the same text; the human edits it before it is sent.
+   * account, assembled from what Latte already keeps: the brief, the expected
+   * output and linked result (whether that file is still there is read now),
+   * the decision log, the tracked documents, the folder and whatever the
+   * runtime exposes of the conversation. No model summarises anything, so the
+   * same records give the same text; the human edits it before it is sent.
    *
    * A read, never a change: the member keeps its conversation, session,
    * account and status. Nothing is written as a new document either — files
@@ -1001,6 +1002,8 @@ export class LatteService implements BackendApi {
     const askFiles = new Set(asks.map((a) => a.fileName));
     const untracked = (await this.listUntrackedFiles(work.id)).map((f) => f.fileName).filter((name) => !askFiles.has(name));
     const storedLocale = this.deps.repo.getMeta(`work_content_locale:${work.id}`);
+    // Looked up without creating ./entregables/ on the way: drafting is a read.
+    const resultExists = nodeFs.existsSync(nodePath.join(directory, DELIVERABLES_DIR)) && this.resultExists(work);
     const text = renderContinuation({
       locale: storedLocale === 'en-US' ? 'en-US' : 'es-AR',
       brandName: brand.name,
@@ -1009,6 +1012,7 @@ export class LatteService implements BackendApi {
       ownFolder: work.folder !== null,
       source: { memberId: member.id, roleName: member.roleName, label: member.label, runtime: member.runtime, working: member.status === 'working' },
       brief: work.brief,
+      outcome: { expectedOutput: work.expectedOutput ?? null, resultPath: work.resultPath ?? null, resultExists },
       decisions: this.deps.repo.listDecisions(work.id),
       documents,
       deliverables: this.existingDeliverables(directory),
