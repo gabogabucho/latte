@@ -16,6 +16,7 @@ const METHODS = [
   'updateBrand',
   'listWorks',
   'createWork',
+  'updateWork',
   'saveBrief',
   'listRevisions',
   'snapshot',

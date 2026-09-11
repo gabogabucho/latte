@@ -7,6 +7,7 @@ import type { Brand, Work, Decision, DecisionAuthorityMode, WorkPermissionMode, 
 import { api, chatStore, isDesktop } from './browser-api';
 import { DocumentsView, NewDocumentDialog } from './DocumentsView';
 import { hasMetadataDrafts } from './DocumentMetadata';
+import { hasOutcomeDrafts } from './WorkOutcome';
 import { documentDrafts } from './document-drafts';
 import { useActiveEdits } from './chat-store';
 import { SettingsScreen, type SettingsSection } from './SettingsScreen';
@@ -90,7 +91,7 @@ export function App() {
   const [endedSessions, setEndedSessions] = useState<Set<string>>(new Set());
   const sessionEnded = Boolean(session && endedSessions.has(session.id));
   const generation = useRef(0), memoryGeneration = useRef(0);
-  const dirty = profileDirty || documentDirty || documentDrafts.hasUnsaved() || hasMetadataDrafts(), contextDirty = Boolean(brand && context !== brand.context);
+  const dirty = profileDirty || documentDirty || documentDrafts.hasUnsaved() || hasMetadataDrafts() || hasOutcomeDrafts(), contextDirty = Boolean(brand && context !== brand.context);
   const selectedDocId = work ? selectedDoc[work.id] ?? null : null;
   // Who is writing to which file right now, straight from each runtime's own
   // tool reports. A write that did not come through a tool is never attributed.

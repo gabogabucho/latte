@@ -1,5 +1,5 @@
 import { translate as t } from './i18n';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Check, CircleAlert, CircleCheck, FolderCheck, FolderLock, Forward, LoaderCircle, MessageSquare, MessageSquarePlus, Pause, Play, Plug, Plus, Settings2, Trash2, UserPlus, X, Zap } from 'lucide-react';
 import type { AgentModelList, AgentRole, WorkPermissionMode, ChatRuntime, ChatSession, HandoffRequest, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
 import { api, chatStore } from './browser-api';
@@ -81,6 +81,7 @@ export function TeamPanel(props: TeamPanelProps) {
   const selectedState = useChatState(chatStore, liveChat?.id ?? null);
   const selectedLive = Boolean(liveChat) && !selectedState.closed;
   const selectedStatus: TeamMemberStatus = selectedLive ? (selectedState.status === 'idle' ? 'idle' : 'working') : selected?.status === 'ended' ? 'ended' : 'paused';
+  const activity = useTeamActivity(team, chats);
   // The first team is the empty state itself; after that, adding is a dialog.
   const firstTeam = team.length === 0 && Boolean(work);
   const showPicker = adding || firstTeam;
@@ -97,6 +98,7 @@ export function TeamPanel(props: TeamPanelProps) {
         <div className="team-tab-strip">
           {team.map(member => <MemberTab key={member.id} member={member} chat={chats[member.id] ?? null} selected={member.id === selectedId} busy={busy} onSelect={() => props.onSelect(member.id)} />)}
         </div>
+        {activity && <span className={'team-activity' + (activity.needsAttention ? ' attention' : '')} role="status" title={activity.detail}>{activity.label}</span>}
         <button className="team-tab-add" aria-label={t('ui.auto.269')} title={t('ui.auto.269')} disabled={busy || !isDesktop} onClick={() => setAdding(true)}><UserPlus size={15} /></button>
         <button className="team-tab-add" aria-label="Proveedores de IA" title="Agentes y proveedores" onClick={props.onProviders}><Settings2 size={15} /></button>
         {selected && <div className="team-tab-actions">
@@ -120,6 +122,38 @@ export function TeamPanel(props: TeamPanelProps) {
     {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} onSaveAsDocument={props.onSaveAsDocument} untracked={props.untracked} onAdoptFile={props.onAdoptFile} beforeComposer={<WorkPermissions mode={props.permissions} busy={props.permissionBusy} hasClaude={props.primaryRuntime === 'claude' || team.some(m => m.runtime === 'claude')} isDesktop={isDesktop} onChange={props.onPermissions} />} /> : <ResumeCard member={selected} origin={team.find(m => m.id === selected.continuedFrom) ?? null} busy={busy} isDesktop={isDesktop} onOpen={() => props.onOpen(selected.id)} onRestart={() => props.onRestart(selected.id)} onRemove={() => props.onRemove(selected.id)} onContinue={() => setContinuing(selected.id)} />)}
     {!showPicker && !selected && team.length > 0 && <p className="chat-empty">{t('ui.auto.279')}</p>}
   </div>;
+}
+
+/**
+ * A compact, live answer to "what is still running?". It deliberately shows
+ * activity rather than invented token/cost figures: Latte has no provider-
+ * independent cost meter yet, but it can honestly expose which conversations
+ * are spending time or waiting on the human.
+ */
+function useTeamActivity(team: TeamMember[], chats: Record<string, ChatSession>): { label: string; detail: string; needsAttention: boolean } | null {
+  const key = useSyncExternalStore(chatStore.subscribe, () => {
+    let working = 0;
+    let retrying = 0;
+    let attention = 0;
+    for (const member of team) {
+      const chat = chats[member.id];
+      if (!chat) continue;
+      const state = chatStore.get(chat.id);
+      if (state.closed) continue;
+      if (state.status === 'busy') working += 1;
+      if (state.status === 'retry') retrying += 1;
+      if (state.permissions.length > 0 || state.questions.length > 0) attention += 1;
+    }
+    return `${working}:${retrying}:${attention}`;
+  }, () => '0:0:0');
+  const [working, retrying, attention] = key.split(':').map(Number);
+  if (working === 0 && retrying === 0 && attention === 0) return null;
+  const parts = [
+    working > 0 ? t('team.activity.working', { count: working }) : null,
+    retrying > 0 ? t('team.activity.retrying', { count: retrying }) : null,
+    attention > 0 ? t('team.activity.attention', { count: attention }) : null,
+  ].filter((part): part is string => part !== null);
+  return { label: parts.join(' · '), detail: t('team.activity.detail', { parts: parts.join(', ') }), needsAttention: attention > 0 };
 }
 
 /**

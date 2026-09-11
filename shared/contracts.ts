@@ -12,8 +12,23 @@ export interface Work {
    * null means Latte keeps the work in its own data directory.
    */
   folder: string | null;
+  /**
+   * What the human expects to receive when the work is done ("PDF de dos
+   * páginas con la propuesta"). The brief stays the goal; this names the
+   * output. Absent or null: not defined, and the work behaves as before.
+   */
+  expectedOutput?: string | null;
+  /**
+   * The file the human linked as the result, relative to Deliverables
+   * (`./entregables/`), e.g. `propuesta.pdf`. Deliverables stays the only list
+   * of files: this is a pointer into it. Whether the file still exists is
+   * read from that folder, never stored.
+   */
+  resultPath?: string | null;
   updatedAt: string;
 }
+/** The outcome of a work, the only part edited through `updateWork`. Omitted = unchanged; null or '' = cleared. */
+export interface WorkPatch { expectedOutput?: string | null; resultPath?: string | null }
 /** Where a stored version came from. `external` = the file changed outside Latte; we never guess who wrote it. */
 export type RevisionSource = 'human' | 'external' | 'latte';
 export interface Revision { id: string; workId: string; documentId: string; source: RevisionSource; content: string; createdAt: string }
@@ -295,6 +310,11 @@ export interface LatteAPI {
   updateBrand(id: string, context: string): Promise<Brand>;
   listWorks(brandId: string): Promise<Work[]>;
   createWork(brandId: string, title: string): Promise<Work>;
+  /**
+   * Sets what the work should deliver and, optionally, links an existing file
+   * of Deliverables as its result. A link is refused unless the file is there.
+   */
+  updateWork(workId: string, patch: WorkPatch): Promise<Work>;
   /** Saves the work's brief document. `baseFingerprint` is the one handed out by the last read; omitting it falls back to the database copy. */
   saveBrief(workId: string, brief: string, baseFingerprint?: string | null): Promise<SaveOutcome>;
   listRevisions(workId: string): Promise<Revision[]>;

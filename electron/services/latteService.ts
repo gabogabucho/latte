@@ -48,6 +48,7 @@ import type {
   UntrackedFile,
   Work,
   WorkDocument,
+  WorkPatch,
 } from '../../shared/contracts';
 import nodeFs from 'node:fs';
 import nodePath from 'node:path';
@@ -66,11 +67,11 @@ import { RuntimeDetector } from '../runtime/detect';
 import { assertProvider } from '../runtime/providers';
 import { TerminalManager } from '../runtime/terminalManager';
 import { briefDocumentId, type DocumentRecord, type LatteRepository } from '../storage/repository';
-import { renderInstructions, type InstructionPack, type PackSkill } from '../workspace/instructions';
+import { isManagedFile, renderInstructions, renderOutcomeContext, showsCurrentOutcome, type InstructionPack, type PackSkill } from '../workspace/instructions';
 import { checkFolder, contains, importFileName, kindFromFileName, readFunnelProposal, readHandoff, scanFolder, titleFromFileName } from '../workspace/linkFolder';
 import { renderDocumentTemplate } from '../workspace/templates';
 import { openItems, renderContinuation } from '../workspace/continuation';
-import { DELIVERABLES_DIR, DeliverableFiles } from '../workspace/deliverables';
+import { DELIVERABLES_DIR, DeliverableFiles, deliverableName } from '../workspace/deliverables';
 import { documentFileName, fingerprintOf, type DocumentOnDisk, type WorkspaceFiles } from '../workspace/workspace';
 import { LIMITS, requireId, requireInt, requireLabel, requireRequestId, requireText } from './validation';
 
@@ -285,6 +286,46 @@ export class LatteService implements BackendApi {
     this.deps.files.ensureWork(id, work.id, initialDocument);
     this.refreshInstructions(brand, work);
     return work;
+  }
+
+  /**
+   * The outcome of a work: what it should deliver and which Deliverables file
+   * is its result. Brief, title and folder have their own paths and are
+   * refused here. A link must point at a file that is there now; if it goes
+   * away later, that is read from the folder, never stored as a state.
+   *
+   * Nothing is rewritten here. A conversation that opens afterwards gets the
+   * current outcome from the shared instruction files, rewritten when no other
+   * conversation of the work is live, or else in its own prompt when those
+   * frozen files do not say it. One already open keeps its starting context.
+   */
+  async updateWork(workId: string, patch: WorkPatch): Promise<Work> {
+    const id = requireId(workId, 'workId');
+    if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) throw new ValidationError('Invalid work patch');
+    const unknown = Object.keys(patch).filter((key) => key !== 'expectedOutput' && key !== 'resultPath');
+    if (unknown.length > 0) throw new ValidationError(`Only the expected output and the result can change here, not: ${unknown.join(', ')}`);
+    const work = this.syncFromDisk(this.deps.repo.getWork(id));
+    let expectedOutput = work.expectedOutput ?? null;
+    if (patch.expectedOutput !== undefined) {
+      expectedOutput = patch.expectedOutput === null ? null : requireText(patch.expectedOutput, 'Expected output', LIMITS.expectedOutput, { allowEmpty: true }).trim() || null;
+    }
+    let resultPath = work.resultPath ?? null;
+    if (patch.resultPath !== undefined) {
+      resultPath = patch.resultPath === null || patch.resultPath === '' ? null : this.existingDeliverable(id, patch.resultPath);
+    }
+    return this.deps.repo.setWorkOutcome(id, expectedOutput, resultPath, this.clock());
+  }
+
+  /** A Deliverables file that is there right now, or a message that says why it cannot be linked. */
+  private existingDeliverable(workId: string, name: unknown): string {
+    const fileName = deliverableName(name);
+    try {
+      this.deliverables(workId).resolve(fileName);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new ValidationError(`${fileName} no está en entregables/. Actualizá la lista y elegí un archivo que exista.`);
+      throw error;
+    }
+    return fileName;
   }
 
   /** Saves the work's brief document. Kept for the existing UI/API surface; it delegates to saveDocument. */
@@ -1006,7 +1047,8 @@ export class LatteService implements BackendApi {
   private memberContext(workId: string): MemberContext {
     const work = this.syncFromDisk(this.deps.repo.getWork(requireId(workId, 'workId')));
     const brand = this.deps.repo.getBrand(work.brandId);
-    if (this.deps.hub.liveMemberCount(work.id) === 0) this.refreshInstructions(brand, work);
+    const refreshed = this.deps.hub.liveMemberCount(work.id) === 0;
+    if (refreshed) this.refreshInstructions(brand, work);
     return {
       workId: work.id,
       brandId: brand.id,
@@ -1014,7 +1056,31 @@ export class LatteService implements BackendApi {
       title: `${brand.name} · ${work.title}`,
       extraEnv: { ENGRAM_PROJECT: memoryProjectFor(brand.id) },
       trustedFolder: this.folderTrust(work.id),
+      // Only to make up for shared files a live conversation keeps frozen.
+      // Just rewritten, they already carry the outcome, and a copy in the
+      // member's prompt would be paid again on every OpenCode turn.
+      outcomeContext: refreshed ? null : this.outcomeForFrozenFiles(work),
     };
+  }
+
+  /**
+   * What a conversation opening next to a live one must be told about the
+   * expected output because the frozen shared files do not say it: the
+   * current outcome when they show another one or none, a note when they
+   * still show one the human removed, and nothing when they are current.
+   * With no managed file left to read, the outcome itself, if there is one.
+   */
+  private outcomeForFrozenFiles(work: Work): string | null {
+    const exists = this.resultExists(work);
+    const dir = this.deps.files.workDir(work.brandId, work.id);
+    const managed = [WORK_FILES.claude, WORK_FILES.agents]
+      .map((name) => { try { return nodeFs.readFileSync(nodePath.join(dir, name), 'utf8'); } catch { return null; } })
+      .filter((content): content is string => content !== null && isManagedFile(content));
+    // Current only when there is a file to vouch for it: no readable managed
+    // file (deleted, or the user's own) means the prompt is the only channel.
+    if (managed.length > 0 && managed.every((content) => showsCurrentOutcome(content, work, exists))) return null;
+    // With no file left to read, none can show an outcome the human removed.
+    return renderOutcomeContext(work, exists, managed.length > 0);
   }
 
   /**
@@ -1361,6 +1427,17 @@ export class LatteService implements BackendApi {
     return this.deps.repo.updateBrief(work.id, onDisk.content, updatedAt);
   }
 
+  /** Read at render time, never stored: a linked result that vanished is a fact about the folder. */
+  private resultExists(work: Work): boolean {
+    if (!work.resultPath) return false;
+    try {
+      new DeliverableFiles(this.deps.files.workDir(work.brandId, work.id)).resolve(work.resultPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private refreshInstructions(brand: Brand, work: Work): void {
     const decisions = this.deps.repo.listDecisions(work.id);
     const records = this.deps.repo.listDocuments(work.id);
@@ -1377,6 +1454,6 @@ export class LatteService implements BackendApi {
     const storedLocale = this.deps.repo.getMeta(`work_content_locale:${work.id}`);
     const outputLanguage = storedLocale === 'en-US' ? 'en-US' : 'es-AR';
     const decisionAuthority=(this.deps.repo.getMeta('decision_authority:'+work.id) as DecisionAuthorityMode|null)??'suggest';
-    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, decisions, documents, outputLanguage, decisionAuthority, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills(), team: this.deps.hub.listTeam(work.id).map((m) => ({ roleId: m.roleId, roleName: m.roleName, status: m.status })), available: this.deps.hub.listRoles().map((r) => ({ id: r.id, name: r.name, summary: r.summary })) }));
+    this.deps.files.writeInstructions(brand.id, work.id, renderInstructions({ brand, work, resultExists: this.resultExists(work), decisions, documents, outputLanguage, decisionAuthority, pack: this.deps.pack ?? null, memoryProject: memoryProjectFor(brand.id), skills: this.enabledSkills(), team: this.deps.hub.listTeam(work.id).map((m) => ({ roleId: m.roleId, roleName: m.roleName, status: m.status })), available: this.deps.hub.listRoles().map((r) => ({ id: r.id, name: r.name, summary: r.summary })) }));
   }
 }

@@ -6,6 +6,8 @@ export const LIMITS = {
   title: 160,
   context: 60_000,
   brief: 60_000,
+  /** A description of the output, not a second brief: it rides every instruction file. */
+  expectedOutput: 2_000,
   document: 2_000_000,
   decision: 4_000,
   memory: 20_000,

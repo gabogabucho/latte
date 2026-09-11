@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS works (
   -- Absolute folder chosen by the user, or NULL for a folder Latte manages.
   dir        TEXT,
   updated_at TEXT NOT NULL
+  -- expected_output and result_path (the outcome of a work) are added by
+  -- LatteRepository.migrate(), for new and existing databases alike.
 );
 CREATE INDEX IF NOT EXISTS idx_works_brand ON works(brand_id, updated_at DESC);
 
@@ -116,4 +118,13 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `;
 
+/**
+ * Not bumped for works.expected_output / works.result_path (nor for
+ * team_members.continued_from) on purpose: nullable columns an older build
+ * simply ignores. A bump would make that older build refuse the database as
+ * "newer" (see isNewerSchema), which is the opposite of backward compatible.
+ * The outcome columns are added by migrate(), the same path for a new database
+ * and an existing one, so the works table above stays exactly what schema 7
+ * defines.
+ */
 export const SCHEMA_VERSION = '7';

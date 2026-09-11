@@ -62,6 +62,13 @@ export interface MemberContext {
   extraEnv: Record<string, string>;
   /** The human allowed reading and writing inside this work folder without asking each time. */
   trustedFolder?: boolean;
+  /**
+   * The work's expected output for this member's own prompt, set only when
+   * the shared context files are frozen by a live conversation and do not
+   * say it. Fixed for the life of the conversation. Null or absent: the
+   * files already carry what there is to know.
+   */
+  outcomeContext?: string | null;
 }
 
 export interface AddMemberInput extends MemberContext {
@@ -97,6 +104,8 @@ const MODEL_CACHE_MS = 5 * 60_000;
 export class AgentHub {
   /** Live sessions by chat id (= member id). Pruned whenever the adapter no longer owns the chat. */
   private readonly sessions = new Map<string, ChatSession>();
+  /** The outcome each live conversation opened with. A model change restarts the runtime, not the conversation, so it keeps this. */
+  private readonly openedOutcome = new Map<string, string | null>();
   private readonly modelCache = new Map<string, { at: number; value: AgentModelList }>();
   private readonly clock: () => string;
 
@@ -334,6 +343,8 @@ export class AgentHub {
     const next = model && model.trim() ? model.trim() : null;
     const live = Boolean(this.liveSession(memberId));
     if (next === (record.model ?? null)) return { member: this.describe(record), session: this.liveSession(memberId), resumed: live };
+    // Same conversation, so the same outcome it opened with, whatever the work says now.
+    const reopen: MemberContext = live ? { ...context, outcomeContext: this.openedOutcome.get(memberId) ?? null } : context;
     if (live) this.stop(memberId);
     this.deps.repo.setMemberModel(memberId, next, this.clock());
     const updated = this.deps.repo.getMember(memberId);
@@ -341,7 +352,7 @@ export class AgentHub {
     // it opens it will already be on the new model.
     if (!live) return { member: this.describe(updated), session: null, resumed: false };
     try {
-      const session = await this.open(updated, context);
+      const session = await this.open(updated, reopen);
       return { member: this.describe(this.deps.repo.getMember(memberId)), session, resumed: session.resumed };
     } catch (error) {
       // The runtime refused the model (OpenCode checks its own catalog, a CLI
@@ -349,7 +360,7 @@ export class AgentHub {
       // work, with its conversation closed, would be the worst of both: the
       // previous model is put back and the conversation reopened.
       this.deps.repo.setMemberModel(memberId, record.model ?? null, this.clock());
-      try { await this.open(this.deps.repo.getMember(memberId), context); } catch { /* reported through the original error */ }
+      try { await this.open(this.deps.repo.getMember(memberId), reopen); } catch { /* reported through the original error */ }
       throw error;
     }
   }
@@ -368,6 +379,7 @@ export class AgentHub {
   private async open(record: TeamMemberRecord, context: MemberContext): Promise<ChatSession> {
     const adapter = this.adapterFor(record.runtime);
     const label = this.labelFor(record.runtime, record.model, record.accountId);
+    const outcome = context.outcomeContext?.trim() || null;
     const adapterInput: AdapterStartInput = {
       workId: context.workId,
       chatId: record.id,
@@ -375,7 +387,8 @@ export class AgentHub {
       title: context.title,
       roleId: record.roleId,
       roleName: record.roleName,
-      instructions: this.deps.roles.promptFor(record.roleId),
+      // Every runtime takes this once, at start: the outcome is fixed for this conversation.
+      instructions: [this.deps.roles.promptFor(record.roleId), outcome].filter(Boolean).join('\n\n---\n\n'),
       previousSessionId: record.sessionId || null,
       model: record.model,
       accountId: record.accountId,
@@ -386,6 +399,7 @@ export class AgentHub {
     const result = await adapter.start(adapterInput);
     if (result.runtimeSessionId && result.runtimeSessionId !== record.sessionId) this.deps.repo.setMemberSession(record.id, result.runtimeSessionId, this.clock());
     this.sessions.set(result.session.id, result.session);
+    this.openedOutcome.set(record.id, outcome);
     return result.session;
   }
 
@@ -480,6 +494,7 @@ export class AgentHub {
 
   stop(chatId: string): void {
     this.sessions.delete(chatId);
+    this.openedOutcome.delete(chatId);
     for (const adapter of this.adapters()) {
       if (adapter.owns(chatId)) {
         adapter.stop(chatId);
@@ -490,6 +505,7 @@ export class AgentHub {
 
   shutdown(): void {
     this.sessions.clear();
+    this.openedOutcome.clear();
     for (const adapter of this.adapters()) adapter.shutdown();
   }
 

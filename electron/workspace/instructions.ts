@@ -1,7 +1,103 @@
 import type { Brand, Decision, DecisionAuthorityMode, FunnelStage, Work } from '../../shared/contracts';
 import { WORK_FILES } from '../core/paths';
+import { DELIVERABLES_DIR } from './deliverables';
 
 export const MANAGED_MARKER = '<!-- latte:managed -->';
+
+/**
+ * Formats a person names when they expect a real document, not an answer in
+ * the chat. "Word" only counts capitalised: "a 300-word summary" is a length.
+ */
+const REQUESTED_FORMATS: ReadonlyArray<{ label: string; pattern: RegExp }> = [
+  { label: 'PDF', pattern: /\bpdf\b/i },
+  { label: 'DOCX', pattern: /\bdocx\b|\bWord\b/ },
+];
+
+/** File formats the expected output asks for, in a stable order. */
+export function requestedFormats(expectedOutput: string): string[] {
+  return REQUESTED_FORMATS.filter((f) => f.pattern.test(expectedOutput)).map((f) => f.label);
+}
+
+const OUTCOME_TITLE = 'Expected output (what closes this work)';
+const MEMBER_OUTCOME_TITLE = '## Expected output of this work, as of when this conversation started';
+
+/** What closes the work, as lines. Null when the human has not said it. */
+function outcomeLines(work: Work, resultExists: boolean | undefined): string[] | null {
+  const expected = (work.expectedOutput ?? '').trim();
+  const result = work.resultPath ?? null;
+  if (expected.length === 0 && !result) return null;
+  const lines = [
+    expected.length > 0 ? expected : '_Not written yet. Ask what the concrete result should be only if that blocks you._',
+    '',
+    `- The brief (\`./${WORK_FILES.brief}\`) is the goal. This is the concrete output the human expects to receive: the work is done when it exists, not when it has been described.`,
+  ];
+  const formats = requestedFormats(expected);
+  if (formats.length > 0) {
+    lines.push(`- Asked for as ${formats.join(' and ')}. That means a real ${formats.map((f) => `.${f.toLowerCase()}`).join(' and a real ')} file in \`./${DELIVERABLES_DIR}/\`, built with a tool you actually have. Markdown with another extension, or the content pasted in the chat, is not that file. If you cannot build it, say so plainly instead of claiming it.`);
+  }
+  if (result) {
+    lines.push(resultExists === false
+      ? `- The human linked \`./${DELIVERABLES_DIR}/${result}\` as the result, but that file is not there anymore. Say so before building on it.`
+      : `- The human linked \`./${DELIVERABLES_DIR}/${result}\` as the result. A new version is a new file with a new name next to it; never replace this one without permission.`);
+  }
+  return lines;
+}
+
+/**
+ * The outcome section of the shared context files. Absent without an outcome,
+ * so a work without one renders exactly the context it always had.
+ */
+function outcomeSection(work: Work, resultExists: boolean | undefined): string | null {
+  const lines = outcomeLines(work, resultExists);
+  return lines ? section(OUTCOME_TITLE, lines.join('\n'), '') : null;
+}
+
+/** The outcome section a context file shows, exactly as rendered, or null when it shows none. */
+function fileOutcomeSection(content: string): string | null {
+  const start = content.indexOf(`## ${OUTCOME_TITLE}\n`);
+  if (start < 0) return null;
+  // Sections are joined by a blank line; the next heading closes this one.
+  const end = content.indexOf('\n## ', start + 1);
+  return end < 0 ? content.slice(start) : content.slice(start, end);
+}
+
+/**
+ * True when a context file Latte wrote already states this work's outcome as
+ * it is now, or states none when the work has none. A conversation opening
+ * on such a file needs nothing more about it in its own prompt.
+ */
+export function showsCurrentOutcome(content: string, work: Work, resultExists: boolean | undefined): boolean {
+  return fileOutcomeSection(content) === outcomeSection(work, resultExists);
+}
+
+/**
+ * The outcome for ONE conversation's own prompt, fixed when it opens.
+ *
+ * CLAUDE.md / AGENTS.md are shared by the team and never rewritten under a
+ * live session, so a conversation opened next to a live one can find them
+ * older than the work. This travels through the runtime's own prompt channel
+ * instead, and says which of the two is current. `removedFromFiles` covers the
+ * one case with nothing to state: the files still show an outcome the human
+ * took out. Null when there is nothing to say, so the prompt stays as it was.
+ */
+export function renderOutcomeContext(work: Work, resultExists: boolean | undefined, removedFromFiles = false): string | null {
+  const lines = outcomeLines(work, resultExists);
+  if (lines) {
+    return [
+      MEMBER_OUTCOME_TITLE,
+      '',
+      ...lines,
+      '',
+      `If the "Expected output" section of ./${WORK_FILES.claude} or ./${WORK_FILES.agents} differs from this, that file is older than this conversation: this one is current.`,
+    ].join('\n');
+  }
+  if (!removedFromFiles) return null;
+  return [
+    MEMBER_OUTCOME_TITLE,
+    '',
+    `None. The human removed it after ./${WORK_FILES.claude} and ./${WORK_FILES.agents} were written, so do not work towards the "Expected output" section you may find there.`,
+  ].join('\n');
+}
 
 /** The funnel, in the order a person moves through it. Mirrors FunnelStage. */
 const FUNNEL_STAGES: readonly FunnelStage[] = ['discovery', 'consideration', 'conversion', 'retention'];
@@ -57,6 +153,8 @@ export interface InstructionDocument {
 export interface InstructionsInput {
   brand: Brand;
   work: Work;
+  /** Whether the result the human linked is still in the Deliverables folder. Read by the caller, never stored. */
+  resultExists?: boolean;
   decisions: Decision[];
   /** Tracked deliverables of this work, in creation order. */
   documents?: InstructionDocument[];
@@ -141,6 +239,10 @@ export function renderInstructions(input: InstructionsInput): string {
     section('Tracked deliverables of this work', documentLines, `Only ./${WORK_FILES.brief} is tracked so far.`),
     section('Funnel coverage of this work', coverageLines, 'Nothing is tracked yet, so the funnel is empty.'),
     section(`The brief (current state of ./${WORK_FILES.brief})`, excerpt, 'The brief is still empty. Ask the human what the deliverable should be.'),
+  );
+  const outcome = outcomeSection(work, input.resultExists);
+  if (outcome) parts.push(outcome);
+  parts.push(
     section('Decisions already taken (do not reopen)', decisionLines, 'No decisions recorded yet.'),
     section('The team on this work', teamLines, 'You are the only one open on this work.'),
     section('Roles that could be called in', availableLines, 'Every shipped role is already open here.'),
@@ -162,6 +264,8 @@ export function renderInstructions(input: InstructionsInput): string {
     `- Write all human-facing answers and new deliverable content in ${input.outputLanguage === 'en-US' ? 'English (United States)' : 'Spanish (Argentina)'}. Keep file names, stage IDs, commands, code, and persisted contracts unchanged.`,
     '- Human-facing files (PDF, DOCX, XLSX, presentations, images, self-contained HTML) belong in ./entregables/. Create this ordinary directory if absent; never replace an existing file or link at that path. Keep context, instructions, handoff requests and existing tracked Markdown at their current paths. Never overwrite an existing output without permission; use a new descriptive filename.',
     '- Produce real formats only with tools actually available. Renaming Markdown to .pdf/.docx/.xlsx is not conversion. If a required tool is absent, explain the limitation and offer a real alternative. Validate the generated file before calling it ready and tell the human its relative path. Latte lists these files; it does not generate, validate, approve or version binary outputs. Prefer self-contained HTML without external assets; opening HTML is an explicit human decision.',
+    `- When a PDF or DOCX is asked for, the file is the answer, not a description of it, and it is not done until it exists in ./${DELIVERABLES_DIR}/. Do not conclude that from what you intended or planned: after writing it, check that it is there and not empty (list ./${DELIVERABLES_DIR}/ or read its size), then give its relative path. If the check fails, say so; never report a file you did not verify.`,
+    '- A deliverable file holds only the finished piece for the client: no internal reasoning, thinking notes, plans or instructions to yourself.',
     '',
     `- Each tracked file listed above is a deliverable of its own. Write in the one your task belongs to; \`./${WORK_FILES.brief}\` holds the ask, not every result.`,
     '- The human edits these same files from Latte. Re-read a file immediately before editing it and keep it valid Markdown.',

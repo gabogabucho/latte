@@ -42,6 +42,27 @@ describe('explicit browser preview', () => {
     expect((await api.listDeliverables('demo-work')).files).toEqual([]);
     await expect(api.openDeliverable('demo-work', 'propuesta.pdf')).rejects.toThrow('escritorio');
   });
+  it('keeps an expected output, and refuses to link a file it cannot see', async () => {
+    const b = await api.createBrand('Marca');
+    const w = await api.createWork(b.id, 'Uno');
+    expect((await api.updateWork(w.id, { expectedOutput: '  Un PDF con la propuesta  ' })).expectedOutput).toBe('Un PDF con la propuesta');
+    expect((await api.listWorks(b.id))[0].expectedOutput).toBe('Un PDF con la propuesta');
+    await expect(api.updateWork(w.id, { resultPath: 'propuesta.pdf' })).rejects.toThrow('escritorio');
+    expect((await api.listWorks(b.id))[0].resultPath ?? null).toBeNull();
+    await expect(api.updateWork(w.id, { brief: 'x' } as never)).rejects.toThrow();
+  });
+  it('clears a link only with null or empty text, like the desktop', async () => {
+    const b = await api.createBrand('Marca');
+    const w = await api.createWork(b.id, 'Uno');
+    await api.updateWork(w.id, { expectedOutput: 'Un PDF' });
+    // Falsy is not "clear": false and 0 are refused, and nothing in the patch is applied.
+    for (const bad of [false, 0]) {
+      await expect(api.updateWork(w.id, { expectedOutput: 'Otro', resultPath: bad } as never)).rejects.toThrow(/inválido/);
+    }
+    expect((await api.listWorks(b.id))[0].expectedOutput).toBe('Un PDF');
+    expect((await api.updateWork(w.id, { resultPath: null })).resultPath).toBeNull();
+    expect((await api.updateWork(w.id, { resultPath: '' })).resultPath).toBeNull();
+  });
 });
 
 describe('marketing preview parity',()=>{

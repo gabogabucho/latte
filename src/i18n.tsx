@@ -123,6 +123,10 @@ const es = {
   'continue.from': 'Continúa el trabajo de {role}',
   'continue.sent': '{role} recibió el traspaso. La conversación de {source} sigue igual.',
   'continue.sendFailed': 'Se creó {role}, pero el traspaso no se pudo enviar: quedó en su cuadro de mensaje. {message}',
+  'team.activity.working': '{count} trabajando',
+  'team.activity.retrying': '{count} reintentando',
+  'team.activity.attention': '{count, plural, one {# necesita tu atención} other {# necesitan tu atención}}',
+  'team.activity.detail': 'Agentes activos: {parts}. Latte no estima costos todavía.',
   ...generatedEs,
 } as const;
 
@@ -229,6 +233,10 @@ const en: Record<MessageKey, string> = {
   'continue.from': 'Continues the work of {role}',
   'continue.sent': '{role} received the hand-over. The {source} conversation is unchanged.',
   'continue.sendFailed': '{role} was created, but the hand-over could not be sent: it is waiting in its message box. {message}',
+  'team.activity.working': '{count} working',
+  'team.activity.retrying': '{count} retrying',
+  'team.activity.attention': '{count, plural, one {# needs your attention} other {# need your attention}}',
+  'team.activity.detail': 'Active agents: {parts}. Latte does not estimate costs yet.',
   ...generatedEn,
 };
 export const catalogs: Record<UiLocale, Record<MessageKey, string>> = { 'es-AR': es, 'en-US': en };

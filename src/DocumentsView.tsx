@@ -11,6 +11,7 @@ import { FunnelView } from './FunnelView';
 import { useDocumentStates } from './document-states';
 import { DocumentMetadata, hasMetadataDrafts } from './DocumentMetadata';
 import { documentDrafts } from './document-drafts';
+import { WorkOutcome, hasOutcomeDrafts, isWorkBrief } from './WorkOutcome';
 
 const KIND_LABEL: Record<DocumentKind, string> = new Proxy({} as Record<DocumentKind,string>, { get: (_, key: DocumentKind) => t(`kind.${key}` as 'kind.brief') });
 const KIND_HINT: Record<DocumentKind, string> = new Proxy({} as Record<DocumentKind,string>, { get: (_, key: DocumentKind) => t(`kindHint.${key}` as 'kindHint.brief') });
@@ -119,7 +120,9 @@ export function DocumentsView(props: DocumentsViewProps) {
     void load(selected.id);
   }, [selected?.id]);
   useEffect(() => { setOrganizing(false); }, [selected?.id]);
-  useEffect(() => { props.onDirtyChange(Boolean(editing?.dirty) || hasMetadataDrafts()); }, [editing?.dirty]);
+  // Editor text, document metadata and the work's expected output are all unsaved work.
+  const reportDirty = (extra: boolean) => props.onDirtyChange(extra || Boolean(editing?.dirty) || hasMetadataDrafts() || hasOutcomeDrafts());
+  useEffect(() => { reportDirty(false); }, [editing?.dirty]);
 
   // Bounded polling instead of a filesystem watcher: one cheap fingerprint read
   // for the open document, only while the window is focused. Survives atomic
@@ -240,7 +243,9 @@ export function DocumentsView(props: DocumentsViewProps) {
       </div>
     </div>}
 
-    {selected && organizing && <DocumentMetadata key={selected.id} document={selected} onChanged={props.onDocumentsChanged} onError={props.onError} onDirtyChange={dirty=>props.onDirtyChange(dirty||Boolean(editing?.dirty)||hasMetadataDrafts())}/>}
+    {selected && organizing && <DocumentMetadata key={selected.id} document={selected} onChanged={props.onDocumentsChanged} onError={props.onError} onDirtyChange={reportDirty}/>}
+
+    {selected && isWorkBrief(selected) && <WorkOutcome key={work.id} work={work} busy={props.busy} onUpdated={props.onWorkUpdated} onNotice={props.onNotice} onError={props.onError} onDirtyChange={reportDirty} />}
 
     {selected && selected.proposedFunnelStages.length > 0 && <div className="doc-banner proposal" role="status">
       <SlidersHorizontal size={14} />

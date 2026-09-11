@@ -56,6 +56,17 @@ export const browserAPI: LatteAPI = {
   updateBrand: async (brandId, context) => change(s => { const b = s.brands.find(b => b.id === brandId)!; b.context = context; return b; }),
   listWorks: async brandId => read().works.filter(w => w.brandId === brandId),
   createWork: async (brandId, title) => change(s => { const english = localStorage.getItem('latte-content-locale') === 'en-US'; const headings = english ? '\n\n## Goal\n\n## Context\n\n## Next steps\n' : '\n\n## Objetivo\n\n## Contexto\n\n## Próximos pasos\n'; const w: Work = { id: id(), brandId, title, brief: '# ' + title + headings, folder: null, updatedAt: now() }; s.works.push(w); return w; }),
+  // The expected output is real here; a linked result is not: the preview has
+  // no Deliverables folder, so it refuses the link instead of faking a file.
+  updateWork: async (workId, patch) => change(s => {
+    const w = s.works.find(w => w.id === workId); if (!w) throw new Error('Trabajo no encontrado');
+    if (Object.keys(patch).some(k => k !== 'expectedOutput' && k !== 'resultPath')) throw new Error('Solo cambian el resultado esperado y el entregable vinculado');
+    // Same contract as desktop: only null or '' clears; anything else must be a file name, and the preview has none to link.
+    if (patch.resultPath !== undefined && patch.resultPath !== null && patch.resultPath !== '') throw new Error(typeof patch.resultPath === 'string' ? 'Vincular un entregable requiere la aplicación de escritorio. Esta vista es una previsualización local.' : 'Nombre de entregable inválido');
+    if (patch.expectedOutput !== undefined) { if (patch.expectedOutput !== null && (typeof patch.expectedOutput !== 'string' || patch.expectedOutput.length > 2000)) throw new Error('Resultado esperado inválido'); w.expectedOutput = patch.expectedOutput?.trim() || null; }
+    if (patch.resultPath !== undefined) w.resultPath = null;
+    w.updatedAt = now(); return w;
+  }),
   saveBrief: async (workId, brief, baseFingerprint) => browserAPI.saveDocument(previewDocId(workId),brief,baseFingerprint??null),
   listRevisions: async workId => read().revisions.filter(r=>r.workId===workId).reverse(),
   listDocuments: async workId => normalized().documents.filter(d=>d.workId===workId),
