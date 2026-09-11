@@ -343,6 +343,27 @@ export function App() {
     setHandoffs(await api.listHandoffs(work.id).catch(() => []));
     setNotice(t('ui.auto.343', { p0: handoff.roleName }));
   });
+  /**
+   * Continues a member's work with another agent or account. A NEW member is
+   * created and the hand-over the human just reviewed is its first message:
+   * they read and edited it in the dialog, so sending it is what they asked
+   * for. The source is never paused, restarted or moved to another account.
+   * Rejects when nothing was created, so the dialog keeps the edited text; if
+   * only the send fails, the text waits in the new member's composer.
+   */
+  const continueMember = async (sourceId: string, roleId: string, options: TeamMemberOptions | null, text: string) => {
+    if (!work || startingChat) return;
+    const source = team.find(m => m.id === sourceId);
+    const session = await openSession(() => api.addTeamMember(work.id, roleId, { ...(options ?? {}), continuedFrom: sourceId }), work.id);
+    setLayout('conversation'); setView('brief');
+    try {
+      await api.sendChat(session.id, text);
+      setNotice(t('continue.sent', { role: session.roleName, source: source?.roleName ?? '' }));
+    } catch (e) {
+      chatStore.setDraft(session.id, text);
+      setError(t('continue.sendFailed', { role: session.roleName, message: displayError(e) }));
+    }
+  };
   const dismissHandoff = (handoff: HandoffRequest) => run(async () => {
     if (!work) return;
     await api.dismissHandoff(work.id, handoff.fileName);
@@ -410,7 +431,7 @@ export function App() {
       <div className="document-footer"><span><FileText size={13} />{work ? t('ui.auto.352', { p0: documents.length, p1: documents.length === 1 ? '' : 's' }) : t('ui.auto.065')}</span><span>{work ? date(work.updatedAt) : 'An Agent Marketing Platform'}</span></div>
     </main>
     <aside className="agent-panel">{focusChat && (error || notice) && <div role={error ? 'alert' : 'status'} className={'message ' + (error ? 'error' : '')}><span>{error || notice}</span><button aria-label={t('ui.auto.044')} onClick={() => { setError(''); setNotice(''); }}><X size={16} /></button></div>}<button type="button" className={'panel-resizer' + (dragging ? ' dragging' : '')} aria-label={t('ui.auto.066')} title={t('ui.auto.067')} onPointerDown={startResize} />
-      <TeamPanel work={work} team={team} chats={chats} selectedId={selectedMemberId} roles={roles} primaryLabel={primaryLabel} primaryDetail={primaryDetail} primaryReady={primaryReady} checking={checkingAgents} choices={runtimeChoices} busy={busy || startingChat} isDesktop={isDesktop} onSelect={selectMember} onAdd={addMember} onOpen={openMember} onPause={pauseMember} onFinish={finishMember} onRestart={restartMember} onRemove={removeMember} onModel={setMemberModel} handoffs={handoffs} onAcceptHandoff={acceptHandoff} onDismissHandoff={dismissHandoff} onSaveAsDocument={saveAnswerAsDocument} untracked={untracked.map(f => f.fileName)} onAdoptFile={fileName => void trackFile(fileName)} primaryRuntime={primaryRuntime} permissions={permissions} permissionBusy={permissionBusy} onPermissions={changePermissions} onProviders={() => setSettings('agents')} onRecheck={() => void refreshChatStatus()} onError={setError} />
+      <TeamPanel work={work} team={team} chats={chats} selectedId={selectedMemberId} roles={roles} primaryLabel={primaryLabel} primaryDetail={primaryDetail} primaryReady={primaryReady} checking={checkingAgents} choices={runtimeChoices} busy={busy || startingChat} isDesktop={isDesktop} onSelect={selectMember} onAdd={addMember} onOpen={openMember} onPause={pauseMember} onFinish={finishMember} onRestart={restartMember} onContinue={continueMember} onRemove={removeMember} onModel={setMemberModel} handoffs={handoffs} onAcceptHandoff={acceptHandoff} onDismissHandoff={dismissHandoff} onSaveAsDocument={saveAnswerAsDocument} untracked={untracked.map(f => f.fileName)} onAdoptFile={fileName => void trackFile(fileName)} primaryRuntime={primaryRuntime} primaryAccountId={primary?.accountId ?? null} primaryModel={primary?.model ?? null} permissions={permissions} permissionBusy={permissionBusy} onPermissions={changePermissions} onProviders={() => setSettings('agents')} onRecheck={() => void refreshChatStatus()} onError={setError} />
       <details className="active-context">
         <summary><Bookmark size={12} />{t('ui.auto.035')}<span>{[brand?.context ? 'marca' : null, work ? 'trabajo' : null, decisions.length ? `${decisions.length} decisiones` : null].filter(Boolean).join(' · ') || t('ui.auto.068')}</span></summary>
         <div className="active-context-body">

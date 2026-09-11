@@ -519,3 +519,16 @@ html,body,#root{height:100%;overflow:hidden}
 .permission-modes small{display:block;font-size:10px;line-height:1.6;color:var(--muted);margin-top:3px}
 .permission-warning,.permission-preview{margin:0 8px 8px!important;padding:7px 8px;border-radius:5px;background:rgba(200,140,80,.1)}
 .permission-warning{margin:0 8px 8px;font-size:10px;line-height:1.6;color:#d99a6c}
+.modal.continuation{width:760px}
+.continuation-pickers{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:12px}
+.continuation-pickers label{display:flex;flex-direction:column;min-width:0}
+.continuation-pickers .field-label{margin:0 0 6px}
+.continuation-pickers select{width:100%}
+.continuation .field-label[for]{margin:14px 0 6px}
+.continuation-text{width:100%;min-height:320px;font-size:12px;line-height:1.6}
+.continuation-block{display:flex;flex-direction:column;gap:4px;font-size:11.5px;line-height:1.6;color:#91462e;background:#f5e3d8;border:1px solid #e9c7b5;border-radius:5px;padding:10px 12px;margin:4px 0 10px}
+.continuation-block>span{display:flex;align-items:flex-start;gap:8px}
+.continuation-block>span svg{flex-shrink:0;margin-top:3px}
+.continuation .chat-card-actions .subtle{margin-top:0}
+.team-resume h3 small+small{margin-top:3px}
+.continuation .runtime-detail{display:block;margin:0 0 10px}

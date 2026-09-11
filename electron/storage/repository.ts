@@ -10,7 +10,7 @@ interface RevisionRow extends SqlRow { id: string; work_id: string; document_id:
 interface DecisionRow extends SqlRow { id: string; work_id: string; text: string; created_at: string }
 interface DecisionProposalRow extends SqlRow { id:string; work_id:string; statement:string; rationale:string; alternatives:string; evidence:string; status:string; source_chat_id:string|null; source_message_id:string|null; source_member_id:string|null; source_role_id:string|null; source_runtime:string|null; client_request_id:string; fingerprint:string; created_at:string; decided_at:string|null }
 interface DocumentRow extends SqlRow { id: string; work_id: string; kind: string; title: string; file_name: string; status: string; funnel_stages: string; proposed_stages: string; base_doc_id: string | null; base_rev_id: string | null; base_print: string | null; last_print: string | null; created_at: string; updated_at: string }
-interface MemberRow extends SqlRow { id: string; work_id: string; role_id: string; role_name: string; initial: string; runtime: string; model: string | null; account_id: string | null; session_id: string; done: number; created_at: string; updated_at: string }
+interface MemberRow extends SqlRow { id: string; work_id: string; role_id: string; role_name: string; initial: string; runtime: string; model: string | null; account_id: string | null; session_id: string; done: number; continued_from: string | null; created_at: string; updated_at: string }
 
 /** Persisted part of a tracked document. Titles and status are UI-facing; the file name is Latte-generated. */
 export interface DocumentRecord {
@@ -45,6 +45,8 @@ export interface TeamMemberRecord {
   /** Runtime-native id for resume; empty until the runtime reveals it. */
   sessionId: string;
   done: boolean;
+  /** Member this one continues. Optional on insert: most members start from scratch. */
+  continuedFrom?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -93,6 +95,7 @@ const toMember = (r: MemberRow): TeamMemberRecord => ({
   accountId: r.account_id,
   sessionId: r.session_id,
   done: r.done === 1,
+  continuedFrom: r.continued_from ?? null,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -146,6 +149,10 @@ export class LatteRepository {
     const revisionColumns = this.db.all<{ name: string }>("SELECT name FROM pragma_table_info('revisions')").map((c) => c.name);
     if (revisionColumns.length > 0 && !revisionColumns.includes('document_id')) this.db.run('ALTER TABLE revisions ADD COLUMN document_id TEXT');
     if (revisionColumns.length > 0 && !revisionColumns.includes('source')) this.db.run("ALTER TABLE revisions ADD COLUMN source TEXT NOT NULL DEFAULT 'human'");
+    // Nullable and ignored by older builds (they name their columns on insert),
+    // so, like proposed_stages, it needs no schema version of its own.
+    const memberColumns = this.db.all<{ name: string }>("SELECT name FROM pragma_table_info('team_members')").map((c) => c.name);
+    if (memberColumns.length > 0 && !memberColumns.includes('continued_from')) this.db.run('ALTER TABLE team_members ADD COLUMN continued_from TEXT');
     // v1/v2 kept one runtime session per work in chat_sessions. v3 models a
     // team: every conversation is a member with a role. Old sessions become
     // "assistant" members so nothing already resumable is lost.
@@ -389,10 +396,10 @@ export class LatteRepository {
 
   insertMember(member: TeamMemberRecord): TeamMemberRecord {
     this.db.run(
-      'INSERT INTO team_members(id, work_id, role_id, role_name, initial, runtime, model, account_id, session_id, done, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [member.id, member.workId, member.roleId, member.roleName, member.initial, member.runtime, member.model, member.accountId, member.sessionId, member.done ? 1 : 0, member.createdAt, member.updatedAt],
+      'INSERT INTO team_members(id, work_id, role_id, role_name, initial, runtime, model, account_id, session_id, done, continued_from, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [member.id, member.workId, member.roleId, member.roleName, member.initial, member.runtime, member.model, member.accountId, member.sessionId, member.done ? 1 : 0, member.continuedFrom ?? null, member.createdAt, member.updatedAt],
     );
-    return member;
+    return { ...member, continuedFrom: member.continuedFrom ?? null };
   }
 
   /** Runtime-native session/thread id learned at start or, for Claude, with the first reply. */

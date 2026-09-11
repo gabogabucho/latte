@@ -95,6 +95,7 @@ const METHODS = [
   'finishTeamMember',
   'restartTeamMember',
   'removeTeamMember',
+  'draftContinuation',
 ];
 
 const AGENT_EVENT_CHANNEL = 'latte:agent-event';

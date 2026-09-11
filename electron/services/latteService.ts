@@ -20,6 +20,7 @@ import type {
   ChatRuntime,
   ChatRuntimeStatus,
   ChatSession,
+  ContinuationDraft,
   Decision,
   DecisionAuthorityMode,
   DecisionProposalInput,
@@ -53,7 +54,7 @@ import nodePath from 'node:path';
 import { createHash } from 'node:crypto';
 import { writeFileAtomic } from '../core/atomicFile';
 import { UnavailableError, ValidationError } from '../core/errors';
-import { newId, nowIso, slugify } from '../core/ids';
+import { isValidId, newId, nowIso, slugify } from '../core/ids';
 import { WORK_FILES } from '../core/paths';
 import { EngramClient, memoryProjectFor } from '../memory/engram';
 import { AccountStore } from '../agents/accounts';
@@ -68,7 +69,8 @@ import { briefDocumentId, type DocumentRecord, type LatteRepository } from '../s
 import { renderInstructions, type InstructionPack, type PackSkill } from '../workspace/instructions';
 import { checkFolder, contains, importFileName, kindFromFileName, readFunnelProposal, readHandoff, scanFolder, titleFromFileName } from '../workspace/linkFolder';
 import { renderDocumentTemplate } from '../workspace/templates';
-import { DeliverableFiles } from '../workspace/deliverables';
+import { openItems, renderContinuation } from '../workspace/continuation';
+import { DELIVERABLES_DIR, DeliverableFiles } from '../workspace/deliverables';
 import { documentFileName, fingerprintOf, type DocumentOnDisk, type WorkspaceFiles } from '../workspace/workspace';
 import { LIMITS, requireId, requireInt, requireLabel, requireRequestId, requireText } from './validation';
 
@@ -163,16 +165,18 @@ function requireProviderId(value: unknown): string {
 }
 
 /** Advanced overrides for a new member; every field is optional and strictly typed. */
-function validateMemberOptions(options: unknown): { runtime: ChatRuntime | null; model: string | null; accountId: string | null } {
+function validateMemberOptions(options: unknown): { runtime: ChatRuntime | null; model: string | null; accountId: string | null; continuedFrom: string | null } {
   if (typeof options !== 'object' || options === null || Array.isArray(options)) throw new TypeError('Invalid options');
-  const { runtime, model, accountId } = options as Record<string, unknown>;
+  const { runtime, model, accountId, continuedFrom } = options as Record<string, unknown>;
   const cleanRuntime = runtime === undefined || runtime === null ? null : runtime;
   if (cleanRuntime !== null && !isChatRuntime(cleanRuntime)) throw new TypeError('Unknown runtime');
   const cleanModel = model === undefined || model === null ? null : model;
   if (cleanModel !== null && (typeof cleanModel !== 'string' || cleanModel.length === 0 || cleanModel.length > 200 || /[\s\0]/.test(cleanModel))) throw new TypeError('Invalid model id');
   const cleanAccount = accountId === undefined || accountId === null ? null : accountId;
   if (cleanAccount !== null && !AccountStore.isValidId(cleanAccount)) throw new TypeError('Invalid account id');
-  return { runtime: cleanRuntime, model: cleanModel as string | null, accountId: cleanAccount as string | null };
+  const cleanOrigin = continuedFrom === undefined || continuedFrom === null ? null : continuedFrom;
+  if (cleanOrigin !== null && !isValidId(cleanOrigin)) throw new TypeError('Invalid member id');
+  return { runtime: cleanRuntime, model: cleanModel as string | null, accountId: cleanAccount as string | null, continuedFrom: cleanOrigin as string | null };
 }
 
 /**
@@ -899,7 +903,11 @@ export class LatteService implements BackendApi {
   async addTeamMember(workId: string, roleId: string, options: TeamMemberOptions | null = null): Promise<ChatSession> {
     if (!RoleCatalog.isValidId(roleId)) throw new TypeError('Invalid role id');
     const overrides = validateMemberOptions(options ?? {});
-    return this.deps.hub.addMember({ ...this.memberContext(workId), roleId, ...overrides });
+    const id = requireId(workId, 'workId');
+    // A continuation only points at its origin, and only within the same work:
+    // the origin's conversation, runtime and account are never touched.
+    if (overrides.continuedFrom !== null && this.deps.repo.findMember(overrides.continuedFrom)?.workId !== id) throw new ValidationError('El miembro que se continúa no es de este trabajo');
+    return this.deps.hub.addMember({ ...this.memberContext(id), roleId, ...overrides });
   }
 
   async openTeamMember(memberId: string): Promise<ChatSession> {
@@ -918,6 +926,62 @@ export class LatteService implements BackendApi {
   /** Starts this member's conversation over. The member, its role and its runtime stay. */
   async restartTeamMember(memberId: string): Promise<TeamMember> {
     return this.deps.hub.restartMember(requireId(memberId, 'memberId'));
+  }
+
+  /**
+   * The hand-over for continuing a member's work with another agent or
+   * account, assembled from what Latte already keeps: the brief, the decision
+   * log, the tracked documents, the folder and whatever the runtime exposes of
+   * the conversation. No model summarises anything, so the same records give
+   * the same text; the human edits it before it is sent.
+   *
+   * A read, never a change: the member keeps its conversation, session,
+   * account and status. Nothing is written as a new document either — files
+   * are named, not pasted, and the conversation is quoted, not copied.
+   */
+  async draftContinuation(memberId: string): Promise<ContinuationDraft> {
+    const member = this.deps.hub.getMember(requireId(memberId, 'memberId'));
+    const work = this.syncFromDisk(this.deps.repo.getWork(member.workId));
+    const brand = this.deps.repo.getBrand(work.brandId);
+    const directory = this.deps.files.workDir(work.brandId, work.id);
+    const records = this.deps.repo.listDocuments(work.id);
+    const byId = new Map(records.map((r) => [r.id, r]));
+    const documents = records.map((r) => ({
+      fileName: r.fileName,
+      title: r.title,
+      kind: r.kind,
+      status: r.status,
+      baseFileName: r.baseDocumentId ? byId.get(r.baseDocumentId)?.fileName ?? null : null,
+      baseOutdated: this.isBaseOutdated(r),
+      proposalPending: r.proposedFunnelStages.length > 0,
+      openItems: openItems(this.deps.files.readDocument(work.brandId, work.id, r.fileName).content),
+    }));
+    const asks = await this.listHandoffs(work.id);
+    const askFiles = new Set(asks.map((a) => a.fileName));
+    const untracked = (await this.listUntrackedFiles(work.id)).map((f) => f.fileName).filter((name) => !askFiles.has(name));
+    const storedLocale = this.deps.repo.getMeta(`work_content_locale:${work.id}`);
+    const text = renderContinuation({
+      locale: storedLocale === 'en-US' ? 'en-US' : 'es-AR',
+      brandName: brand.name,
+      workTitle: work.title,
+      directory,
+      ownFolder: work.folder !== null,
+      source: { memberId: member.id, roleName: member.roleName, label: member.label, runtime: member.runtime, working: member.status === 'working' },
+      brief: work.brief,
+      decisions: this.deps.repo.listDecisions(work.id),
+      documents,
+      deliverables: this.existingDeliverables(directory),
+      conversation: this.deps.hub.recentMessages(member.id),
+      untracked,
+      asks: asks.map((a) => ({ roleName: a.roleName, request: a.request })),
+    });
+    return { sourceMemberId: member.id, text };
+  }
+
+  /** Names in ./entregables/, without creating the folder just to look inside. */
+  private existingDeliverables(directory: string): string[] {
+    if (!nodeFs.existsSync(nodePath.join(directory, DELIVERABLES_DIR))) return [];
+    try { return new DeliverableFiles(directory).list().files.map((f) => f.fileName); } catch { return []; }
   }
 
   /** Changes this conversation's model, resuming what was already said. */

@@ -102,6 +102,9 @@ CREATE TABLE IF NOT EXISTS team_members (
   account_id TEXT,
   session_id TEXT NOT NULL DEFAULT '',
   done       INTEGER NOT NULL DEFAULT 0,
+  -- Member of the same work this one continues. A plain reference, not a key:
+  -- removing the origin later leaves the continuation standing.
+  continued_from TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

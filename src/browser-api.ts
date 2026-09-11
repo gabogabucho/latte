@@ -120,7 +120,7 @@ listHandoffs:async()=>[],dismissHandoff:unavailable,listSkills:async()=>[],setSk
   listRoles: async()=> (await browserAPI.listProfiles()).map(({id,name,initial,summary,builtin})=>({id,name,initial,summary,builtin})),
   listProfiles:async()=>[...builtinProfiles,...normalized().profiles],
   saveProfile:async(input,expectedFingerprint)=>mutate(s=>{validateProfile(input);if(shippedRoles.some(r=>r.id===input.id))throw new Error('Los perfiles incluidos son de solo lectura');const existing=s.profiles.find(p=>p.id===input.id);if(expectedFingerprint===null?Boolean(existing):!existing||existing.fingerprint!==expectedFingerprint)throw new Error('El perfil cambió o ya existe. Tu borrador sigue intacto; recargá antes de reintentar.');const p:AgentProfile={...input,builtin:false,source:'custom',directory:null,fingerprint:id()};s.profiles=s.profiles.filter(p=>p.id!==input.id);s.profiles.push(p);return p;}),
-  listTeam: async () => [], addTeamMember: unavailable, openTeamMember: unavailable, pauseTeamMember: unavailable, finishTeamMember: unavailable, restartTeamMember: unavailable, removeTeamMember: unavailable, setTeamMemberModel: unavailable,
+  listTeam: async () => [], addTeamMember: unavailable, openTeamMember: unavailable, pauseTeamMember: unavailable, finishTeamMember: unavailable, restartTeamMember: unavailable, removeTeamMember: unavailable, setTeamMemberModel: unavailable, draftContinuation: unavailable,
   // The web preview is always whatever ohmylatte.app is serving: there is
   // nothing to download and nothing to restart.
   checkForUpdate: async () => ({ phase: 'unsupported' as const, version: null, percent: 0, message: 'Esta es la vista previa web: se actualiza sola al recargar la página.' }),

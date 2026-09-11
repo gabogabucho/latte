@@ -1,11 +1,12 @@
 import { translate as t } from './i18n';
 import { useEffect, useState } from 'react';
-import { Check, CircleCheck, FolderCheck, FolderLock, LoaderCircle, MessageSquare, MessageSquarePlus, Pause, Play, Plug, Plus, Settings2, Trash2, UserPlus, X, Zap } from 'lucide-react';
+import { Check, CircleAlert, CircleCheck, FolderCheck, FolderLock, Forward, LoaderCircle, MessageSquare, MessageSquarePlus, Pause, Play, Plug, Plus, Settings2, Trash2, UserPlus, X, Zap } from 'lucide-react';
 import type { AgentModelList, AgentRole, WorkPermissionMode, ChatRuntime, ChatSession, HandoffRequest, TeamMember, TeamMemberOptions, TeamMemberStatus, Work } from '../shared/contracts';
 import { api, chatStore } from './browser-api';
 import { ChatPane } from './ChatPane';
 import { useChatState } from './chat-store';
 import { canChangePermission } from './permission-ux';
+import { continuationModel, continuationOptions, type ContinuationTarget } from './provider-models';
 
 /** A runtime the user can pick for a new member instead of the primary agent. */
 export interface RuntimeChoice { key: string; label: string; runtime: ChatRuntime; accountId: string | null }
@@ -24,6 +25,10 @@ export interface TeamPanelProps {
   checking: boolean;
   /** Runtime the primary agent uses; the folder grant only changes anything for Claude. */
   primaryRuntime: ChatRuntime;
+  /** Account of the primary agent, so a continuation can default to a different one. */
+  primaryAccountId: string | null;
+  /** Model saved for the primary agent: where a continuation on it starts when the source ran on another runtime. */
+  primaryModel: string | null;
   choices: RuntimeChoice[];
   busy: boolean;
   isDesktop: boolean;
@@ -33,6 +38,8 @@ export interface TeamPanelProps {
   onPause: (memberId: string) => Promise<void>;
   onFinish: (memberId: string) => Promise<void>;
   onRestart: (memberId: string) => Promise<void>;
+  /** Creates a member that continues another one, with the reviewed hand-over as its first message. Rejects when nothing was created. */
+  onContinue: (sourceId: string, roleId: string, options: TeamMemberOptions | null, text: string) => Promise<void>;
   /** Roles one agent asked for; the human decides whether any conversation opens. */
   handoffs: HandoffRequest[];
   onAcceptHandoff: (handoff: HandoffRequest) => Promise<void>;
@@ -65,8 +72,11 @@ const RUNTIME_SHORT: Record<ChatRuntime, string> = { opencode: 'OpenCode', claud
 export function TeamPanel(props: TeamPanelProps) {
   const { work, team, chats, selectedId, roles, busy, isDesktop } = props;
   const [adding, setAdding] = useState(false);
-  useEffect(() => { setAdding(false); }, [work?.id]);
+  // Member whose work is being handed over; the dialog stays tied to it.
+  const [continuing, setContinuing] = useState<string | null>(null);
+  useEffect(() => { setAdding(false); setContinuing(null); }, [work?.id]);
   const selected = team.find(m => m.id === selectedId) ?? null;
+  const continuingMember = team.find(m => m.id === continuing) ?? null;
   const liveChat = selected ? chats[selected.id] ?? null : null;
   const selectedState = useChatState(chatStore, liveChat?.id ?? null);
   const selectedLive = Boolean(liveChat) && !selectedState.closed;
@@ -91,6 +101,7 @@ export function TeamPanel(props: TeamPanelProps) {
         <button className="team-tab-add" aria-label="Proveedores de IA" title="Agentes y proveedores" onClick={props.onProviders}><Settings2 size={15} /></button>
         {selected && <div className="team-tab-actions">
           <ModelPicker member={selected} busy={busy} onModel={props.onModel} />
+          <button className="icon-button" aria-label={t('continue.action')} title={t('continue.actionHelp')} disabled={busy || !isDesktop} onClick={() => setContinuing(selected.id)}><Forward size={13} /></button>
           {selectedLive && <button className="icon-button" aria-label={t('ui.auto.087')} title={t('ui.auto.270')} disabled={busy} onClick={() => void props.onPause(selected.id)}><Pause size={13} /></button>}
           {selectedStatus !== 'ended' && <button className="icon-button" aria-label="Marcar como finalizado" title={t('ui.auto.271')} disabled={busy} onClick={() => void props.onFinish(selected.id)}><CircleCheck size={13} /></button>}
           <button className="icon-button" aria-label={t('ui.auto.272')} title={t('ui.auto.273')} disabled={busy} onClick={() => { if (window.confirm(t('ui.auto.401', { p0: selected.roleName, p1: selected.roleName }))) void props.onRestart(selected.id); }}><MessageSquarePlus size={13} /></button>
@@ -104,8 +115,9 @@ export function TeamPanel(props: TeamPanelProps) {
         <div className="modal-head"><div><div className="document-kicker">{t('ui.auto.076')}</div><h2 id="add-member-title">{t('ui.auto.275')}</h2></div><button className="modal-close" aria-label={t('ui.auto.001')} onClick={() => setAdding(false)}><X size={20} /></button></div>
         <div className="modal-body"><RolePicker roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryDetail={props.primaryDetail} primaryReady={props.primaryReady} checking={props.checking} busy={busy} isDesktop={isDesktop} canCancel={false} onCancel={() => setAdding(false)} onProviders={props.onProviders} onRecheck={props.onRecheck} onAdd={async (roleId, options) => { await props.onAdd(roleId, options); setAdding(false); }} /></div>
       </section></div>}
+    {continuingMember && <ContinueDialog source={continuingMember} roles={roles} choices={props.choices} primaryLabel={props.primaryLabel} primaryReady={props.primaryReady} primaryRuntime={props.primaryRuntime} primaryAccountId={props.primaryAccountId} primaryModel={props.primaryModel} checking={props.checking} busy={busy} isDesktop={isDesktop} onClose={() => setContinuing(null)} onProviders={props.onProviders} onRecheck={props.onRecheck} onContinue={async (roleId, options, text) => { await props.onContinue(continuingMember.id, roleId, options, text); setContinuing(null); }} />}
     {!work && <div className="agent-idle"><div className="agent-symbol"><MessageSquare size={27} /></div><h3>{t('ui.auto.276')}<br />{t('ui.auto.277')}</h3><p className="footnote">{t('ui.auto.278')}</p></div>}
-    {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} onSaveAsDocument={props.onSaveAsDocument} untracked={props.untracked} onAdoptFile={props.onAdoptFile} beforeComposer={<WorkPermissions mode={props.permissions} busy={props.permissionBusy} hasClaude={props.primaryRuntime === 'claude' || team.some(m => m.runtime === 'claude')} isDesktop={isDesktop} onChange={props.onPermissions} />} /> : <ResumeCard member={selected} busy={busy} onOpen={() => props.onOpen(selected.id)} onRestart={() => props.onRestart(selected.id)} onRemove={() => props.onRemove(selected.id)} />)}
+    {!showPicker && selected && (liveChat ? <ChatPane key={liveChat.id} session={liveChat} onStop={() => void props.onPause(selected.id)} onError={props.onError} onSaveAsDocument={props.onSaveAsDocument} untracked={props.untracked} onAdoptFile={props.onAdoptFile} beforeComposer={<WorkPermissions mode={props.permissions} busy={props.permissionBusy} hasClaude={props.primaryRuntime === 'claude' || team.some(m => m.runtime === 'claude')} isDesktop={isDesktop} onChange={props.onPermissions} />} /> : <ResumeCard member={selected} origin={team.find(m => m.id === selected.continuedFrom) ?? null} busy={busy} isDesktop={isDesktop} onOpen={() => props.onOpen(selected.id)} onRestart={() => props.onRestart(selected.id)} onRemove={() => props.onRemove(selected.id)} onContinue={() => setContinuing(selected.id)} />)}
     {!showPicker && !selected && team.length > 0 && <p className="chat-empty">{t('ui.auto.279')}</p>}
   </div>;
 }
@@ -194,14 +206,16 @@ function statusLabel(status: TeamMemberStatus, attention: boolean) {
   }
 }
 
-function ResumeCard({ member, busy, onOpen, onRestart, onRemove }: { member: TeamMember; busy: boolean; onOpen: () => Promise<void>; onRestart: () => Promise<void>; onRemove: () => Promise<void> }) {
+function ResumeCard({ member, origin, busy, isDesktop, onOpen, onRestart, onRemove, onContinue }: { member: TeamMember; origin: TeamMember | null; busy: boolean; isDesktop: boolean; onOpen: () => Promise<void>; onRestart: () => Promise<void>; onRemove: () => Promise<void>; onContinue: () => void }) {
   const [opening, setOpening] = useState(false);
   const open = async () => { setOpening(true); try { await onOpen(); } finally { setOpening(false); } };
   return <div className="agent-idle team-resume">
     <span className="team-avatar large" data-role={member.roleId} aria-hidden="true">{member.initial}</span>
-    <h3>{member.roleName}<br /><small>{member.label}</small></h3>
+    <h3>{member.roleName}<br /><small>{member.label}</small>{origin && <small>{t('continue.from', { role: origin.roleName })}</small>}</h3>
     <p>{member.status === 'ended' ? t('ui.auto.286') : t('ui.auto.287')}</p>
     <button className="primary" disabled={busy || opening} onClick={() => void open()}>{opening ? <LoaderCircle className="spin" size={15} /> : <Play size={15} />}{opening ? 'Abriendo…' : member.status === 'ended' ? t('ui.auto.288') : t('ui.auto.289')}</button>
+    {/* A paused or finished member is where an exhausted account usually leaves you: continuing elsewhere belongs right here. */}
+    <button className="subtle" title={t('continue.actionHelp')} disabled={busy || opening || !isDesktop} onClick={onContinue}><Forward size={13} />{t('continue.action')}</button>
     <button className="subtle" disabled={busy || opening} onClick={() => { if (window.confirm(t('ui.auto.401', { p0: member.roleName, p1: member.roleName }))) void onRestart(); }}><MessageSquarePlus size={13} />{t('ui.auto.272')}</button>
     <button className="subtle" disabled={busy || opening} onClick={() => { if (window.confirm(t('ui.auto.405', { p0: member.roleName }))) void onRemove(); }}><Trash2 size={13} />{t('ui.auto.274')}</button>
   </div>;
@@ -248,6 +262,131 @@ function RolePicker({ roles, choices, primaryLabel, primaryDetail, primaryReady,
   </div>;
 }
 
+const displayError = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** An agent that can take the work over right now: the primary agent when it is ready, or a logged-in alternative. */
+interface ContinueOption extends ContinuationTarget { label: string }
+const RUNTIME_NAME: Record<ChatRuntime, string> = { opencode: 'OpenCode', claude: 'Claude Code', codex: 'Codex' };
+
+/**
+ * Continue a member's work with another agent or account.
+ *
+ * Latte writes the hand-over from its own records and the human edits it
+ * here, before anything is created or spent. The origin is only read: it keeps
+ * its conversation, its account and its status. Only agents that can start
+ * now are offered; when there is none the dialog says what is missing and how
+ * to fix it instead of offering something that would fail after opening.
+ */
+function ContinueDialog({ source, roles, choices, primaryLabel, primaryReady, primaryRuntime, primaryAccountId, primaryModel, checking, busy, isDesktop, onClose, onContinue, onProviders, onRecheck }: { source: TeamMember; roles: AgentRole[]; choices: RuntimeChoice[]; primaryLabel: string; primaryReady: boolean; primaryRuntime: ChatRuntime; primaryAccountId: string | null; primaryModel: string | null; checking: boolean; busy: boolean; isDesktop: boolean; onClose: () => void; onContinue: (roleId: string, options: TeamMemberOptions | null, text: string) => Promise<void>; onProviders: () => void; onRecheck: () => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [text, setText] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [failure, setFailure] = useState('');
+  const [opening, setOpening] = useState(false);
+  const [roleId, setRoleId] = useState(() => roles.some(r => r.id === source.roleId) ? source.roleId : roles[0]?.id ?? 'assistant');
+  // null until the person picks one: the default follows the options as detection answers.
+  const [choice, setChoice] = useState<string | null>(null);
+  // Model picked per agent; untouched agents start where continuationModel says.
+  const [modelDrafts, setModelDrafts] = useState<Record<string, string>>({});
+  const [catalog, setCatalog] = useState<{ key: string; list: AgentModelList } | null>(null);
+  useEffect(() => {
+    let live = true;
+    setDraft(null); setLoadError('');
+    api.draftContinuation(source.id)
+      .then(result => { if (live && result.sourceMemberId === source.id) { setDraft(result.text); setText(result.text); } })
+      .catch(e => { if (live) setLoadError(displayError(e)); });
+    return () => { live = false; };
+  }, [source.id, attempt]);
+
+  const sameAsSource = (o: ContinueOption) => o.runtime === source.runtime && (o.runtime === 'opencode' || (o.accountId ?? 'system') === (source.accountId ?? 'system'));
+  const options: ContinueOption[] = [
+    ...(primaryReady ? [{ key: 'primary', label: t('continue.primary', { label: primaryLabel }), runtime: primaryRuntime, accountId: primaryRuntime === 'opencode' ? null : primaryAccountId ?? 'system' }] : []),
+    ...choices.map(c => ({ key: c.key, label: c.label, runtime: c.runtime, accountId: c.accountId })),
+  ];
+  // Usually the reason to continue is the source's own account, so another one comes first.
+  const picked = options.find(o => o.key === choice) ?? options.find(o => !sameAsSource(o)) ?? options[0] ?? null;
+  const blocked = !checking && options.length === 0;
+  const edited = draft !== null && text !== draft;
+  const ready = isDesktop && !checking && !busy && !opening && picked !== null && draft !== null && text.trim().length > 0;
+
+  // The catalog belongs to the agent and account picked; the same loader as the conversation's model picker.
+  const catalogKey = picked ? `${picked.runtime}:${picked.accountId ?? ''}` : '';
+  useEffect(() => {
+    if (!picked) return;
+    let live = true;
+    void modelListFor(picked.runtime, picked.accountId)
+      .then(list => { if (live) setCatalog({ key: catalogKey, list }); })
+      .catch(() => { if (live) setCatalog({ key: catalogKey, list: { source: 'suggested', models: [], detail: '' } }); });
+    return () => { live = false; };
+  }, [catalogKey]);
+  const list = catalog && catalog.key === catalogKey ? catalog.list : null;
+  const models = list?.models ?? [];
+  const model = picked ? continuationModel(picked, source, primaryModel, modelDrafts) : '';
+  // Say where the model came from, and when it cannot come along, why.
+  const modelNote = !picked || checking ? ''
+    : model !== '' && list?.source === 'catalog' && !models.some(m => m.id === model) ? t('continue.modelNotListed', { model })
+    : picked.runtime === source.runtime && model === (source.model ?? '') ? (source.model ? t('continue.modelKept', { model: source.model }) : t('continue.modelKeptDefault'))
+    : picked.runtime !== source.runtime && source.model ? t('continue.modelOtherRuntime', { model: source.model, runtime: RUNTIME_NAME[source.runtime] })
+    : '';
+
+  const close = () => { if (opening) return; if (edited && !window.confirm(t('continue.leaveConfirm'))) return; onClose(); };
+  const submit = async () => {
+    if (!ready || !picked) return;
+    setOpening(true); setFailure('');
+    try { await onContinue(roleId, continuationOptions(picked, model), text); } catch (e) { setFailure(displayError(e)); } finally { setOpening(false); }
+  };
+
+  return <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) close(); }}>
+    <section role="dialog" aria-modal="true" aria-labelledby="continue-title" className="modal continuation" onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}>
+      <div className="modal-head"><div><div className="document-kicker">{t('continue.kicker')}</div><h2 id="continue-title">{t('continue.title', { role: source.roleName })}</h2></div><button className="modal-close" aria-label={t('ui.auto.001')} onClick={close}><X size={20} /></button></div>
+      <div className="modal-body">
+        <p className="agent-explanation">{t('continue.lead', { role: source.roleName, label: source.label })}</p>
+        <div className="continuation-pickers">
+          <label><span className="field-label">{t('continue.role')}</span>
+            <select value={roleId} disabled={opening} onChange={e => setRoleId(e.target.value)}>{roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+          </label>
+          <label><span className="field-label">{t('continue.agent')}</span>
+            <select value={picked?.key ?? ''} disabled={checking || opening || options.length === 0} onChange={e => setChoice(e.target.value)}>
+              {checking ? <option value="">{t('continue.checking')}</option>
+                : options.length === 0 ? <option value="">{t('continue.none')}</option>
+                : options.map(o => <option key={o.key} value={o.key}>{sameAsSource(o) ? t('continue.sameAsSource', { label: o.label }) : o.label}</option>)}
+            </select>
+          </label>
+          <label><span className="field-label">{t('continue.model')}</span>
+            <select value={model} title={list?.detail ?? ''} disabled={checking || opening || !picked} onChange={e => { const key = picked?.key; if (key) setModelDrafts(prev => ({ ...prev, [key]: e.target.value })); }}>
+              <option value="">{picked?.runtime === 'opencode' ? t('continue.modelDefaultOpenCode') : t('continue.modelDefault')}</option>
+              {model !== '' && !models.some(m => m.id === model) && <option value={model}>{model}</option>}
+              {models.map(m => <option key={m.id} value={m.id}>{m.label}{m.isDefault ? t('continue.modelIsDefault') : ''}</option>)}
+            </select>
+          </label>
+        </div>
+        {picked && !checking && <small className="runtime-detail">{list ? modelNote : t('continue.modelLoading')}</small>}
+        {blocked && <div className="continuation-block" role="alert">
+          <span><CircleAlert size={14} />{t('continue.blocked')}</span>
+          <div className="chat-card-actions">
+            <button onClick={() => { if (!edited || window.confirm(t('continue.leaveConfirm'))) onProviders(); }}><Plug size={13} />{t('continue.providers')}</button>
+            <button onClick={onRecheck}>{t('continue.recheck')}</button>
+          </div>
+        </div>}
+        {!checking && picked && sameAsSource(picked) && <p className="runtime-detail">{t('continue.sameHint')}</p>}
+        <label className="field-label" htmlFor="continuation-text">{t('continue.text')}</label>
+        {loadError
+          ? <div className="chat-error" role="alert"><CircleAlert size={14} /><span>{t('continue.error', { message: loadError })}</span><button onClick={() => setAttempt(n => n + 1)}>{t('continue.retry')}</button></div>
+          : <textarea id="continuation-text" className="continuation-text" spellCheck={false} value={draft === null ? t('continue.loading') : text} disabled={draft === null || opening} onChange={e => setText(e.target.value)} />}
+        <p className="footnote">{t('continue.help')}</p>
+        {failure && <div className="chat-error" role="alert"><CircleAlert size={14} /><span>{failure}</span></div>}
+        <div className="chat-card-actions">
+          <button className="primary" disabled={!ready} onClick={() => void submit()}>{opening ? <LoaderCircle className="spin" size={15} /> : <Forward size={15} />}{opening ? t('continue.opening') : t('continue.submit')}</button>
+          <button disabled={opening} onClick={close}>{t('continue.cancel')}</button>
+          {edited && <button className="subtle" disabled={opening} onClick={() => { if (window.confirm(t('continue.resetConfirm'))) setText(draft ?? ''); }}>{t('continue.reset')}</button>}
+        </div>
+        {!isDesktop && <small className="preview-note">{t('continue.preview')}</small>}
+      </div>
+    </section>
+  </div>;
+}
+
 
 /**
  * The model this conversation runs on, changed without leaving it.
@@ -258,22 +397,27 @@ function RolePicker({ roles, choices, primaryLabel, primaryDetail, primaryReady,
  * decision and not a control to squeeze next to a chat, so there it only
  * reports what is in use.
  */
+/**
+ * The models a runtime says an account can use. OpenCode already publishes
+ * what it has configured; the subscription runtimes are asked one by one, and
+ * answer a catalog or an honest "this is what Latte knows".
+ */
+function modelListFor(runtime: ChatRuntime, accountId: string | null): Promise<AgentModelList> {
+  return runtime === 'opencode'
+    ? api.chatStatus().then((status): AgentModelList => ({
+      source: 'catalog',
+      detail: `Modelos configurados en OpenCode${status.defaultModel ? ` · por defecto ${status.defaultModel}` : ''}.`,
+      models: status.models.map(id => ({ id, label: id, description: '', isDefault: id === status.defaultModel })),
+    }))
+    : api.listAccountModels(runtime, accountId ?? 'system');
+}
+
 function ModelPicker({ member, busy, onModel }: { member: TeamMember; busy: boolean; onModel: (memberId: string, model: string | null) => void }) {
   const [list, setList] = useState<AgentModelList | null>(null);
   useEffect(() => {
     let live = true;
     setList(null);
-    // OpenCode already publishes what it has configured; the subscription
-    // runtimes are asked one by one, and answer a catalog or an honest
-    // "this is what Latte knows".
-    const ask = member.runtime === 'opencode'
-      ? api.chatStatus().then((status): AgentModelList => ({
-        source: 'catalog',
-        detail: `Modelos configurados en OpenCode${status.defaultModel ? ` · por defecto ${status.defaultModel}` : ''}.`,
-        models: status.models.map(id => ({ id, label: id, description: '', isDefault: id === status.defaultModel })),
-      }))
-      : api.listAccountModels(member.runtime, member.accountId ?? 'system');
-    void ask.then(value => { if (live) setList(value); }).catch(() => undefined);
+    void modelListFor(member.runtime, member.accountId).then(value => { if (live) setList(value); }).catch(() => undefined);
     return () => { live = false; };
   }, [member.runtime, member.accountId]);
 

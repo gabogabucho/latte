@@ -206,11 +206,19 @@ export interface TeamMember {
   accountId: string | null;
   label: string;
   status: TeamMemberStatus;
+  /** Member of the same work this one took over from ("continuar con otro agente"); null when opened from scratch. A reference only: the origin is never changed. */
+  continuedFrom: string | null;
   createdAt: string;
   updatedAt: string;
 }
-/** Advanced overrides when adding a member; empty = the primary agent. */
-export interface TeamMemberOptions { runtime?: ChatRuntime | null; model?: string | null; accountId?: string | null }
+/** Advanced overrides when adding a member; empty = the primary agent. `continuedFrom` names the member of the same work it continues. */
+export interface TeamMemberOptions { runtime?: ChatRuntime | null; model?: string | null; accountId?: string | null; continuedFrom?: string | null }
+/**
+ * What a new member needs to continue another one's work, assembled by Latte
+ * from its own records: no model summarises anything. The human edits it
+ * before it becomes the new member's first message.
+ */
+export interface ContinuationDraft { sourceMemberId: string; text: string }
 /** The agent a new chat starts with. Chosen once in the Providers screen, never asked per chat. */
 export interface PrimaryAgent { runtime: ChatRuntime; model: string | null; accountId: string | null; label: string }
 /** A Claude Code / Codex login. `system` = the user's own CLI profile; otherwise a Latte-managed profile directory. */
@@ -384,6 +392,12 @@ export interface LatteAPI {
   finishTeamMember(memberId: string): Promise<void>;
   /** Drops this member's conversation and starts a new one with the same role. */
   restartTeamMember(memberId: string): Promise<TeamMember>;
+  /**
+   * The hand-over for continuing this member's work with another agent or
+   * account. Read-only: the member, its conversation and its account are only
+   * read. The new member is created with addTeamMember (`continuedFrom`).
+   */
+  draftContinuation(memberId: string): Promise<ContinuationDraft>;
   removeTeamMember(memberId: string): Promise<void>;
   listChatMessages(chatId: string): Promise<ChatMessage[]>;
   sendChat(chatId: string, text: string): Promise<void>;

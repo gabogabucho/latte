@@ -95,6 +95,7 @@ export const API_METHODS = [
   'finishTeamMember',
   'restartTeamMember',
   'removeTeamMember',
+  'draftContinuation',
 ] as const satisfies readonly (keyof BackendApi)[];
 
 export type ApiMethod = (typeof API_METHODS)[number];
@@ -195,6 +196,7 @@ export const API_ARITY: Record<ApiMethod, number> = {
   finishTeamMember: 1,
   restartTeamMember: 1,
   removeTeamMember: 1,
+  draftContinuation: 1,
 };
 
 export const CHANNEL_PREFIX = 'latte:';

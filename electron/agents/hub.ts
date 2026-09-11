@@ -70,6 +70,8 @@ export interface AddMemberInput extends MemberContext {
   runtime?: ChatRuntime | null;
   model?: string | null;
   accountId?: string | null;
+  /** Member of the same work this one continues; validated by the service. */
+  continuedFrom?: string | null;
 }
 
 const PRIMARY_KEY = 'primary_agent';
@@ -260,6 +262,7 @@ export class AgentHub {
       accountId,
       sessionId: '',
       done: false,
+      continuedFrom: input.continuedFrom ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -411,9 +414,26 @@ export class AgentHub {
       accountId: record.accountId,
       label: this.labelFor(record.runtime, record.model, record.accountId),
       status,
+      continuedFrom: record.continuedFrom ?? null,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     };
+  }
+
+  /**
+   * What a member's conversation already said, without opening it.
+   *
+   * A live runtime answers from memory, and a paused Claude Code member has
+   * Latte's own transcript. OpenCode and Codex keep a paused conversation's
+   * history inside the runtime: reading it would mean starting that runtime,
+   * so the honest answer there is `exposed: false`, not a side effect.
+   */
+  recentMessages(memberId: string): { messages: ChatMessage[]; exposed: boolean } {
+    const record = this.deps.repo.getMember(memberId);
+    const adapter = this.adapters().find((a) => a.owns(memberId));
+    if (adapter) return { messages: adapter.listMessages(memberId), exposed: true };
+    if (record.runtime === 'claude' && this.deps.transcripts) return { messages: this.deps.transcripts.load(memberId), exposed: true };
+    return { messages: [], exposed: false };
   }
 
   // Chats ---------------------------------------------------------------------
