@@ -320,7 +320,10 @@ Falta, y no lo demos por hecho:
       base migrada por una versión distinta de la app.
 - [ ] **macOS.** El empaquetado y CI están diseñados, pero todavía deben correr
       en un runner macOS real y verificarse en Intel y Apple Silicon.
-- [ ] **Linux.** Todavía no está diseñado.
+- [ ] **Linux.** Diseñado y empaquetado desde el PR #14 (AppImage + deb x64,
+      `.github/workflows/release-linux.yml`, guía en `docs/RUN-linux.md`).
+      Falta instalar el `.deb`, probar Wayland y una actualización real con
+      `latest-linux.yml` publicado.
 
 ---
 
