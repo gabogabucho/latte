@@ -1,7 +1,14 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { killProcessTree, spawnInOwnProcessGroup } from '../../electron/core/processTree';
+import {
+  killProcessTree,
+  spawnInOwnProcessGroup,
+  type TaskkillExecFile,
+} from '../../electron/core/processTree';
 import { OpenCodeServer } from '../../electron/opencode/server';
+import { isSafePid, parseProcessPids, waitForProcessPids } from './processPids';
 
 function fakeChild(pid = 4242) {
   return {
@@ -11,6 +18,12 @@ function fakeChild(pid = 4242) {
     kill: vi.fn(() => true),
     once: vi.fn(),
   } as unknown as ChildProcess & { kill: ReturnType<typeof vi.fn>; once: ReturnType<typeof vi.fn> };
+}
+
+function fakePidAnnouncer(): ChildProcess & { stdout: PassThrough } {
+  const child = new EventEmitter() as ChildProcess & { stdout: PassThrough };
+  child.stdout = new PassThrough();
+  return child;
 }
 
 function errno(code: string): NodeJS.ErrnoException {
@@ -85,6 +98,20 @@ describe('killProcessTree POSIX group kill', () => {
     vi.restoreAllMocks();
   });
 
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1.5])('ignores invalid PID %s without signaling anything', (pid) => {
+    const child = fakeChild(pid);
+    const kill = vi.spyOn(process, 'kill').mockImplementation((() => true) as typeof process.kill);
+    const taskkill = vi.fn();
+
+    killProcessTree(child, 'linux', taskkill as unknown as TaskkillExecFile);
+    killProcessTree(child, 'win32', taskkill as unknown as TaskkillExecFile);
+    vi.advanceTimersByTime(3_000);
+
+    expect(kill).not.toHaveBeenCalled();
+    expect(taskkill).not.toHaveBeenCalled();
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
   it('sends TERM then an uncancelled KILL to the owned process group', () => {
     const child = fakeChild(4242);
     const kill = vi.spyOn(process, 'kill').mockImplementation((() => true) as typeof process.kill);
@@ -132,6 +159,98 @@ describe('killProcessTree POSIX group kill', () => {
   });
 });
 
+describe('killProcessTree Windows taskkill', () => {
+  it('does not fall back when taskkill succeeds asynchronously', () => {
+    const child = fakeChild(4245);
+    let completeTaskkill: ((error: Error | null) => void) | undefined;
+    const taskkill = vi.fn((_file, _args, _options, callback) => {
+      completeTaskkill = callback;
+      return child;
+    });
+
+    killProcessTree(child, 'win32', taskkill as unknown as TaskkillExecFile);
+    completeTaskkill?.(null);
+
+    expect(taskkill).toHaveBeenCalledWith(
+      'taskkill',
+      ['/PID', '4245', '/T', '/F'],
+      { windowsHide: true },
+      expect.any(Function),
+    );
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it('falls back when taskkill reports an asynchronous error', () => {
+    const child = fakeChild(4246);
+    let completeTaskkill: ((error: Error | null) => void) | undefined;
+    const taskkill = vi.fn((_file, _args, _options, callback) => {
+      completeTaskkill = callback;
+      return child;
+    });
+
+    killProcessTree(child, 'win32', taskkill as unknown as TaskkillExecFile);
+    expect(child.kill).not.toHaveBeenCalled();
+
+    completeTaskkill?.(new Error('access denied'));
+    expect(child.kill).toHaveBeenCalledOnce();
+  });
+
+  it('preserves the fallback when launching taskkill throws synchronously', () => {
+    const child = fakeChild(4247);
+    const taskkill = vi.fn(() => { throw new Error('spawn failed'); });
+
+    expect(() => killProcessTree(child, 'win32', taskkill as unknown as TaskkillExecFile)).not.toThrow();
+    expect(child.kill).toHaveBeenCalledOnce();
+  });
+});
+
+describe('POSIX PID announcement parser', () => {
+  it('accepts finite positive integer child and grandchild PIDs', () => {
+    expect(parseProcessPids('{"child":123,"grandchild":456}')).toEqual({ child: 123, grandchild: 456 });
+  });
+
+  it.each([
+    'not json',
+    '{}',
+    '{"child":0,"grandchild":456}',
+    '{"child":123,"grandchild":-1}',
+    '{"child":1.5,"grandchild":456}',
+    '{"child":123,"grandchild":2.5}',
+    '{"child":"123","grandchild":456}',
+  ])('rejects malformed or unsafe output: %s', (output) => {
+    expect(() => parseProcessPids(output)).toThrow(/PID announcement/);
+  });
+});
+
+describe('PID announcement waiter', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('rejects malformed output and removes its timer and listeners exactly once', async () => {
+    const child = fakePidAnnouncer();
+    let finallyRan = false;
+    const result = (async () => {
+      try {
+        return await waitForProcessPids(child, 2_000);
+      } finally {
+        finallyRan = true;
+      }
+    })();
+
+    child.stdout.write('not json\n');
+
+    await expect(result).rejects.toThrow(/PID announcement/);
+    expect(finallyRan).toBe(true);
+    expect(child.stdout.listenerCount('data')).toBe(0);
+    expect(child.listenerCount('error')).toBe(0);
+    expect(child.listenerCount('exit')).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+
+    vi.advanceTimersByTime(2_000);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
 describe.skipIf(process.platform === 'win32')('real POSIX process tree', () => {
   it('kills a detached child and its TERM-resistant grandchild', async () => {
     const grandchildSource = [
@@ -153,23 +272,11 @@ describe.skipIf(process.platform === 'win32')('real POSIX process tree', () => {
       process.platform,
     );
     const closed = new Promise<void>((resolve) => child.once('close', () => resolve()));
-    let childPid: number | undefined = child.pid;
+    let childPid: number | undefined = isSafePid(child.pid) ? child.pid : undefined;
     let grandchildPid: number | undefined;
 
     try {
-      const chunks: Buffer[] = [];
-      const pids = await new Promise<{ child: number; grandchild: number }>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('timed out waiting for child PIDs')), 2_000);
-        child.stdout?.on('data', (chunk: Buffer) => {
-          chunks.push(chunk);
-          const line = Buffer.concat(chunks).toString('utf8').split('\n')[0];
-          if (!line) return;
-          clearTimeout(timer);
-          resolve(JSON.parse(line) as { child: number; grandchild: number });
-        });
-        child.once('error', reject);
-        child.once('exit', (code, signal) => reject(new Error(`child exited before announcing PIDs (${code ?? signal})`)));
-      });
+      const pids = await waitForProcessPids(child, 2_000);
       childPid = pids.child;
       grandchildPid = pids.grandchild;
       expect(exists(childPid)).toBe(true);

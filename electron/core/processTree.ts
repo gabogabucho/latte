@@ -1,5 +1,12 @@
 import { execFile, type ChildProcess, type SpawnOptions, type spawn } from 'node:child_process';
 
+export type TaskkillExecFile = (
+  file: string,
+  args: string[],
+  options: { windowsHide: boolean },
+  callback: (error: Error | null) => void,
+) => ChildProcess;
+
 /**
  * Spawns a runtime as the leader of its own POSIX process group. Windows uses
  * taskkill for tree termination, so detached must remain unset there.
@@ -19,17 +26,17 @@ export function spawnInOwnProcessGroup(
 }
 
 /** Stops a child and the descendants in the process tree it owns. */
-export function killProcessTree(child: ChildProcess, platform: NodeJS.Platform = process.platform): void {
+export function killProcessTree(
+  child: ChildProcess,
+  platform: NodeJS.Platform = process.platform,
+  taskkillImpl: TaskkillExecFile = execFile as TaskkillExecFile,
+): void {
   const pid = child.pid;
-  if (pid === undefined) return;
+  if (pid === undefined || !Number.isFinite(pid) || !Number.isInteger(pid) || pid <= 0) return;
 
   if (platform === 'win32') {
     if (child.exitCode !== null || child.signalCode !== null) return;
-    try {
-      execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => {});
-    } catch {
-      try { child.kill(); } catch { /* already gone */ }
-    }
+    killWindowsProcessTree(child, pid, taskkillImpl);
     return;
   }
 
@@ -54,6 +61,27 @@ export function killProcessTree(child: ChildProcess, platform: NodeJS.Platform =
     }
   }, 3_000);
   timer.unref();
+}
+
+function killWindowsProcessTree(
+  child: ChildProcess,
+  pid: number,
+  taskkillImpl: TaskkillExecFile,
+): void {
+  const fallback = (): void => {
+    try { child.kill(); } catch { /* already gone */ }
+  };
+
+  try {
+    taskkillImpl(
+      'taskkill',
+      ['/PID', String(pid), '/T', '/F'],
+      { windowsHide: true },
+      (error) => { if (error) fallback(); },
+    );
+  } catch {
+    fallback();
+  }
 }
 
 function isEsrch(error: unknown): boolean {
