@@ -45,6 +45,14 @@ function validateProfile(input:ProfileInput) {
  for(const [key,max] of [['name',80],['initial',4],['summary',500],['soul',100000],['skills',100000]] as const)if(typeof input[key]!=='string'||input[key].length>max || (key!=='skills'&&!input[key].trim()))throw new Error('Perfil inválido: '+key);
 }
 const unavailable = async (): Promise<never> => { throw new Error('Los agentes reales están disponibles en la aplicación de escritorio. Esta vista es una previsualización local.'); };
+// updateWork's refusals, in the language chosen for the interface. Kept here
+// and not in i18n.tsx: that module imports this one for that very choice, and
+// the preview's data layer does not reach back into the React catalogs.
+const UPDATE_WORK_ERRORS = {
+  'es-AR': { patch: 'Cambio de trabajo inválido', notFound: 'Trabajo no encontrado', onlyOutcome: 'Solo cambian el resultado esperado y el entregable vinculado', desktop: 'Vincular un entregable requiere la aplicación de escritorio. Esta vista es una previsualización local.', name: 'Nombre de entregable inválido', expected: 'Resultado esperado inválido' },
+  'en-US': { patch: 'Invalid work patch', notFound: 'Work not found', onlyOutcome: 'Only the expected output and the linked deliverable can change here', desktop: 'Linking a deliverable requires the desktop app. This view is a local preview.', name: 'Invalid deliverable name', expected: 'Invalid expected output' },
+} as const;
+const updateWorkError = (key: keyof (typeof UPDATE_WORK_ERRORS)['es-AR']) => new Error(UPDATE_WORK_ERRORS[localStorage.getItem('latte-ui-locale') === 'en-US' ? 'en-US' : 'es-AR'][key]);
 export const browserAPI: LatteAPI = {
   getUiLocale: async () => localStorage.getItem('latte-ui-locale') === 'en-US' ? 'en-US' : 'es-AR',
   setUiLocale: async locale => { localStorage.setItem('latte-ui-locale', locale); return locale; },
@@ -58,15 +66,20 @@ export const browserAPI: LatteAPI = {
   createWork: async (brandId, title) => change(s => { const english = localStorage.getItem('latte-content-locale') === 'en-US'; const headings = english ? '\n\n## Goal\n\n## Context\n\n## Next steps\n' : '\n\n## Objetivo\n\n## Contexto\n\n## Próximos pasos\n'; const w: Work = { id: id(), brandId, title, brief: '# ' + title + headings, folder: null, updatedAt: now() }; s.works.push(w); return w; }),
   // The expected output is real here; a linked result is not: the preview has
   // no Deliverables folder, so it refuses the link instead of faking a file.
-  updateWork: async (workId, patch) => change(s => {
-    const w = s.works.find(w => w.id === workId); if (!w) throw new Error('Trabajo no encontrado');
-    if (Object.keys(patch).some(k => k !== 'expectedOutput' && k !== 'resultPath')) throw new Error('Solo cambian el resultado esperado y el entregable vinculado');
-    // Same contract as desktop: only null or '' clears; anything else must be a file name, and the preview has none to link.
-    if (patch.resultPath !== undefined && patch.resultPath !== null && patch.resultPath !== '') throw new Error(typeof patch.resultPath === 'string' ? 'Vincular un entregable requiere la aplicación de escritorio. Esta vista es una previsualización local.' : 'Nombre de entregable inválido');
-    if (patch.expectedOutput !== undefined) { if (patch.expectedOutput !== null && (typeof patch.expectedOutput !== 'string' || patch.expectedOutput.length > 2000)) throw new Error('Resultado esperado inválido'); w.expectedOutput = patch.expectedOutput?.trim() || null; }
-    if (patch.resultPath !== undefined) w.resultPath = null;
-    w.updatedAt = now(); return w;
-  }),
+  updateWork: async (workId, patch) => {
+    // Same shape check as the desktop, before anything reads the patch's keys:
+    // null would crash Object.keys, and an array would pass as an empty change.
+    if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) throw updateWorkError('patch');
+    return change(s => {
+      const w = s.works.find(w => w.id === workId); if (!w) throw updateWorkError('notFound');
+      if (Object.keys(patch).some(k => k !== 'expectedOutput' && k !== 'resultPath')) throw updateWorkError('onlyOutcome');
+      // Same contract as desktop: only null or '' clears; anything else must be a file name, and the preview has none to link.
+      if (patch.resultPath !== undefined && patch.resultPath !== null && patch.resultPath !== '') throw updateWorkError(typeof patch.resultPath === 'string' ? 'desktop' : 'name');
+      if (patch.expectedOutput !== undefined) { if (patch.expectedOutput !== null && (typeof patch.expectedOutput !== 'string' || patch.expectedOutput.length > 2000)) throw updateWorkError('expected'); w.expectedOutput = patch.expectedOutput?.trim() || null; }
+      if (patch.resultPath !== undefined) w.resultPath = null;
+      w.updatedAt = now(); return w;
+    });
+  },
   saveBrief: async (workId, brief, baseFingerprint) => browserAPI.saveDocument(previewDocId(workId),brief,baseFingerprint??null),
   listRevisions: async workId => read().revisions.filter(r=>r.workId===workId).reverse(),
   listDocuments: async workId => normalized().documents.filter(d=>d.workId===workId),

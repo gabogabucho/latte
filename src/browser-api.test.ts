@@ -63,6 +63,32 @@ describe('explicit browser preview', () => {
     expect((await api.updateWork(w.id, { resultPath: null })).resultPath).toBeNull();
     expect((await api.updateWork(w.id, { resultPath: '' })).resultPath).toBeNull();
   });
+  it('refuses a patch that is not an object before reading its keys, like the desktop', async () => {
+    const b = await api.createBrand('Marca');
+    const w = await api.updateWork((await api.createWork(b.id, 'Uno')).id, { expectedOutput: 'Un PDF' });
+    // null or undefined would crash Object.keys with a TypeError; an array would pass as "no keys" and still touch the work.
+    for (const bad of [null, undefined, [], ['expectedOutput'], 'expectedOutput']) {
+      await expect(api.updateWork(w.id, bad as never)).rejects.toThrow('Cambio de trabajo inválido');
+    }
+    expect((await api.listWorks(b.id))[0]).toEqual(w);
+  });
+  it('refuses updateWork in the language chosen for the interface', async () => {
+    const b = await api.createBrand('Marca');
+    const w = await api.createWork(b.id, 'Uno');
+    data.set('latte-ui-locale', 'en-US');
+    await expect(api.updateWork(w.id, [] as never)).rejects.toThrow('Invalid work patch');
+    await expect(api.updateWork('wrk_nope', { expectedOutput: 'x' })).rejects.toThrow('Work not found');
+    await expect(api.updateWork(w.id, { brief: 'x' } as never)).rejects.toThrow('Only the expected output and the linked deliverable can change here');
+    await expect(api.updateWork(w.id, { resultPath: 'propuesta.pdf' })).rejects.toThrow('Linking a deliverable requires the desktop app. This view is a local preview.');
+    await expect(api.updateWork(w.id, { resultPath: 0 } as never)).rejects.toThrow('Invalid deliverable name');
+    await expect(api.updateWork(w.id, { expectedOutput: 'x'.repeat(2_001) })).rejects.toThrow('Invalid expected output');
+    data.set('latte-ui-locale', 'es-AR');
+    await expect(api.updateWork('wrk_nope', { expectedOutput: 'x' })).rejects.toThrow('Trabajo no encontrado');
+    await expect(api.updateWork(w.id, { brief: 'x' } as never)).rejects.toThrow('Solo cambian el resultado esperado y el entregable vinculado');
+    await expect(api.updateWork(w.id, { expectedOutput: 'x'.repeat(2_001) })).rejects.toThrow('Resultado esperado inválido');
+    // Nothing refused was applied, in either language.
+    expect((await api.listWorks(b.id))[0]).toEqual(w);
+  });
 });
 
 describe('marketing preview parity',()=>{
