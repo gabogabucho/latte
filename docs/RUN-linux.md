@@ -2,14 +2,25 @@
 
 ## Requisitos
 
-- Node 24+ (CI usa 24; probado localmente con `v26.7.0`)
-- `npm ci` (baja el binario de Electron; si falla el postinstall de node-pty, ver fila `npm ci` del baseline)
+### AppImage o `.deb` publicados
+
+- Linux x64.
 - Al menos un CLI de agente en PATH: `claude`, `codex` u `opencode`
   (Latte antepone `~/.local/bin` y `/usr/local/bin` a PATH al arrancar;
-  si tu CLI vive en otro lado, exportalo antes de abrir Latte)
+  si tu CLI vive en otro lado, exportalo antes de abrir Latte).
 
-El `.deb` no requiere FUSE. El AppImage suele abrir sin instalar paquetes
-adicionales; no instales FUSE preventivamente.
+Los paquetes ya traen el runtime de la aplicación: **no necesitás Node.js ni
+npm** para instalar o ejecutar Latte. El `.deb` no requiere FUSE. El AppImage
+suele abrir sin instalar paquetes adicionales; no instales FUSE
+preventivamente.
+
+### Desde el código fuente
+
+- Linux x64.
+- Node 24+ (CI usa 24; probado localmente con `v26.7.0`).
+- `npm ci` para instalar las dependencias (baja el binario de Electron; si
+  falla el postinstall de node-pty, ver la fila `npm ci` del baseline).
+- Al menos uno de los mismos CLI de agente en PATH.
 
 ## Correr
 
