@@ -26,6 +26,23 @@ describe('ensureUserBinPath', () => {
       expect(ensureUserBinPath(r.env, platform).added).toEqual([]);
     },
   );
+  it.each([
+    ['/usr/bin:', '/home/u/.local/bin:/usr/local/bin:/usr/bin:'],
+    [':/usr/bin::/bin', '/home/u/.local/bin:/usr/local/bin::/usr/bin::/bin'],
+  ])('conserva componentes PATH vacíos en %s', (originalPath, expectedPath) => {
+    const env = { PATH: originalPath, HOME: '/home/u' };
+    const originalEnv = { ...env };
+
+    const r = ensureUserBinPath(env, 'linux');
+
+    expect(r.env.PATH).toBe(expectedPath);
+    expect(env).toEqual(originalEnv);
+    expect(env.PATH).toBe(originalPath);
+  });
+  it('sin PATH no añade un separador final', () => {
+    const r = ensureUserBinPath({ HOME: '/home/u' }, 'linux');
+    expect(r.env.PATH).toBe('/home/u/.local/bin:/usr/local/bin');
+  });
   it('sin HOME añade solo /usr/local/bin', () => {
     const r = ensureUserBinPath({ PATH: '/usr/bin:/bin' }, 'linux');
     expect(r.added).toEqual(['/usr/local/bin']);
