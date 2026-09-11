@@ -7,9 +7,11 @@ Todo en tu máquina.
 
 ![Latte: documentos de un trabajo, equipo de roles y aviso de cambio externo](assets/latte-documents-1440x1000.png)
 
-> **Alpha para Windows x64 y Linux x64.** Latte no trae los agentes ni una cuenta de IA. Usás la
-> tuya y la inferencia la paga tu proveedor. Lo que un agente escribe es una
-> propuesta hasta que la revisás.
+> **Windows x64 está soportado. El empaquetado para Linux x64 está en alpha.**
+> Fue verificado en Linux Mint 22.3 con X11; Wayland y otras distribuciones no fueron verificadas.
+> Latte no trae los agentes ni una cuenta de IA. Usás la tuya y la inferencia
+> la paga tu proveedor. Lo que un agente escribe es una propuesta hasta que la
+> revisás.
 >
 > En Linux x64 podés usar AppImage o `.deb`. La mayoría de los sistemas ejecuta
 > el AppImage sin preparación; si aparece un error de FUSE, seguí la solución de
@@ -70,8 +72,10 @@ limpio del tag. El detalle está en [`docs/RELEASING.md`](docs/RELEASING.md).
 Latte permite **una sola instancia**: las dos compartirían la misma carpeta de
 datos. Si ya hay una ventana abierta, la nueva se cierra y te lo dice en la
 consola. Cerrá la que está abierta y volvé a intentar. Si no la encontrás,
-terminá `electron.exe` desde el Administrador de tareas
-(en Linux: `pgrep -af electron`).
+terminá `electron.exe` desde el Administrador de tareas. En Linux, tanto para
+la app empaquetada como desde el código fuente, ejecutá
+`pgrep -af 'Latte|latte'`, inspeccioná el resultado para identificar el PID
+exacto de Latte y recién entonces ejecutá `kill <PID>`.
 
 ### Herramientas de los agentes (MCP)
 
@@ -103,7 +107,7 @@ y el agente puede leerlo.
 
 | Requisito | Detalle |
 | --- | --- |
-| Sistema | Alpha para Windows x64 y Linux x64. macOS no está soportado ni prometido para esta alpha |
+| Sistema | Windows x64 está soportado. El empaquetado para Linux x64 está en alpha: verificado en Linux Mint 22.3 con X11; Wayland y otras distribuciones no fueron verificadas. macOS no está soportado ni prometido para esta alpha |
 | Node.js | Solo para correrlo desde el código: 24 LTS (el proyecto usa `node:sqlite`, incorporado en Node 24) |
 | Agentes | Al menos uno instalado y con sesión iniciada: [Claude Code](https://claude.com/claude-code), [Codex](https://developers.openai.com/codex/cli/) u [OpenCode](https://opencode.ai) |
 | Facturación | La inferencia la paga tu cuenta con tu proveedor. Latte no factura ni intermedia nada |
@@ -135,8 +139,7 @@ el navegador y **no ejecuta ningún agente**.
 ### Límites que conviene conocer
 
 - Es una alpha: esperá bordes ásperos y cambios de esquema entre versiones. La base se copia antes de cada migración, y una base escrita por una versión más nueva no se abre en una vieja.
-- **Plataformas de la alpha.** Windows x64 y Linux x64 están soportados. macOS
-  no está soportado ni prometido; arm64 todavía no está verificado.
+- **Plataformas de la alpha.** Windows x64 está soportado. El empaquetado para Linux x64 está en alpha: fue verificado en Linux Mint 22.3 con X11; Wayland y otras distribuciones no fueron verificadas. macOS no está soportado ni prometido; arm64 todavía no está verificado.
 - El instalador **no está firmado**, así que SmartScreen advierte hasta que el binario acumule reputación.
 - **No todo lo que hace un agente está aislado.** Latte le da al agente la carpeta del trabajo como contexto y las instrucciones lo dicen, pero un runtime puede escribir cualquier archivo al que tenga permiso. Las instrucciones no son un sandbox. Los permisos reales los aplica cada runtime, y Latte te muestra sus pedidos para que decidas.
 - Un guardado hecho **fuera** de Latte no se intercepta: reemplaza el archivo y Latte lo detecta después.
@@ -155,9 +158,10 @@ Brands, works, several tracked Markdown deliverables per work, immutable
 snapshots, a decision log, brand memory (Engram) and real agent sessions, all on
 your machine.
 
-> **Alpha for Windows x64 and Linux x64.** Latte does not include an agent or
-> an AI account; you bring your own, and your provider bills inference.
-> macOS is not supported or promised for this alpha.
+> **Windows x64 is supported. Linux x64 packaging is alpha.** It has been
+> verified on Linux Mint 22.3 with X11; Wayland and other distributions are not yet verified.
+> Latte does not include an agent or an AI account; you bring your own, and your
+> provider bills inference. macOS is not supported or promised for this alpha.
 
 ## Install
 
@@ -202,7 +206,7 @@ Other commands:
 
 | Command | What it does |
 | --- | --- |
-| `npm run build` | Compiles the renderer to `dist/` (renderer only; not validated in this release) |
+| `npm run build` | Compiles the renderer to `dist/` (renderer only; validated by the current CI workflow) |
 | `npm start` | Runs Latte against `dist/`; refuses with instructions when it is missing |
 | `npm run dev:web` | Vite only (browser preview with a localStorage backend, agents disabled) |
 | `npm run dev:electron` | Electron only, expects Vite on `http://127.0.0.1:5173` |
@@ -493,7 +497,7 @@ relaxed only for the Vite dev origin).
 | Check | Result |
 | --- | --- |
 | `npm run typecheck:all` | clean |
-| `npm test` | 202 tests pass (25 files: documents/conflicts, transcripts, storage on both engines, paths/atomic files, service flow, validation/isolation, terminal, detection, IPC, chat protocol and provider management against a fake OpenCode, Claude Code and Codex adapters against fakes, team roles/migration/personality/restart, funnel metadata and proposals, file-backed profiles, shipped skills, frontend preview and organizer)
+| `npm test` | Runs the current backend and frontend unit test suite; use this command for the current result rather than a fixed test count |
 | `npx vitest run --config docs/qa-vitest.config.ts` (integration QA harness) | 9/9 pass |
 | `node_modules/electron/dist/electron.exe docs/qa-desktop.cjs` (real sandboxed preload + IPC) | exit 0: bridge, snapshot, export, decisions, invalid ids rejected, no renderer errors |
 | `node docs/qa-stale-save.cjs` | `agentChangesRetained: true` — the reproduced data loss is fixed |
@@ -507,8 +511,7 @@ relaxed only for the Vite dev origin).
 
 ## Known limitations
 
-- The alpha supports Windows x64 and Linux x64. macOS is not supported or
-  promised, and arm64 is not verified yet.
+- Windows x64 is supported. Linux x64 packaging is alpha: it has been verified on Linux Mint 22.3 with X11; Wayland and other distributions are not yet verified. macOS is not supported or promised, and arm64 is not verified yet.
 - The chat shows text, reasoning and tool calls; file attachments, subtasks
   and OpenCode's revert/fork features are not exposed.
 - Chat history lives in OpenCode's storage; Latte only keeps the session id.

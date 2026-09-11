@@ -51,7 +51,7 @@ if (!app.requestSingleInstanceLock()) {
   // Only one Latte at a time: they would share the same data directory.
   // Say so, or this looks like "the app simply did not open".
   console.error('[latte] Ya hay una ventana de Latte abierta. Se trae al frente esa y esta instancia se cierra.');
-  if (process.platform === 'linux') console.error('[latte] Si no la ves, buscá el proceso con `pgrep -af electron` y terminalo (`pkill -f "electron ."`) y volvé a intentar.');
+  if (process.platform === 'linux') console.error("[latte] Si no la ves, tanto en la app empaquetada como desde el código fuente, ejecutá `pgrep -af 'Latte|latte'`, inspeccioná el resultado para identificar el PID exacto de Latte, ejecutá `kill <PID>` y volvé a intentar.");
   else if (process.platform === 'darwin') console.error('[latte] Si no la ves, buscá el proceso Latte en el Monitor de Actividad y terminalo, y volvé a intentar.');
   else console.error('[latte] Si no la ves, cerrá el proceso electron.exe desde el Administrador de tareas y volvé a intentar.');
   app.quit();

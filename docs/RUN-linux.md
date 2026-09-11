@@ -4,7 +4,8 @@
 
 ### AppImage o `.deb` publicados
 
-- Linux x64.
+- El empaquetado para Linux x64 está en alpha y fue verificado en Linux Mint
+  22.3 con X11. Wayland y otras distribuciones todavía no fueron verificados.
 - Al menos un CLI de agente en PATH: `claude`, `codex` u `opencode`
   (Latte antepone `~/.local/bin` y `/usr/local/bin` a PATH al arrancar;
   si tu CLI vive en otro lado, exportalo antes de abrir Latte).
@@ -13,6 +14,32 @@ Los paquetes ya traen el runtime de la aplicación: **no necesitás Node.js ni
 npm** para instalar o ejecutar Latte. El `.deb` no requiere FUSE. El AppImage
 suele abrir sin instalar paquetes adicionales; no instales FUSE
 preventivamente.
+
+## Instalar los paquetes publicados
+
+Descargá uno de los archivos de la release y ejecutá estos comandos desde la
+carpeta donde lo guardaste. En `<version>`, reemplazá el marcador por la versión
+del archivo descargado (por ejemplo, `0.2.0`). Los nombres usan arquitecturas
+distintas: `x86_64` para el AppImage y `amd64` para el `.deb`.
+
+Para el AppImage:
+
+```bash
+chmod +x ./Latte-<version>-linux-x86_64.AppImage
+./Latte-<version>-linux-x86_64.AppImage
+```
+
+Para el `.deb`:
+
+```bash
+sudo apt install ./Latte-<version>-linux-amd64.deb
+```
+
+Después de instalar el `.deb`, abrí Latte desde el menú de aplicaciones o con:
+
+```bash
+/opt/Latte/latte
+```
 
 ### Desde el código fuente
 
@@ -81,10 +108,10 @@ Ojo con los sufijos de arquitectura: AppImage usa `x86_64`, deb usa `amd64`.
 
 ## Limitaciones conocidas
 
-- Solo x64 verificado; sin arm64 hasta tener runner.
+- El empaquetado para Linux x64 solo fue verificado en Linux Mint 22.3 con X11;
+  Wayland, otras distribuciones y arm64 todavía no fueron verificados.
 - Lanzado desde terminal hereda tu PATH completo; desde el menú usa el PATH
   extendido (`~/.local/bin`, `/usr/local/bin`).
 - Polish pendiente: `desktopName` / `StartupWMClass` (`app.setName('Latte')`
   vs `StartupWMClass: latte` en `electron-builder.yml`); el icono del dock
   puede no agruparse hasta alinearlos.
-- Wayland: no probado. Solo X11 (Mint, ventana OK).
