@@ -225,9 +225,10 @@ export function decisionProtocolBlocks(text:string):DecisionProposalInput[] {
 async function locateExecutable(runner: CommandRunner, name: string, platform: NodeJS.Platform, env: NodeJS.ProcessEnv): Promise<string | null> {
   const result = await runner(platform === 'win32' ? 'where.exe' : 'which', [name], { timeoutMs: 4_000, env });
   if (result.error || result.timedOut || result.code !== 0) return null;
+  const isAbsolute = platform === 'win32' ? path.win32.isAbsolute : path.posix.isAbsolute;
   const candidate = result.stdout
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .find((l) => l.length > 0 && path.isAbsolute(l));
+    .find((l) => l.length > 0 && isAbsolute(l));
   return candidate ?? null;
 }

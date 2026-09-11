@@ -6,7 +6,7 @@
 // It DOES use inference on the user's own Claude Code subscription, once, and
 // only because the user asked for a real run.
 //
-// Usage: node_modules/electron/dist/electron.exe scripts/pilot.cjs
+// Usage: node_modules/electron/dist/electron scripts/pilot.cjs (.exe en Windows)
 require('tsx/cjs');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');

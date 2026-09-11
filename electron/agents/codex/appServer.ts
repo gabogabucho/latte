@@ -29,18 +29,18 @@ interface Pending { resolve: (value: unknown) => void; reject: (error: Error) =>
  */
 export function resolveCodexBinary(executable: string, platform: NodeJS.Platform = process.platform, exists: (p: string) => boolean = fs.existsSync, readdir: (p: string) => string[] = safeReaddir): string {
   if (platform !== 'win32') return executable;
-  const ext = path.extname(executable).toLowerCase();
+  const ext = path.win32.extname(executable).toLowerCase();
   if (ext !== '.cmd' && ext !== '.bat') return executable;
   const roots = [
-    path.join(path.dirname(executable), 'node_modules', '@openai', 'codex', 'node_modules', '@openai'),
-    path.join(path.dirname(executable), 'node_modules', '@openai'),
+    path.win32.join(path.win32.dirname(executable), 'node_modules', '@openai', 'codex', 'node_modules', '@openai'),
+    path.win32.join(path.win32.dirname(executable), 'node_modules', '@openai'),
   ];
   for (const root of roots) {
     for (const pkg of readdir(root)) {
       if (!pkg.startsWith('codex-')) continue;
-      const vendor = path.join(root, pkg, 'vendor');
+      const vendor = path.win32.join(root, pkg, 'vendor');
       for (const triple of readdir(vendor)) {
-        const candidate = path.join(vendor, triple, 'bin', 'codex.exe');
+        const candidate = path.win32.join(vendor, triple, 'bin', 'codex.exe');
         if (exists(candidate)) return candidate;
       }
     }

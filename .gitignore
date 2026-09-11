@@ -46,6 +46,7 @@ docs/NEXT-CUT-PROPOSAL.md
 docs/REVIEW-2026-09-06.md
 
 # Publish only screenshots individually reviewed for private information.
+.hermes-*.md
 assets/*.png
 !assets/latte-documents-1440x1000.png
 # The app icon is part of the product, not a screenshot.

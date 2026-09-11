@@ -2,7 +2,7 @@
 // preload: the agent leaves files in `entregables/`, Latte lists them with
 // their metadata, opening HTML asks first, and copying reports where the copy
 // landed. Disposable data dir, no inference, no external calls.
-// Usage: node_modules/electron/dist/electron.exe scripts/visual-deliverables.cjs
+// Usage: node_modules/electron/dist/electron scripts/visual-deliverables.cjs (.exe en Windows)
 require('tsx/cjs');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');

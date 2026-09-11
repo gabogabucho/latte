@@ -24,7 +24,10 @@ app.whenReady().then(async () => {
     backend = await createBackend({ dataDir: path.join(root, 'data'), seedDemo: true, emit: () => {}, chooseExportPath: async () => null,
       runner: async () => ({ code: 1, stdout: '', stderr: 'Fixture: runtime disabled', timedOut: false }),
       loadPty: () => ({ ok: false, error: 'Fixture: PTY disabled' }),
-      env: { HOME: root, USERPROFILE: root, PATH: '', APPDATA: root, LOCALAPPDATA: root },
+      // Env aislado por plataforma: win32 conserva APPDATA/LOCALAPPDATA; POSIX usa XDG_* (sin APPDATA).
+      env: process.platform === 'win32'
+        ? { HOME: root, USERPROFILE: root, PATH: '', APPDATA: root, LOCALAPPDATA: root }
+        : { HOME: root, PATH: '', XDG_CONFIG_HOME: path.join(root, 'xdg-config'), XDG_DATA_HOME: path.join(root, 'xdg-data') },
     });
     const brand = (await backend.service.listBrands())[0];
     const work = (await backend.service.listWorks(brand.id))[0];

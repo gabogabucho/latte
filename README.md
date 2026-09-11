@@ -7,9 +7,13 @@ Todo en tu máquina.
 
 ![Latte: documentos de un trabajo, equipo de roles y aviso de cambio externo](assets/latte-documents-1440x1000.png)
 
-> **Alpha para Windows.** Latte no trae los agentes ni una cuenta de IA. Usás la
+> **Alpha para Windows y Linux.** Latte no trae los agentes ni una cuenta de IA. Usás la
 > tuya y la inferencia la paga tu proveedor. Lo que un agente escribe es una
 > propuesta hasta que la revisás.
+>
+> En Linux el AppImage necesita `libfuse2t64` (`sudo apt install libfuse2t64`).
+> Guía completa en [`docs/RUN-linux.md`](docs/RUN-linux.md). El `.deb` no se
+> auto-actualiza: hay que reinstalarlo desde cada release.
 
 ## Instalar
 
@@ -61,7 +65,8 @@ limpio del tag. El detalle está en [`docs/RELEASING.md`](docs/RELEASING.md).
 Latte permite **una sola instancia**: las dos compartirían la misma carpeta de
 datos. Si ya hay una ventana abierta, la nueva se cierra y te lo dice en la
 consola. Cerrá la que está abierta y volvé a intentar. Si no la encontrás,
-terminá `electron.exe` desde el Administrador de tareas.
+terminá `electron.exe` desde el Administrador de tareas
+(en Linux: `pgrep -af electron`).
 
 ### Herramientas de los agentes (MCP)
 
