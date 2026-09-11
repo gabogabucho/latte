@@ -50,6 +50,34 @@ export interface EngineResult {
   quitAndInstall: () => void;
 }
 
+export interface UpdaterAvailabilityInput {
+  isPackaged: boolean;
+  devServerUrl: string | null;
+  platform: string;
+  appImage: string | undefined;
+}
+
+export interface UpdaterAvailability {
+  enabled: boolean;
+  reason: string;
+}
+
+const SOURCE_UPDATER_REASON = 'Estás usando Latte desde el código fuente. Las actualizaciones automáticas vienen con el instalador.';
+
+/** Decides update support from explicit runtime facts, without Electron or I/O. */
+export function decideUpdaterAvailability(input: UpdaterAvailabilityInput): UpdaterAvailability {
+  if (!input.isPackaged || input.devServerUrl !== null) {
+    return { enabled: false, reason: SOURCE_UPDATER_REASON };
+  }
+  if (input.platform === 'linux' && !input.appImage) {
+    return {
+      enabled: false,
+      reason: 'La instalación .deb no se actualiza automáticamente. Descargá la versión nueva y reinstalá Latte.',
+    };
+  }
+  return { enabled: true, reason: '' };
+}
+
 /**
  * Wires electron-updater into the small interface the controller expects.
  *

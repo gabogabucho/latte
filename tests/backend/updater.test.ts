@@ -1,7 +1,58 @@
 import { describe, expect, it } from 'vitest';
 import type { UpdateState } from '../../shared/contracts';
 import { UpdateController, type UpdateActivity, type UpdaterEngine } from '../../electron/updater/controller';
+import { decideUpdaterAvailability } from '../../electron/updater/engine';
 import { attachCloseGuard, attachQuitGuard } from '../../electron/windowClose';
+
+const SOURCE_UPDATER_REASON = 'Estás usando Latte desde el código fuente. Las actualizaciones automáticas vienen con el instalador.';
+
+describe('Updater availability follows the installed artifact', () => {
+  it.each([
+    {
+      name: 'a packaged Linux AppImage',
+      input: { isPackaged: true, devServerUrl: null, platform: 'linux', appImage: '/tmp/Latte.AppImage' },
+      enabled: true,
+    },
+    {
+      name: 'packaged Windows',
+      input: { isPackaged: true, devServerUrl: null, platform: 'win32', appImage: undefined },
+      enabled: true,
+    },
+    {
+      name: 'packaged macOS',
+      input: { isPackaged: true, devServerUrl: null, platform: 'darwin', appImage: undefined },
+      enabled: true,
+    },
+  ])('enables updates for $name', ({ input, enabled }) => {
+    expect(decideUpdaterAvailability(input)).toEqual({ enabled, reason: '' });
+  });
+
+  it('disables updates for a packaged Linux .deb install with actionable guidance', () => {
+    const result = decideUpdaterAvailability({
+      isPackaged: true,
+      devServerUrl: null,
+      platform: 'linux',
+      appImage: undefined,
+    });
+
+    expect(result.enabled).toBe(false);
+    expect(result.reason).toContain('.deb');
+    expect(result.reason).toContain('no se actualiza automáticamente');
+    expect(result.reason).toContain('reinstal');
+  });
+
+  it.each([
+    { name: 'an unpackaged build', isPackaged: false, devServerUrl: null },
+    { name: 'the dev server', isPackaged: true, devServerUrl: 'http://localhost:5173' },
+  ])('keeps the existing source reason for $name', ({ isPackaged, devServerUrl }) => {
+    expect(decideUpdaterAvailability({
+      isPackaged,
+      devServerUrl,
+      platform: 'linux',
+      appImage: '/tmp/Latte.AppImage',
+    })).toEqual({ enabled: false, reason: SOURCE_UPDATER_REASON });
+  });
+});
 
 /** An update server we drive by hand: nothing here touches the network. */
 function fakeEngine() {

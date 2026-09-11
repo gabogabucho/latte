@@ -15,7 +15,7 @@ import {
 } from './ipc/channels';
 import { IncompatibleSchemaError } from './storage/backup';
 import { UpdateController, type UpdateActivity } from './updater/controller';
-import { createUpdaterEngine } from './updater/engine';
+import { createUpdaterEngine, decideUpdaterAvailability } from './updater/engine';
 import { attachCloseGuard, attachQuitGuard, type CloseGuardHandle } from './windowClose';
 import { registerIpc } from './ipc/register';
 import { mainMessage } from './i18n';
@@ -150,10 +150,15 @@ async function start(): Promise<void> {
  * and the renderer is told exactly that.
  */
 function setupUpdates(): void {
-  const enabled = app.isPackaged && DEV_SERVER_URL === null;
+  const availability = decideUpdaterAvailability({
+    isPackaged: app.isPackaged,
+    devServerUrl: DEV_SERVER_URL,
+    platform: process.platform,
+    appImage: process.env.APPIMAGE,
+  });
   const { engine, reason, quitAndInstall } = createUpdaterEngine({
-    enabled,
-    disabledReason: 'Estás usando Latte desde el código fuente. Las actualizaciones automáticas vienen con el instalador.',
+    enabled: availability.enabled,
+    disabledReason: availability.reason,
     // Alpha builds are published as normal releases so the direct download and
     // the updater agree; the pre-release channel stays behind an explicit opt-in.
     allowPrerelease: process.env.LATTE_UPDATE_PRERELEASE === '1',
