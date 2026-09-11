@@ -6,7 +6,7 @@
 // (electron/windowClose.ts, covered by tests/backend/windowClose.test.ts).
 //
 // Disposable data dir, no inference.
-// Usage: node_modules/electron/dist/electron.exe scripts/visual-close.cjs
+// Usage: node_modules/electron/dist/electron scripts/visual-close.cjs (.exe en Windows)
 require('tsx/cjs');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');

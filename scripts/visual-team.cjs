@@ -1,7 +1,7 @@
 // Visual + IPC smoke of the team roster through Electron's real sandboxed
 // preload. Uses a temporary data directory; opens team members on the local
 // OpenCode runtime WITHOUT sending any message (no inference, no cost).
-// Usage: node_modules/electron/dist/electron.exe scripts/visual-team.cjs
+// Usage: node_modules/electron/dist/electron scripts/visual-team.cjs (.exe en Windows)
 require('tsx/cjs');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');

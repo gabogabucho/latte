@@ -5,7 +5,7 @@
 // 24 bits sin comprimir, que es lo que NSIS lee sin discutir. Sin dependencias
 // nuevas: Electron ya está en el proyecto y el encabezado BMP son 54 bytes.
 //
-// Uso: node_modules/electron/dist/electron.exe scripts/make-installer-sidebar.cjs
+// Uso: node_modules/electron/dist/electron scripts/make-installer-sidebar.cjs (.exe en Windows)
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');

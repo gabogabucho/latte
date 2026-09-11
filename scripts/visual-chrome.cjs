@@ -1,7 +1,7 @@
 // Looks at the window chrome: no parasitic scrollbars in small areas, and the
 // custom title bar controls are present, draggable in the right places and
 // wired to the main process. Disposable data dir, no inference.
-// Usage: node_modules/electron/dist/electron.exe scripts/visual-chrome.cjs
+// Usage: node_modules/electron/dist/electron scripts/visual-chrome.cjs (.exe en Windows)
 require('tsx/cjs');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');

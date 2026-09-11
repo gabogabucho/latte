@@ -324,7 +324,8 @@ describe('AgentHub through the service', () => {
     b = await makeBackend({
       chatEndpoint: fake.endpoint,
       runner: fakeRunner((file, args) => {
-        if (file === 'where.exe' || file === 'which') return { code: 0, stdout: `C:\\bin\\${args[0]}.exe\n` };
+        if (file === 'where.exe') return { code: 0, stdout: `C:\\bin\\${args[0]}.exe\n` };
+        if (file === 'which') return { code: 0, stdout: `/usr/bin/${args[0]}\n` };
         if (args[0] === 'auth' && args[1] === 'status') return { code: 0, stdout: JSON.stringify({ loggedIn: true, subscriptionType: 'max' }) };
         if (args[0] === 'login' && args[1] === 'status') return { code: 0, stdout: 'Not logged in' };
         return { code: 0, stdout: '1.0.0\n' };

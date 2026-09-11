@@ -37,7 +37,7 @@ describe('Codex binary resolution and item translation', () => {
   it('finds the platform binary behind the npm shim', () => {
     const shim = 'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.cmd';
     const real = 'C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe';
-    const readdir = (p: string) => (p.endsWith(path.join('codex', 'node_modules', '@openai')) ? ['codex-win32-x64'] : p.endsWith('vendor') ? ['x86_64-pc-windows-msvc'] : []);
+    const readdir = (p: string) => (p.endsWith(path.win32.join('codex', 'node_modules', '@openai')) ? ['codex-win32-x64'] : p.endsWith('vendor') ? ['x86_64-pc-windows-msvc'] : []);
     expect(resolveCodexBinary(shim, 'win32', (p) => p === real, readdir)).toBe(real);
     expect(resolveCodexBinary(shim, 'win32', () => false, () => [])).toBe(shim);
     expect(resolveCodexBinary('/usr/bin/codex', 'linux', () => true, () => [])).toBe('/usr/bin/codex');

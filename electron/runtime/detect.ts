@@ -28,7 +28,7 @@ export interface RuntimeDetectorDeps {
 const WINDOWS_PREFERENCE = ['.exe', '.cmd', '.bat', ''];
 
 function rankWindowsCandidate(candidate: string): number {
-  const ext = path.extname(candidate).toLowerCase();
+  const ext = path.win32.extname(candidate).toLowerCase();
   const index = WINDOWS_PREFERENCE.indexOf(ext);
   return index === -1 ? WINDOWS_PREFERENCE.length : index;
 }
@@ -96,10 +96,11 @@ export class RuntimeDetector {
       env: this.env,
     });
     if (result.error || result.timedOut || result.code !== 0) return null;
+    const isAbsolute = isWindows ? path.win32.isAbsolute : path.posix.isAbsolute;
     const candidates = result.stdout
       .split(/\r?\n/)
       .map((line) => line.trim())
-      .filter((line) => line.length > 0 && path.isAbsolute(line));
+      .filter((line) => line.length > 0 && isAbsolute(line));
     if (candidates.length === 0) return null;
     if (!isWindows) return candidates[0];
     return [...candidates].sort((a, b) => rankWindowsCandidate(a) - rankWindowsCandidate(b))[0];

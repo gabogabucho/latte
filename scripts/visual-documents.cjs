@@ -2,7 +2,7 @@
 // preload: create a strategy, edit it, provoke an external change, resolve the
 // conflict, derive a calendar and see the "base changed" notice.
 // Disposable data dir, no inference, no external calls.
-// Usage: node_modules/electron/dist/electron.exe scripts/visual-documents.cjs
+// Usage: node_modules/electron/dist/electron scripts/visual-documents.cjs (.exe en Windows)
 require('tsx/cjs');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs');
