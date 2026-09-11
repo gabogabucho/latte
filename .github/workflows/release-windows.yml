@@ -111,4 +111,4 @@ jobs:
             fi
             sleep 2
           done
-          gh release upload "$tag" release/Latte-Setup.exe release/latest.yml release/*.exe.blockmap --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$tag" release/Latte-Setup.exe release/latest.yml --repo "$GITHUB_REPOSITORY" --clobber
