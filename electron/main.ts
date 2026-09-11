@@ -156,9 +156,10 @@ function setupUpdates(): void {
     platform: process.platform,
     appImage: process.env.APPIMAGE,
   });
-  const { engine, reason, quitAndInstall } = createUpdaterEngine({
+  const { engine, reason, unsupportedKind, quitAndInstall } = createUpdaterEngine({
     enabled: availability.enabled,
     disabledReason: availability.reason,
+    unsupportedKind: availability.unsupportedKind,
     // Alpha builds are published as normal releases so the direct download and
     // the updater agree; the pre-release channel stays behind an explicit opt-in.
     allowPrerelease: process.env.LATTE_UPDATE_PRERELEASE === '1',
@@ -167,6 +168,7 @@ function setupUpdates(): void {
   updates = new UpdateController({
     engine,
     unsupportedReason: reason,
+    unsupportedKind,
     emit: (state) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(UPDATE_STATE_CHANNEL, state);
     },

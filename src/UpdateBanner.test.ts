@@ -1,33 +1,37 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { UpdateState } from '../shared/contracts';
+import type { UpdateState, UpdateUnsupportedKind } from '../shared/contracts';
 
 vi.mock('./browser-api', () => ({ api: {} }));
 
 const { UnsupportedUpdateNotice } = await import('./UpdateBanner');
 
-const unsupported = (message: string): UpdateState => ({
+const unsupported = (message: string, unsupportedKind: UpdateUnsupportedKind): UpdateState => ({
   phase: 'unsupported',
+  unsupportedKind,
   version: null,
   percent: 0,
   message,
 });
 
-const render = (message: string) => renderToStaticMarkup(
-  createElement(UnsupportedUpdateNotice, { state: unsupported(message) }),
+const render = (message: string, unsupportedKind: UpdateUnsupportedKind) => renderToStaticMarkup(
+  createElement(UnsupportedUpdateNotice, { state: unsupported(message, unsupportedKind) }),
 );
 
 describe('UpdateBanner unsupported installations', () => {
-  it('shows .deb guidance without offering an update action', () => {
-    const message = 'La instalación .deb no se actualiza automáticamente. Descargá la versión nueva y reinstalá Latte.';
-    const markup = render(message);
+  it('shows manual-install guidance without relying on message wording', () => {
+    const message = 'Descargá la versión nueva y reinstalá Latte.';
+    const markup = render(message, 'manual-install');
 
     expect(markup).toContain(message);
     expect(markup).not.toContain('<button');
   });
 
-  it('keeps source and development unsupported states quiet', () => {
-    expect(render('Estás usando Latte desde el código fuente.')).toBe('');
+  it('keeps non-manual unsupported states quiet even when prose mentions .deb', () => {
+    const misleadingMessage = 'El código fuente también puede mencionar .deb.';
+
+    expect(render(misleadingMessage, 'source')).toBe('');
+    expect(render(misleadingMessage, 'unavailable')).toBe('');
   });
 });

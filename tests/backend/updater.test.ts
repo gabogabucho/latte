@@ -36,6 +36,7 @@ describe('Updater availability follows the installed artifact', () => {
     });
 
     expect(result.enabled).toBe(false);
+    expect(result.unsupportedKind).toBe('manual-install');
     expect(result.reason).toContain('.deb');
     expect(result.reason).toContain('no se actualiza automáticamente');
     expect(result.reason).toContain('reinstal');
@@ -50,7 +51,7 @@ describe('Updater availability follows the installed artifact', () => {
       devServerUrl,
       platform: 'linux',
       appImage: '/tmp/Latte.AppImage',
-    })).toEqual({ enabled: false, reason: SOURCE_UPDATER_REASON });
+    })).toEqual({ enabled: false, reason: SOURCE_UPDATER_REASON, unsupportedKind: 'source' });
   });
 });
 
@@ -92,6 +93,7 @@ function fakeEngine() {
 
 interface SetupOptions {
   withEngine?: boolean;
+  unsupportedKind?: 'source' | 'manual-install' | 'unavailable';
   unsaved?: boolean;
   activity?: UpdateActivity;
   confirm?: boolean;
@@ -108,6 +110,7 @@ function setup(options: SetupOptions = {}) {
   const controller = new UpdateController({
     engine: options.withEngine === false ? null : fake.engine,
     unsupportedReason: 'Latte corre desde el código fuente.',
+    unsupportedKind: options.unsupportedKind,
     emit: (state) => states.push(state),
     hasUnsavedWork: () => unsaved,
     activity: () => options.activity ?? { chats: 0, terminals: 0 },
@@ -170,12 +173,35 @@ describe('An update is offered, never imposed', () => {
   });
 
   it('never checks or downloads without an engine', async () => {
-    const { controller, fake } = setup({ withEngine: false });
-    expect(controller.current()).toMatchObject({ phase: 'unsupported', message: 'Latte corre desde el código fuente.' });
+    const { controller, fake } = setup({ withEngine: false, unsupportedKind: 'source' });
+    expect(controller.current()).toMatchObject({
+      phase: 'unsupported',
+      message: 'Latte corre desde el código fuente.',
+      unsupportedKind: 'source',
+    });
     await controller.check();
     await controller.download();
     expect(fake.calls).toEqual({ checks: 0, downloads: 0 });
     expect(controller.install()).toEqual({ status: 'not-ready' });
+  });
+
+  it('owns manual-install classification in the initial unsupported state', () => {
+    const { controller } = setup({ withEngine: false, unsupportedKind: 'manual-install' });
+
+    expect(controller.current()).toMatchObject({
+      phase: 'unsupported',
+      unsupportedKind: 'manual-install',
+    });
+  });
+
+  it('does not carry unsupported classification into supported phases', async () => {
+    const { controller, fake, states } = setup({ unsupportedKind: 'manual-install' });
+
+    await controller.check();
+    fake.emitAvailable('0.2.0');
+
+    expect(controller.current()).not.toHaveProperty('unsupportedKind');
+    expect(states.every((state) => !Object.hasOwn(state, 'unsupportedKind'))).toBe(true);
   });
 });
 

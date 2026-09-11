@@ -10,7 +10,7 @@ const key = (state: UpdateState) => `${state.phase}:${state.version ?? ''}`;
 
 /** Only installed .deb builds need persistent manual-update guidance here. */
 export function UnsupportedUpdateNotice({ state }: { state: UpdateState }) {
-  if (state.phase !== 'unsupported' || !state.message.toLowerCase().includes('.deb')) return null;
+  if (state.phase !== 'unsupported' || state.unsupportedKind !== 'manual-install') return null;
   return <section className="update-toast" role="status" aria-live="polite">
     <p>{state.message}</p>
   </section>;
