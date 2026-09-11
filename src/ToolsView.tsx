@@ -1,16 +1,16 @@
-import { translate as t } from './i18n';
+import { translate as t, type MessageKey } from './i18n';
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Check, LoaderCircle, Plug, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import type { ChatRuntime, McpRuntimeTools, McpServer } from '../shared/contracts';
 import { api } from './browser-api';
 
 const RUNTIME_NAME: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode' };
-const STATUS_LABEL: Record<McpServer['status'], string> = {
-  connected: 'Conectado',
-  failed: 'No conecta',
-  pending: 'Pendiente de aprobar',
-  disabled: 'Desactivado',
-  configured: 'Configurado',
+const STATUS_LABEL: Record<McpServer['status'], MessageKey> = {
+  connected: 'tools.status.connected',
+  failed: 'tools.status.failed',
+  pending: 'tools.status.pending',
+  disabled: 'tools.status.disabled',
+  configured: 'tools.status.configured',
 };
 const displayError = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -55,18 +55,44 @@ export function ToolsView({ onNotice, onError }: { onNotice: (text: string) => v
     if (!window.confirm(t('ui.auto.407', { p0: name, p1: RUNTIME_NAME[runtime] }))) return;
     setBusy(true);
     api.removeMcpServer(runtime, name)
-      .then(async () => { await load(); onNotice(`«${name}» quitado de ${RUNTIME_NAME[runtime]}`); })
+      .then(async () => { await load(); onNotice(t('tools.removed', { name, runtime: RUNTIME_NAME[runtime] })); })
       .catch(e => onError(displayError(e)))
       .finally(() => setBusy(false));
   };
 
+  return <ToolsViewContent runtimes={runtimes} loading={loading} busy={busy} adding={adding} onRefresh={() => void load()} onRemove={remove} onAdding={setAdding} onAdd={async (runtime, input) => {
+    setBusy(true);
+    try {
+      await api.addMcpServer(runtime, input);
+      setAdding(null);
+      await load();
+      onNotice(t('tools.added', { name: input.name, runtime: RUNTIME_NAME[runtime] }));
+    } catch (e) { onError(displayError(e)); } finally { setBusy(false); }
+  }} />;
+}
+
+type ServerInput = { name: string; transport: 'stdio' | 'http'; command: string; args: string[]; url: string; env: string[] };
+
+/** Presentational surface: rendering it never queries or configures a runtime. */
+export function ToolsViewContent({ runtimes, loading, busy, adding, onRefresh, onRemove, onAdding, onAdd }: {
+  runtimes: McpRuntimeTools[] | null;
+  loading: boolean;
+  busy: boolean;
+  adding: 'claude' | 'codex' | null;
+  onRefresh: () => void;
+  onRemove: (runtime: 'claude' | 'codex', name: string) => void;
+  onAdding: (runtime: 'claude' | 'codex' | null) => void;
+  onAdd: (runtime: 'claude' | 'codex', input: ServerInput) => Promise<void>;
+}) {
   return <section className="settings-section tools-view">
     <h2>{t('ui.auto.304')}</h2>
     <p className="settings-lead">
 
-      {t('ui.auto.305')}
+      {t('tools.optional')}
     </p>
-    <button className="subtle" disabled={loading || busy} onClick={() => void load()}>{loading ? <LoaderCircle className="spin" size={13} /> : <RefreshCw size={13} />}{t('ui.auto.306')}</button>
+    <p className="footnote">{t('tools.authorization')}
+    </p>
+    <button className="subtle" disabled={loading || busy} onClick={onRefresh}>{loading ? <LoaderCircle className="spin" size={13} /> : <RefreshCw size={13} />}{t('ui.auto.306')}</button>
 
     {/* A blank wait reads as "no hay nada": name what is still pending. */}
     {loading && Object.entries(RUNTIME_NAME).filter(([key]) => !runtimes?.some(r => r.runtime === key)).map(([key, label]) => <div className="runtime-card pending" key={key}>
@@ -82,26 +108,18 @@ export function ToolsView({ onNotice, onError }: { onNotice: (text: string) => v
       {rt.installed && rt.servers.length === 0 && <p className="footnote">{t('ui.auto.308')}</p>}
       {rt.servers.length > 0 && <div className="provider-list">
         {rt.servers.map(server => <div className="provider-card mcp-card" key={server.name}>
-          <i className={'mcp-dot ' + server.status} title={STATUS_LABEL[server.status]} />
+          <i className={'mcp-dot ' + server.status} title={t(STATUS_LABEL[server.status])} />
           <div>
             <strong>{server.name}</strong>
             <small title={server.target}>{server.transport === 'http' ? 'HTTP' : t('ui.auto.309')} · {server.target || t('ui.auto.310')}</small>
             {server.detail && server.status !== 'connected' && <small className="mcp-detail">{server.detail}</small>}
           </div>
-          <span className="tag">{STATUS_LABEL[server.status]}</span>
-          {rt.canEdit && <button className="icon-button" aria-label={`Quitar ${server.name}`} title="Quitar de este runtime" disabled={busy} onClick={() => remove(rt.runtime as 'claude' | 'codex', server.name)}><Trash2 size={14} /></button>}
+          <span className="tag">{t(STATUS_LABEL[server.status])}</span>
+          {rt.canEdit && <button className="icon-button" aria-label={t('tools.remove', { name: server.name })} title={t('tools.removeHelp')} disabled={busy} onClick={() => onRemove(rt.runtime as 'claude' | 'codex', server.name)}><Trash2 size={14} /></button>}
         </div>)}
       </div>}
-      {rt.installed && rt.canEdit && adding !== rt.runtime && <button className="subtle" disabled={busy} onClick={() => setAdding(rt.runtime as 'claude' | 'codex')}><Plus size={13} />{t('ui.auto.311')}</button>}
-      {adding === rt.runtime && <AddServer runtime={rt.runtime as 'claude' | 'codex'} busy={busy} onCancel={() => setAdding(null)} onAdd={async input => {
-        setBusy(true);
-        try {
-          await api.addMcpServer(rt.runtime as 'claude' | 'codex', input);
-          setAdding(null);
-          await load();
-          onNotice(`«${input.name}» quedó configurado en ${RUNTIME_NAME[rt.runtime]}`);
-        } catch (e) { onError(displayError(e)); } finally { setBusy(false); }
-      }} />}
+      {rt.installed && rt.canEdit && adding !== rt.runtime && <button className="subtle" disabled={busy} onClick={() => onAdding(rt.runtime as 'claude' | 'codex')}><Plus size={13} />{t('ui.auto.311')}</button>}
+      {adding === rt.runtime && <AddServer runtime={rt.runtime as 'claude' | 'codex'} busy={busy} onCancel={() => onAdding(null)} onAdd={input => onAdd(rt.runtime as 'claude' | 'codex', input)} />}
       {rt.installed && !rt.canEdit && <p className="footnote"><AlertTriangle size={13} />  {t('ui.auto.312')} <code>opencode mcp add</code>  {t('ui.auto.313')}</p>}
     </div>)}
 
@@ -112,11 +130,11 @@ export function ToolsView({ onNotice, onError }: { onNotice: (text: string) => v
   </section>;
 }
 
-function AddServer({ runtime, busy, onCancel, onAdd }: {
+export function AddServer({ runtime, busy, onCancel, onAdd }: {
   runtime: 'claude' | 'codex';
   busy: boolean;
   onCancel: () => void;
-  onAdd: (input: { name: string; transport: 'stdio' | 'http'; command: string; args: string[]; url: string; env: string[] }) => Promise<void>;
+  onAdd: (input: ServerInput) => Promise<void>;
 }) {
   const [transport, setTransport] = useState<'stdio' | 'http'>('stdio');
   const [name, setName] = useState('');
@@ -130,7 +148,7 @@ function AddServer({ runtime, busy, onCancel, onAdd }: {
   return <div className="chat-card mcp-form" role="group" aria-label={t('ui.auto.311')}>
     <div className="chat-card-title"><Plug size={15} />{t('ui.auto.315')} {RUNTIME_NAME[runtime]}</div>
     <label className="field-label" htmlFor={`mcp-name-${runtime}`}>{t('ui.auto.409')}</label>
-    <input id={`mcp-name-${runtime}`} value={name} maxLength={64} placeholder="Ej. notion" onChange={e => setName(e.target.value)} />
+    <input id={`mcp-name-${runtime}`} value={name} maxLength={64} placeholder={t('tools.namePlaceholder')} onChange={e => setName(e.target.value)} />
     <label className="field-label" htmlFor={`mcp-transport-${runtime}`}>{t('ui.auto.316')}</label>
     <select id={`mcp-transport-${runtime}`} value={transport} onChange={e => setTransport(e.target.value as 'stdio' | 'http')}>
       <option value="stdio">{t('ui.auto.317')}</option>
@@ -138,13 +156,13 @@ function AddServer({ runtime, busy, onCancel, onAdd }: {
     </select>
     {transport === 'stdio' ? <>
       <label className="field-label" htmlFor={`mcp-command-${runtime}`}>{t('ui.auto.410')}</label>
-      <input id={`mcp-command-${runtime}`} value={command} maxLength={400} placeholder="npx -y @modelcontextprotocol/server-filesystem" onChange={e => setCommand(e.target.value)} />
+      <input id={`mcp-command-${runtime}`} value={command} maxLength={400} placeholder={t('tools.commandPlaceholder')} onChange={e => setCommand(e.target.value)} />
       <label className="field-label" htmlFor={`mcp-env-${runtime}`}>{t('ui.auto.319')}</label>
       <textarea id={`mcp-env-${runtime}`} className="context-editor short" value={envText} placeholder={'API_KEY=...'} onChange={e => setEnvText(e.target.value)} />
       <p className="footnote">{t('ui.auto.320')}</p>
     </> : <>
-      <label className="field-label" htmlFor={t('ui.auto.411', { p0: runtime })}>{t('ui.auto.412')}</label>
-      <input id={t('ui.auto.411', { p0: runtime })} value={url} maxLength={500} placeholder="https://mcp.ejemplo.com/mcp" onChange={e => setUrl(e.target.value)} />
+      <label className="field-label" htmlFor={`mcp-url-${runtime}`}>{t('ui.auto.412')}</label>
+      <input id={`mcp-url-${runtime}`} value={url} maxLength={500} placeholder={t('tools.urlPlaceholder')} onChange={e => setUrl(e.target.value)} />
       <p className="footnote">{t('ui.auto.321')} <code>{runtime} mcp login {name || t('ui.auto.413')}</code>  {t('ui.auto.322')}</p>
     </>}
     <div className="chat-card-actions">

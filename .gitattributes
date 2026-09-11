@@ -1,0 +1,2 @@
+# PDF cross-reference offsets and fixture hashes require byte-for-byte checkout.
+*.pdf binary

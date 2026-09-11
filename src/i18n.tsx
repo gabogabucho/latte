@@ -5,6 +5,21 @@ import { interpolate } from './i18n-core';
 import { generatedEn, generatedEs } from './i18n-generated';
 
 const es = {
+  'tools.optional': 'MCP es opcional. Agregá el servidor que vos elijas; Latte no incluye un proveedor ni un servidor predeterminado. Sin MCP, el resto de la app sigue funcionando.',
+  'tools.authorization': 'Configurar un servidor no autoriza gastos ni publicaciones. Antes de ejecutar, confirmá el alcance, la cuenta, el presupuesto y los permisos necesarios.',
+  'tools.status.connected': 'Conectado',
+  'tools.status.failed': 'No conecta',
+  'tools.status.pending': 'Pendiente de aprobar',
+  'tools.status.disabled': 'Desactivado',
+  'tools.status.configured': 'Configurado',
+  'tools.removed': '«{name}» quitado de {runtime}',
+  'tools.added': '«{name}» quedó configurado en {runtime}',
+  'tools.remove': 'Quitar {name}',
+  'tools.removeHelp': 'Quitar de este runtime',
+  'tools.namePlaceholder': 'Ej. mi-servidor',
+  'tools.commandPlaceholder': 'Comando y argumentos del servidor que elegiste',
+  'tools.urlPlaceholder': 'https://mcp.ejemplo.com/mcp',
+
   'settings.back': 'Volver al trabajo',
   'settings.title': 'Ajustes de Latte',
   'settings.scope': 'Configuración de la aplicación',
@@ -155,6 +170,21 @@ const es = {
 export type MessageKey = keyof typeof es;
 type Params = Record<string, string | number>;
 const en: Record<MessageKey, string> = {
+  'tools.optional': 'MCP is optional. Add a server of your choice; Latte does not include a provider or a default server. Without MCP, the rest of the app keeps working.',
+  'tools.authorization': 'Configuring a server does not authorize spending or publishing. Before execution, confirm the scope, account, budget, and required permissions.',
+  'tools.status.connected': 'Connected',
+  'tools.status.failed': 'Connection failed',
+  'tools.status.pending': 'Awaiting approval',
+  'tools.status.disabled': 'Disabled',
+  'tools.status.configured': 'Configured',
+  'tools.removed': '“{name}” removed from {runtime}',
+  'tools.added': '“{name}” configured in {runtime}',
+  'tools.remove': 'Remove {name}',
+  'tools.removeHelp': 'Remove from this runtime',
+  'tools.namePlaceholder': 'E.g. my-server',
+  'tools.commandPlaceholder': 'Command and arguments for your chosen server',
+  'tools.urlPlaceholder': 'https://mcp.example.com/mcp',
+
   'settings.back': 'Back to work', 'settings.title': 'Latte settings', 'settings.scope': 'Application settings',
   'settings.nav': 'Settings sections', 'settings.agents': 'Agents and providers', 'settings.profiles': 'Profiles',
   'settings.skills': 'Skills', 'settings.tools': 'Tools (MCP)', 'settings.workspace': 'Local workspace',

@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 // which stub the browser globals they need themselves.
 export default defineConfig({
   test: {
-    include: ['tests/backend/**/*.test.ts', 'src/**/*.test.ts'],
+    include: ['tests/backend/**/*.test.ts', 'tests/integration/**/*.test.ts', 'src/**/*.test.ts'],
     environment: 'node',
     testTimeout: 20_000,
     hookTimeout: 20_000,

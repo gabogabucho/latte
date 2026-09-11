@@ -1,0 +1,7 @@
+{
+  "sha256": "16a6740fb3620f874b984c0d4be4ef2a84b4158439d5e001c40a04bfda73e622",
+  "pages": 1,
+  "parser": "PyMuPDF",
+  "generator": "ReportLab",
+  "text": "BRUMA / PROPUESTA\nMarca ficticia | Documento de prueba | Sin datos de clientes\nOBJETIVO\nPresentar una propuesta PDF de lanzamiento para Bruma.\nCONTEXTO DE MARCA\nMarca ficticia de café. Tono claro, cercano y sin exageraciones.\nDECISIÓN APROBADA\nPriorizar el origen del café; no prometer beneficios de salud.\nPROPUESTA\nCampaña: Conocé el origen de tu próxima taza.\nENTREGA\nUna pieza editorial para presentar el origen y una invitación a probar.\nFixture determinista de integración. No generado por un agente real.\n"
+}
