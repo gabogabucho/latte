@@ -27,12 +27,12 @@ describe('Updater availability follows the installed artifact', () => {
     expect(decideUpdaterAvailability(input)).toEqual({ enabled, reason: '' });
   });
 
-  it('disables updates for a packaged Linux .deb install with actionable guidance', () => {
+  it.each([undefined, ''])('disables updates for a packaged Linux .deb install when APPIMAGE is %s', (appImage) => {
     const result = decideUpdaterAvailability({
       isPackaged: true,
       devServerUrl: null,
       platform: 'linux',
-      appImage: undefined,
+      appImage,
     });
 
     expect(result.enabled).toBe(false);
