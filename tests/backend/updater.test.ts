@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { UpdateState } from '../../shared/contracts';
+import type { UpdateState, UpdateUnsupportedKind } from '../../shared/contracts';
 import { UpdateController, type UpdateActivity, type UpdaterEngine } from '../../electron/updater/controller';
 import { decideUpdaterAvailability } from '../../electron/updater/engine';
 import { attachCloseGuard, attachQuitGuard } from '../../electron/windowClose';
@@ -93,7 +93,7 @@ function fakeEngine() {
 
 interface SetupOptions {
   withEngine?: boolean;
-  unsupportedKind?: 'source' | 'manual-install' | 'unavailable';
+  unsupportedKind?: UpdateUnsupportedKind;
   unsaved?: boolean;
   activity?: UpdateActivity;
   confirm?: boolean;
