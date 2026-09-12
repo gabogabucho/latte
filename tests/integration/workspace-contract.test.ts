@@ -5,14 +5,17 @@ import path from 'node:path';
 import { createBackend, type Backend } from '../../electron/bootstrap';
 
 const resources: { root: string; backend: Backend }[] = [];
+// The real temp root: macOS hands out /var/folders/... where /var is a symlink to /private/var, and
+// TEMP may point at a junction on Windows. The backend reports real paths, so the fixture uses them too.
+const tmpRoot = fs.realpathSync(os.tmpdir());
 async function fixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'latte-contract-'));
+  const root = fs.mkdtempSync(path.join(tmpRoot, 'latte-contract-'));
   const exported = path.join(root, 'exported.md');
   const backend = await createBackend({ dataDir: root, version: '0.0.0-test', seedDemo: false, driver: 'sqljs', emit: () => {}, chooseExportPath: async () => exported });
   resources.push({ root, backend });
   return { root, exported, backend, api: backend.service };
 }
-afterEach(() => { for (const { root, backend } of resources.splice(0)) { backend.service.shutdown(); const relative = path.relative(os.tmpdir(), root); if (relative.startsWith('latte-contract-') && !relative.includes(path.sep)) fs.rmSync(root, { recursive: true, force: true }); } });
+afterEach(() => { for (const { root, backend } of resources.splice(0)) { backend.service.shutdown(); const relative = path.relative(tmpRoot, root); if (relative.startsWith('latte-contract-') && !relative.includes(path.sep)) fs.rmSync(root, { recursive: true, force: true }); } });
 
 describe('Latte UI/backend deliverable contract', () => {
   it('snapshots and exports exactly the brief saved through the UI API', async () => {

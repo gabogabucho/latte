@@ -57,6 +57,33 @@ it('rejects directory symlink escapes', () => {
   } finally { removeDir(dir); }
 });
 
+it('serves a store reached through a linked parent, and still refuses a linked profile inside it', (ctx) => {
+  const dir = makeTempDir();
+  // Junctions need no privileges on Windows; a plain symlink does, hence the platform split.
+  const link = (from: string, to: string): boolean => {
+    try { fs.symlinkSync(from, to, process.platform === 'win32' ? 'junction' : 'dir'); return true; } catch { return false; }
+  };
+  try {
+    const real = path.join(dir, 'app-data');
+    fs.mkdirSync(path.join(real, 'agents'), { recursive: true });
+    if (!link(real, path.join(dir, 'moved'))) ctx.skip('the filesystem refused to create a directory link');
+    // Reaching the store through the link is the macOS /private case and relocated app data: it must work.
+    const store = new ProfileStore(path.join(dir, 'moved', 'agents'));
+    const saved = store.save(input, null, []);
+    expect(saved.directory).toBe(path.join(fs.realpathSync(real), 'agents', input.id));
+    expect(store.read(input.id)).toEqual(saved);
+    // A profile directory inside the store that points elsewhere is still refused, and stays untouched.
+    const outside = path.join(dir, 'outside');
+    fs.mkdirSync(outside);
+    if (!link(outside, path.join(real, 'agents', 'linked-profile'))) ctx.skip('the filesystem refused to create a directory link');
+    expect(() => store.read('linked-profile')).toThrow(/symbolic|symlink/i);
+    expect(() => store.save({ ...input, id: 'linked-profile' }, null, [])).toThrow(/symbolic|symlink/i);
+    expect(() => store.list()).toThrow(/symbolic|symlink/i);
+    expect(store.list(false).map(p => p.id)).toEqual([input.id]);
+    expect(fs.readdirSync(outside)).toEqual([]);
+  } finally { removeDir(dir); }
+});
+
 it('rolls back a failed multi-file write and rejects concurrent writers', () => {
   const dir = makeTempDir();
   try {
