@@ -157,7 +157,9 @@ esac
         MOCK_GH_STATE: join(directory, 'visible'),
         signed: 'true',
       },
-      timeout: 5_000,
+      // Windows process creation and bash/shebang startup can exceed 5s in hosted CI;
+      // keep the harness bounded while allowing that platform-specific overhead.
+      timeout: process.platform === 'win32' ? 30_000 : 5_000,
     });
     const calls = readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean);
     return { calls, result };
