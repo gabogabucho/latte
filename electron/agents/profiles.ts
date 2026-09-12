@@ -15,15 +15,43 @@ function validate(input: ProfileInput): void {
   }
   if (!input.name.trim() || !input.initial.trim() || !input.soul.trim()) throw new TypeError('Profile name, initial and SOUL are required');
 }
+/**
+ * Real path of `directory`, or of its deepest existing ancestor with the missing tail re-appended.
+ * The store is created lazily, so the path usually does not exist yet when it is resolved.
+ */
+function canonical(directory: string): string {
+  const resolved = path.resolve(directory);
+  let current = resolved;
+  const tail: string[] = [];
+  while (true) {
+    // Any failure (missing, unreadable, an ancestor that is a file) just moves the question one level up;
+    // the real I/O later reports it properly instead of the constructor throwing.
+    try { return path.join(fs.realpathSync(current), ...tail.reverse()); } catch { /* try the parent */ }
+    const parent = path.dirname(current);
+    if (parent === current) return resolved;
+    tail.push(path.basename(current));
+    current = parent;
+  }
+}
 /** Synchronous operations serialize writes in the main process. A disk lock also rejects other writers. */
 export class ProfileStore {
   readonly root: string;
-  constructor(root: string) { this.root = path.resolve(root); }
+  /** Real path of the directory holding the store: where the link walk in safe() stops. */
+  private readonly container: string;
+  constructor(root: string) {
+    const resolved = path.resolve(root);
+    this.container = canonical(path.dirname(resolved));
+    this.root = path.join(this.container, path.basename(resolved));
+  }
 
   private safe(target: string): void {
-    // Check every existing ancestor, including app-data and agents, and do not follow junctions.
+    // A profile inside the store must never be a link pointing somewhere else, so every level from the
+    // target up to and including the store root is checked. The walk stops there: links at or above the
+    // container belong to the OS or to the person using the app - macOS resolves /var to /private/var,
+    // app data may be moved to another disk, Windows relocates folders with junctions - and rejecting
+    // those would refuse the entire store instead of the one suspicious profile.
     let current = path.resolve(target);
-    while (true) {
+    while (current !== this.container) {
       try { if (fs.lstatSync(current).isSymbolicLink()) throw new TypeError('Profile symbolic links are not allowed'); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
       const parent = path.dirname(current); if (parent === current) break; current = parent;

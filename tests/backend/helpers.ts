@@ -7,7 +7,10 @@ import type { CommandResult, CommandRunner } from '../../electron/runtime/comman
 import type { PtyLoadResult, PtyProcessLike, PtySpawnOptions } from '../../electron/runtime/ptyLoader';
 
 export function makeTempDir(prefix = 'latte-test-'): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  // The real path, because the backend reports real paths back: macOS hands out /var/folders/...
+  // and /var is a symlink to /private/var, and TEMP may point at a junction on Windows. Without
+  // this, every expectation built from the temp dir compares an unresolved path to a resolved one.
+  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 }
 
 export function removeDir(dir: string): void {
@@ -15,6 +18,9 @@ export function removeDir(dir: string): void {
   const walk = (p: string): void => {
     for (const entry of fs.readdirSync(p, { withFileTypes: true })) {
       const full = path.join(p, entry.name);
+      // Links are left alone: chmod follows them, so clearing the attribute here would change the
+      // permissions of whatever the link points at - including a directory this walk still has to read.
+      if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) walk(full);
       else {
         try { fs.chmodSync(full, 0o666); } catch { /* ignore */ }
