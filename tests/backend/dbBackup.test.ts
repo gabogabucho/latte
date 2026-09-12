@@ -116,6 +116,7 @@ describe('Opening a workspace from a newer Latte', () => {
 
       await expect(createBackend({
         dataDir: dir,
+        version: '0.0.0-test',
         emit: () => {},
         chooseExportPath: async () => null,
         seedDemo: false,

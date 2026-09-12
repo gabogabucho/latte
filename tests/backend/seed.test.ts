@@ -56,7 +56,7 @@ describe('demo seed', () => {
     try {
       await b.service.createBrand('Mi marca');
       b.service.shutdown();
-      const again = await createBackend({ dataDir: b.dir, emit: () => {}, chooseExportPath: async () => null, seedDemo: true });
+      const again = await createBackend({ dataDir: b.dir, version: '0.0.0-test', emit: () => {}, chooseExportPath: async () => null, seedDemo: true });
       try {
         expect(again.info.seeded).toBe(false);
         expect((await again.service.listBrands()).map((x) => x.name)).toEqual(['Mi marca']);

@@ -46,7 +46,7 @@ it('carries a verified client PDF from brief and decision through persistence an
     expect(fs.readFileSync(output)).toEqual(fixture);
     await b.service.updateWork(work.id, { expectedOutput: 'Propuesta PDF para cliente', resultPath: 'propuesta-bruma.pdf' });
     b.service.shutdown();
-    reopened = await createBackend({ dataDir: b.dir, driver: 'sql.js', seedDemo: false, emit: () => {}, emitChat: () => {}, chooseExportPath: async () => null, revealPath: shellOpenPath, runner, chatEndpoint: fake.endpoint });
+    reopened = await createBackend({ dataDir: b.dir, version: '0.0.0-test', driver: 'sql.js', seedDemo: false, emit: () => {}, emitChat: () => {}, chooseExportPath: async () => null, revealPath: shellOpenPath, runner, chatEndpoint: fake.endpoint });
     const api = reopened.service;
     expect((await api.listBrands()).find(x => x.id === brand.id)?.context).toBe(context);
     expect((await api.listWorks(brand.id))[0]).toMatchObject({ brief, expectedOutput: 'Propuesta PDF para cliente', resultPath: 'propuesta-bruma.pdf' });

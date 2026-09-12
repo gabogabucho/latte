@@ -32,6 +32,17 @@ describe('LatteService persistence flow', () => {
     expect(fs.readFileSync(path.join(workDirOf(b, brand.id, work.id), 'AGENTS.md'), 'utf8')).toContain('English (United States)');
   });
 
+  it('reports the running app version through appInfo', async () => {
+    // A dedicated backend with its own version, so the assertion is not
+    // coupled to the shared fixture's default.
+    const versioned = await makeBackend({ version: '9.9.9-test' });
+    try {
+      expect((await versioned.service.appInfo()).version).toBe('9.9.9-test');
+    } finally {
+      versioned.cleanup();
+    }
+  });
+
   it('creates brand, work, document, snapshots and decisions on real disk', async () => {
     const brand = await b.service.createBrand('  Casa   Prueba ');
     expect(brand.name).toBe('Casa Prueba');
@@ -123,6 +134,7 @@ describe('LatteService persistence flow', () => {
 
     const again = await createBackend({
       dataDir: b.dir,
+      version: '0.0.0-test',
       emit: () => {},
       chooseExportPath: async () => null,
       seedDemo: false,

@@ -93,7 +93,7 @@ describe('Work outcome: expected output and linked result', () => {
     await b.service.updateWork(work.id, { expectedOutput: 'Propuesta en PDF', resultPath: 'propuesta.pdf' });
     b.service.shutdown();
 
-    const again = await createBackend({ dataDir: b.dir, emit: () => {}, chooseExportPath: async () => null, seedDemo: false });
+    const again = await createBackend({ dataDir: b.dir, version: '0.0.0-test', emit: () => {}, chooseExportPath: async () => null, seedDemo: false });
     try {
       expect((await again.service.listWorks(brand.id))[0]).toMatchObject({ expectedOutput: 'Propuesta en PDF', resultPath: 'propuesta.pdf' });
     } finally {

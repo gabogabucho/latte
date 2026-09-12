@@ -8,7 +8,7 @@ const resources: { root: string; backend: Backend }[] = [];
 async function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'latte-contract-'));
   const exported = path.join(root, 'exported.md');
-  const backend = await createBackend({ dataDir: root, seedDemo: false, driver: 'sqljs', emit: () => {}, chooseExportPath: async () => exported });
+  const backend = await createBackend({ dataDir: root, version: '0.0.0-test', seedDemo: false, driver: 'sqljs', emit: () => {}, chooseExportPath: async () => exported });
   resources.push({ root, backend });
   return { root, exported, backend, api: backend.service };
 }
@@ -58,7 +58,7 @@ describe('Latte UI/backend deliverable contract', () => {
     const b = await api.createBrand('Persistente'); const w = await api.createWork(b.id, 'Trabajo');
     await api.updateBrand(b.id, 'Tono preciso'); await api.saveBrief(w.id, '# Persistente'); await api.addDecision(w.id, 'Decisión durable');
     backend.service.shutdown(); resources.splice(resources.findIndex(r => r.backend === backend), 1);
-    const reopened = await createBackend({ dataDir: root, seedDemo: false, driver: 'sqljs', emit: () => {}, chooseExportPath: async () => null });
+    const reopened = await createBackend({ dataDir: root, version: '0.0.0-test', seedDemo: false, driver: 'sqljs', emit: () => {}, chooseExportPath: async () => null });
     resources.push({ root, backend: reopened });
     expect((await reopened.service.listBrands())[0].context).toBe('Tono preciso');
     expect((await reopened.service.listWorks(b.id))[0].brief).toBe('# Persistente');
