@@ -1,8 +1,9 @@
 # Publicar Latte
 
-> La versión de trabajo actual es **0.2.0**. Windows 0.1.0 sigue siendo la
-> última versión cuya instalación fue comprobada; macOS todavía depende de su
-> primera ejecución real en CI y no debe presentarse como verificado.
+> La versión de trabajo actual es la declarada en `package.json`. Windows 0.1.0
+> sigue siendo la última versión cuya instalación fue comprobada; macOS todavía
+> depende de su primera ejecución real en CI y no debe presentarse como
+> verificado.
 
 Cómo se arma el instalador de Windows, cómo se publica y cómo llega la
 actualización a quien ya tiene Latte instalado.

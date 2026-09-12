@@ -59,4 +59,13 @@ describe('Linux user guidance', () => {
     expect(readme).toMatch(/\| `npm run build` \|[^\n]*validat/i);
     expect(readme).toMatch(/\| `npm test` \|[^\n]*(?:current|actual|suite|command)/i);
   });
+
+  it('derives the current release version from package metadata', () => {
+    const releasingGuide = read('docs/RELEASING.md');
+
+    expect(releasingGuide).not.toMatch(
+      /versión de trabajo actual es\s+(?:\*\*)?\d+\.\d+\.\d+/i,
+    );
+    expect(releasingGuide).toMatch(/versión de trabajo actual[^\n]*`package\.json`/i);
+  });
 });
