@@ -111,6 +111,8 @@ export async function makeBackend(overrides: Partial<BackendOptions> = {}): Prom
   const events: AgentEvent[] = [];
   const backend = await createBackend({
     dataDir: dir,
+    // Fixed and distinct from any real release, so a test can assert on it exactly.
+    version: '0.0.0-test',
     emit: (e) => events.push(e),
     chooseExportPath: async () => null,
     seedDemo: false,

@@ -153,7 +153,15 @@ export interface AgentSession { id: string; provider: Provider; workId: string }
 export interface RuntimeStatus { provider: Provider; available: boolean; detail: string }
 export interface MemoryResult { available: boolean; text: string }
 /** Read-only facts about this installation, shown in the Settings screen. */
-export interface AppInfo { dataDir: string; engine: string; engineReason: string; pack: string | null; packRoles: number }
+export interface AppInfo {
+  dataDir: string;
+  engine: string;
+  engineReason: string;
+  pack: string | null;
+  packRoles: number;
+  /** The running app's version: Electron's `app.getVersion()` (package.json in dev, packaged metadata otherwise). */
+  version: string;
+}
 
 // --- Updates -----------------------------------------------------------------
 

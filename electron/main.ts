@@ -78,6 +78,7 @@ async function start(): Promise<void> {
   try {
     backend = await createBackend({
       dataDir,
+      version: app.getVersion(),
       emit: emitAgentEvent,
       emitChat: emitChatEvent,
       chooseExportPath,

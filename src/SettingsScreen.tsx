@@ -82,7 +82,7 @@ function WorkspaceSection({ onError }: { onError: (text: string) => void }) {
       <div><dt>{t('settings.dataFolder')}</dt><dd><code>{info?.dataDir ?? (isDesktop ? t('settings.loading') : t('settings.webStorage'))}</code></dd></div>
       <div><dt>{t('settings.database')}</dt><dd>{info ? t('ui.auto.391', { p0: info.engine, p1: info.engineReason ? ` · ${info.engineReason}` : '' }) : '—'}</dd></div>
       <div><dt>{t('settings.pack')}</dt><dd>{info?.pack ?? '—'}{info && info.packRoles > 0 ? ` · ${t('common.roles',{count:info.packRoles})}` : ''}</dd></div>
-      <div><dt>{t('settings.version')}</dt><dd>Latte 0.2 · ALPHA</dd></div>
+      <div><dt>{t('settings.version')}</dt><dd>{info ? `Latte ${info.version} · ALPHA` : '—'}</dd></div>
     </dl>
     <p className="footnote"><Info size={13} /> {t('settings.filesHelp')}</p>
   </section>;

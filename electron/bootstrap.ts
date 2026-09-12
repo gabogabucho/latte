@@ -52,6 +52,8 @@ export interface BackendOptions {
   /** Opens an http(s) URL in the system browser (OAuth logins). */
   openExternal?: (url: string) => Promise<void>;
   log?: (line: string) => void;
+  /** The running app's version, from `app.getVersion()`; tests pass a fixed string. */
+  version: string;
 }
 
 export interface Backend {
@@ -194,6 +196,7 @@ export async function createBackend(options: BackendOptions): Promise<Backend> {
     mcp,
     pack,
     engineReason: reason,
+    version: options.version,
     chooseExportPath: options.chooseExportPath,
     chooseFolder: options.chooseFolder,
     chooseFiles: options.chooseFiles,

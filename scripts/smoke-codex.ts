@@ -17,7 +17,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'latte-smoke-codex-'));
 const events: ChatEvent[] = [];
 
 async function main(): Promise<void> {
-  const backend = await createBackend({ dataDir: root, seedDemo: false, emit: () => {}, emitChat: (e) => events.push(e), chooseExportPath: async () => null });
+  const backend = await createBackend({ dataDir: root, version: 'smoke', seedDemo: false, emit: () => {}, emitChat: (e) => events.push(e), chooseExportPath: async () => null });
   try {
     const runtimes = await backend.service.listAgentRuntimes();
     const codex = runtimes.find((r) => r.runtime === 'codex');

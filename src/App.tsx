@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ArrowUpRight, Bookmark, Check, ChevronDown, Circle, Copy, FileText, Folder, LoaderCircle, MessageSquare, Minus, PanelLeftClose, PanelLeftOpen, Plus, Save, Settings2, Square, TerminalSquare, X } from 'lucide-react';
-import type { Brand, Work, Decision, DecisionAuthorityMode, WorkPermissionMode, RuntimeStatus, AgentSession, Provider, ChatSession, ChatRuntimeStatus, PrimaryAgent, AgentRuntimeInfo, AgentRole, EffortTier, TeamMember, TeamMemberOptions, WorkDocument, DocumentKind, UntrackedFile, HandoffRequest } from '../shared/contracts';
+import type { Brand, Work, Decision, DecisionAuthorityMode, WorkPermissionMode, RuntimeStatus, AgentSession, Provider, ChatSession, ChatRuntimeStatus, PrimaryAgent, AgentRuntimeInfo, AgentRole, EffortTier, TeamMember, TeamMemberOptions, WorkDocument, DocumentKind, UntrackedFile, HandoffRequest, AppInfo } from '../shared/contracts';
 import { api, chatStore, isDesktop } from './browser-api';
 import { DocumentsView, NewDocumentDialog } from './DocumentsView';
 import { hasMetadataDrafts } from './DocumentMetadata';
@@ -39,6 +39,8 @@ export function WindowControls() {
   </div>;
 }
 export function App() {
+  // Loaded once on mount; null until it arrives so the footer never flashes a fake version.
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [brands, setBrands] = useState<Brand[]>([]), [brand, setBrand] = useState<Brand | null>(null);
   const [works, setWorks] = useState<Work[]>([]), [work, setWork] = useState<Work | null>(null);
   const [context, setContext] = useState('');
@@ -182,7 +184,7 @@ export function App() {
     ...agentRuntimes.flatMap(r => r.accounts.filter(a => a.loggedIn).map(a => ({ key: `${r.runtime}:${a.id}`, label: `${r.runtime === 'claude' ? 'Claude Code' : 'Codex'} · ${a.label}`, runtime: r.runtime, accountId: a.id }))),
     ...(chatRuntime?.available ? [{ key: 'opencode', label: `OpenCode · ${chatRuntime.defaultModel ?? 'modelo por defecto'}`, runtime: 'opencode' as const, accountId: null }] : []),
   ].filter(c => !(c.runtime === primaryRuntime && (c.runtime === 'opencode' || c.accountId === (primary?.accountId ?? 'system'))));
-  useEffect(() => { void api.listBrands().then(list => { setBrands(list); if (list[0]) { setBrand(list[0]); setContext(list[0].context); } }).catch(e => setError(displayError(e))); void api.runtimeStatus().then(setRuntimes).catch(e => setError(displayError(e))); void api.listRoles().then(setRoles).catch(e => setError(displayError(e))); void refreshChatStatus(); }, []);
+  useEffect(() => { void api.listBrands().then(list => { setBrands(list); if (list[0]) { setBrand(list[0]); setContext(list[0].context); } }).catch(e => setError(displayError(e))); void api.runtimeStatus().then(setRuntimes).catch(e => setError(displayError(e))); void api.listRoles().then(setRoles).catch(e => setError(displayError(e))); void api.appInfo().then(setAppInfo).catch(e => setError(displayError(e))); void refreshChatStatus(); }, []);
   useEffect(() => { if (!work) { setTeam([]); setPermissions('ask'); setDecisionAuthority('suggest'); return; } void loadTeam(work.id).catch(e => setError(displayError(e))); void api.getWorkPermissions(work.id).then(setPermissions).catch(() => setPermissions('ask')); void api.getDecisionAuthority(work.id).then(setDecisionAuthority).catch(()=>setDecisionAuthority('suggest')); }, [work?.id]);
   useEffect(() => { if (!brand) return; const n = ++generation.current; setWork(null); setWorks([]); setDecisions([]); setDocuments([]); void api.listWorks(brand.id).then(list => { if (n !== generation.current) return; setWorks(list); if (list[0]) setWork(list[0]); }).catch(e => setError(displayError(e))); }, [brand?.id]);
   useEffect(() => { if (!work) { setDocuments([]); setDecisions([]); setUntracked([]); setHandoffs([]); return; } let active = true; void Promise.all([api.listDocuments(work.id), api.listDecisions(work.id), api.listUntrackedFiles(work.id).catch(() => []), api.listHandoffs(work.id).catch(() => [])]).then(([docs, d, untrackedFiles, asks]) => { if (active) { setDocuments(docs); setDecisions(d); setUntracked(untrackedFiles); setHandoffs(asks); } }).catch(e => setError(displayError(e))); return () => { active = false; }; }, [work?.id]);
@@ -473,7 +475,7 @@ export function App() {
         </div>
       </details>
     </aside>
-    <footer className="statusbar"><span><Circle size={11} />{isDesktop ? t('ui.auto.354', { p0: activeChats, p1: activeTerminals }) : t('ui.auto.074')}</span><span>{busy ? t('ui.auto.355') : dirty || contextDirty ? t('ui.auto.075') : 'Todo guardado'}<Check size={13} /></span><span>Latte <span className="status-version">0.2 / ALPHA</span></span></footer>
+    <footer className="statusbar"><span><Circle size={11} />{isDesktop ? t('ui.auto.354', { p0: activeChats, p1: activeTerminals }) : t('ui.auto.074')}</span><span>{busy ? t('ui.auto.355') : dirty || contextDirty ? t('ui.auto.075') : 'Todo guardado'}<Check size={13} /></span>{appInfo && <span>Latte <span className="status-version">{appInfo.version} · ALPHA</span></span>}</footer>
     {(modal === 'brand' || modal === 'work') && <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget && !busy) setModal(null); }}><section role="dialog" aria-modal="true" aria-labelledby="dialog-title" className="modal"><div className="modal-head"><div><div className="document-kicker">{t('ui.auto.076')}</div><h2 id="dialog-title">{modal === 'brand' ? t('ui.auto.077') : t('ui.auto.078')}</h2></div><button className="modal-close" aria-label={t('ui.auto.001')} onClick={() => setModal(null)}><X size={20} /></button></div><div className="modal-body"><form onSubmit={e => { e.preventDefault(); void create(); }}><label className="field-label" htmlFor="new-name">{modal === 'brand' ? t('ui.auto.079') : t('ui.auto.080')}</label><input autoFocus id="new-name" maxLength={120} value={name} onChange={e => setName(e.target.value)} placeholder={modal === 'brand' ? 'Ej. Casa Oliva' : t('ui.auto.081')} /><p className="footnote">{t('ui.auto.082')}</p><button className="primary" disabled={!name.trim() || busy}>{t('ui.auto.083')} {modal === 'brand' ? t('ui.auto.084') : t('ui.auto.085')}<ArrowUpRight size={16} /></button></form></div></section></div>}
     {modal === 'document' && <NewDocumentDialog documents={documents} busy={busy} onCancel={() => setModal(null)} onCreate={createDocument} />}
     <UpdateBanner />

@@ -129,6 +129,8 @@ export interface LatteServiceDeps {
   openExternal?: (url: string) => Promise<void>;
   /** Why the storage engine was chosen (shown read-only in Settings). */
   engineReason?: string;
+  /** The running app's version, sourced from `app.getVersion()`; tests pass a fixed string. */
+  version: string;
   clock?: () => string;
 }
 
@@ -235,6 +237,7 @@ export class LatteService implements BackendApi {
       engineReason: this.deps.engineReason ?? '',
       pack: this.deps.pack ? `${this.deps.pack.id}@${this.deps.pack.version}` : null,
       packRoles: this.deps.pack?.roles.length ?? 0,
+      version: this.deps.version,
     };
   }
 
