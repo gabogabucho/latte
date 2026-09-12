@@ -4,6 +4,7 @@ import type { AgentEvent, ChatEvent, InstallOutcome, UpdateState } from '../shar
 import { createBackend, type Backend } from './bootstrap';
 import { errorMessage } from './core/errors';
 import { ensureUserBinPath } from './core/linuxPath';
+import { installProcessStreamErrorGuards } from './core/processStreams';
 import {
   AGENT_EVENT_CHANNEL,
   CHAT_EVENT_CHANNEL,
@@ -19,6 +20,8 @@ import { createUpdaterEngine, decideUpdaterAvailability } from './updater/engine
 import { attachCloseGuard, attachQuitGuard, type CloseGuardHandle } from './windowClose';
 import { registerIpc } from './ipc/register';
 import { mainMessage } from './i18n';
+
+installProcessStreamErrorGuards(process.stdout, process.stderr);
 
 const uiLocale = () => backend?.repo.getMeta('ui_locale') === 'en-US' ? 'en-US' as const : 'es-AR' as const;
 const mt = (key: Parameters<typeof mainMessage>[1], params?: Record<string,string|number>) => mainMessage(uiLocale(), key, params);
